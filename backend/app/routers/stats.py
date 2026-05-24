@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Category, ExchangeRate, Merchant, Transaction, User, Wallet
+from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
 from ..services.balances import wallet_balances
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -371,6 +371,9 @@ async def cross_currency_total(
     balances = await wallet_balances(session, user.id)
     wallets = (await session.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.archived == False))).scalars().all()  # noqa: E712
 
+    digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
+    base_d = digits.get(base, 2)
+
     by_currency: dict[str, int] = {}
     for w in wallets:
         by_currency[w.currency_code] = by_currency.get(w.currency_code, 0) + balances.get(w.id, w.initial_balance)
@@ -391,12 +394,13 @@ async def cross_currency_total(
     total = 0
     breakdown = []
     for code, amt in by_currency.items():
+        code_d = digits.get(code, 2)
         if code == base:
             conv = amt
             rate = 1.0
         else:
             rate = rates.get((code, base)) or 0.0
-            conv = int(amt * rate)
+            conv = int(amt * rate * (10 ** (base_d - code_d)))
         total += conv
         breakdown.append({"currency_code": code, "balance": amt, "rate": rate, "converted": conv})
     return CrossCurrencyTotal(base_currency=base, total=total, breakdown=breakdown)
