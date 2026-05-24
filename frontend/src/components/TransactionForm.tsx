@@ -50,9 +50,18 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const amountRef = useRef<HTMLInputElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const stagedFileRef = useRef<HTMLInputElement>(null);
+  const initKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initKey.current = null;
+      return;
+    }
+    const key = editing ? `edit:${editing.id}` : "new";
+    // editing 需要 currencies / merchants 才能算对金额单位和回填商家名
+    if (editing && (!currencies.data || !merchants.data)) return;
+    if (initKey.current === key) return;
+    initKey.current = key;
     if (editing) {
       setKind(editing.kind === "income" ? "income" : "expense");
       setWalletId(editing.wallet_id);
