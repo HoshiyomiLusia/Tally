@@ -328,22 +328,28 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           </div>
 
           <div>
-            <div className="mb-1 text-xs text-ink-500">分类</div>
+            <div className="mb-1 text-xs text-ink-500">分类 <span className="text-ink-400">（点大类就够了，需要更细再点小类）</span></div>
             <div className="flex flex-wrap gap-1">
-              {topLevel.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    const kids = childrenByParent.get(p.id);
-                    if (kids && kids.length) setCategoryId(kids[0].id);
-                    else setCategoryId(p.id);
-                  }}
-                  className={`rounded-full border px-2.5 py-1 text-xs ${expandedParent === p.id ? "border-ink-800 bg-ink-100 text-ink-900" : "border-ink-200 bg-white text-ink-600"}`}
-                >
-                  {p.emoji} {p.name}
-                </button>
-              ))}
+              {topLevel.map((p) => {
+                const isSelected = categoryId === p.id;
+                const isExpanded = expandedParent === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setCategoryId(p.id)}
+                    className={
+                      isSelected
+                        ? "rounded-full border border-ink-800 bg-ink-800 px-2.5 py-1 text-xs text-white"
+                        : isExpanded
+                          ? "rounded-full border border-ink-800 bg-ink-100 px-2.5 py-1 text-xs text-ink-900"
+                          : "rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-600"
+                    }
+                  >
+                    {p.emoji} {p.name}
+                  </button>
+                );
+              })}
             </div>
             {expandedParent != null && childrenByParent.get(expandedParent) && (
               <div className="mt-1.5 flex flex-wrap gap-1 border-t border-ink-100 pt-1.5">
