@@ -284,6 +284,15 @@ export default function Transactions() {
       <TransferForm open={transferOpen} onClose={() => setTransferOpen(false)} />
       <ReimburseForm open={reimburseOpen} onClose={() => setReimburseOpen(false)} />
 
+      <button
+        type="button"
+        onClick={() => { setEditing(null); setOpen(true); }}
+        aria-label="添加交易"
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 hover:bg-ink-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+      >
+        <Plus size={22} />
+      </button>
+
       {quickOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={() => setQuickOpen(false)}>
           <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
