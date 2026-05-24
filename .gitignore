@@ -1,0 +1,30 @@
+# data & secrets
+data/*
+!data/.gitkeep
+.env
+.env.local
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
+node_modules/
+dist/
+.vite/
+
+# misc
+.DS_Store
+*.log
+.idea/
+.vscode/

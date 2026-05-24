@@ -1,0 +1,113 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..core.auth import current_user
+from ..core.db import get_session
+from ..models import Merchant, Transaction, User, Wallet
+from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
+
+router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+async def _check_wallet(session: AsyncSession, user: User, wallet_id: int) -> Wallet:
+    w = await session.get(Wallet, wallet_id)
+    if not w or w.user_id != user.id:
+        raise HTTPException(400, "invalid wallet_id")
+    return w
+
+
+@router.get("", response_model=list[TransactionRead])
+async def list_transactions(
+    f: TransactionFilter = Depends(),
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(Transaction).where(Transaction.user_id == user.id)
+    if f.start:
+        stmt = stmt.where(Transaction.occurred_on >= f.start)
+    if f.end:
+        stmt = stmt.where(Transaction.occurred_on <= f.end)
+    if f.wallet_id:
+        stmt = stmt.where(Transaction.wallet_id == f.wallet_id)
+    if f.category_id:
+        stmt = stmt.where(Transaction.category_id == f.category_id)
+    if f.currency_code:
+        stmt = stmt.where(Transaction.currency_code == f.currency_code)
+    if f.kind:
+        stmt = stmt.where(Transaction.kind == f.kind)
+    if f.q:
+        stmt = stmt.where(Transaction.note.ilike(f"%{f.q}%"))
+    stmt = stmt.order_by(Transaction.occurred_on.desc(), Transaction.id.desc()).limit(f.limit).offset(f.offset)
+    return (await session.execute(stmt)).scalars().all()
+
+
+@router.post("", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)
+async def create_transaction(
+    payload: TransactionCreate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    wallet = await _check_wallet(session, user, payload.wallet_id)
+    if payload.currency_code != wallet.currency_code:
+        raise HTTPException(400, "currency must match wallet")
+    if payload.amount <= 0:
+        raise HTTPException(400, "amount must be positive")
+
+    data = payload.model_dump()
+    t = Transaction(user_id=user.id, **data)
+    session.add(t)
+    if payload.merchant_id:
+        m = await session.get(Merchant, payload.merchant_id)
+        if m and m.user_id == user.id:
+            m.usage_count += 1
+    await session.commit()
+    await session.refresh(t)
+    return t
+
+
+@router.get("/{tid}", response_model=TransactionRead)
+async def get_transaction(
+    tid: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id:
+        raise HTTPException(404)
+    return t
+
+
+@router.patch("/{tid}", response_model=TransactionRead)
+async def update_transaction(
+    tid: int,
+    payload: TransactionUpdate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id:
+        raise HTTPException(404)
+    updates = payload.model_dump(exclude_unset=True)
+    if "wallet_id" in updates:
+        await _check_wallet(session, user, updates["wallet_id"])
+    if "amount" in updates and updates["amount"] is not None and updates["amount"] <= 0:
+        raise HTTPException(400, "amount must be positive")
+    for k, v in updates.items():
+        setattr(t, k, v)
+    await session.commit()
+    await session.refresh(t)
+    return t
+
+
+@router.delete("/{tid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_transaction(
+    tid: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id:
+        raise HTTPException(404)
+    await session.delete(t)
+    await session.commit()
