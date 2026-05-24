@@ -139,16 +139,16 @@ async def frequent(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    # 按 (钱包, 分类, 商家, 币种) 分组——故意不把 amount 算进 key, 因为
-    # 同一家商店每次金额几乎都不一样, 一旦带上 amount 几乎永远凑不到 min_count.
-    # 商家可以是 NULL (像自动贩卖机这种没商家的会聚成一组), 但至少要有分类——
-    # 否则只是"花了 150 円"没意义.
+    # 严格分组: (钱包, 分类, 商家, 金额, 币种) 完全一致才算同一笔可"原样复刻"的账单.
+    # 快速添加点一下就直接落库, 金额必须可信. 商家可以是 NULL (像自动贩卖机这种),
+    # 但分类要有.
     rows = (
         await session.execute(
             select(
                 Transaction.wallet_id,
                 Transaction.category_id,
                 Transaction.merchant_id,
+                Transaction.amount,
                 Transaction.currency_code,
                 func.count(Transaction.id),
                 func.max(Transaction.occurred_on),
@@ -162,6 +162,7 @@ async def frequent(
                 Transaction.wallet_id,
                 Transaction.category_id,
                 Transaction.merchant_id,
+                Transaction.amount,
                 Transaction.currency_code,
             )
             .having(func.count(Transaction.id) >= min_count)
@@ -177,32 +178,17 @@ async def frequent(
     merchants = {m.id: m for m in (await session.execute(select(Merchant).where(Merchant.user_id == user.id))).scalars().all()}
 
     out: list[FrequentItem] = []
-    for wid, cid, mid, code, cnt, last_on in rows:
+    for wid, cid, mid, amount, code, cnt, last_on in rows:
         w = wallets.get(wid)
         c = cats.get(cid) if cid else None
         m = merchants.get(mid) if mid else None
         if not w:
             continue
-        recent_amt = (
-            await session.execute(
-                select(Transaction.amount)
-                .where(
-                    Transaction.user_id == user.id,
-                    Transaction.wallet_id == wid,
-                    Transaction.category_id == cid,
-                    Transaction.merchant_id == mid,
-                    Transaction.currency_code == code,
-                    Transaction.kind == "expense",
-                )
-                .order_by(Transaction.occurred_on.desc(), Transaction.id.desc())
-                .limit(1)
-            )
-        ).scalar() or 0
         out.append(FrequentItem(
             wallet_id=wid, wallet_name=w.name,
             category_id=cid, category_name=c.name if c else "未分类", category_emoji=c.emoji if c else "",
             merchant_id=mid, merchant_name=m.name if m else "",
-            amount=int(recent_amt), currency_code=code,
+            amount=int(amount), currency_code=code,
             count=int(cnt), last_on=last_on,
         ))
     return out
