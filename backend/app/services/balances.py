@@ -4,6 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Transaction, Wallet
 
 
+# 借贷调整归属: 优先看 attributed_wallet_id, 没有就用原 wallet_id
+def _loan_wallet():
+    return func.coalesce(Transaction.attributed_wallet_id, Transaction.wallet_id)
+
+
 async def wallet_balances(session: AsyncSession, user_id: int) -> dict[int, int]:
     """Wallet balance in Model A: initial + income + transfer_in - expense - transfer_out.
     loan_out and loan_repayment do NOT affect the wallet (intentional)."""
@@ -46,21 +51,22 @@ async def loan_balances(session: AsyncSession, user_id: int) -> dict[tuple[int, 
 
 
 async def all_wallet_loan_summary(session: AsyncSession, user_id: int) -> dict[int, tuple[int, int]]:
-    """Per-wallet (loan_out_total, loan_repayment_total) for ALL wallets at once.
-    Avoids the N+1 of calling wallet_loan_summary in a loop."""
+    """Per-wallet (loan_out_total, loan_repayment_total) for ALL wallets at once,
+    按 attributed_wallet_id (没设就用 wallet_id) 归集 —— 让"名义转移"生效."""
+    aw = _loan_wallet().label("aw")
     rows = (
         await session.execute(
-            select(Transaction.wallet_id, Transaction.kind, func.sum(Transaction.amount))
+            select(aw, Transaction.kind, func.sum(Transaction.amount))
             .where(
                 Transaction.user_id == user_id,
                 Transaction.kind.in_(("loan_out", "loan_repayment")),
             )
-            .group_by(Transaction.wallet_id, Transaction.kind)
+            .group_by(aw, Transaction.kind)
         )
     ).all()
     out: dict[int, list[int]] = {}
     for wid, kind, total in rows:
-        bucket = out.setdefault(wid, [0, 0])
+        bucket = out.setdefault(int(wid), [0, 0])
         if kind == "loan_out":
             bucket[0] = int(total or 0)
         else:
@@ -69,16 +75,13 @@ async def all_wallet_loan_summary(session: AsyncSession, user_id: int) -> dict[i
 
 
 async def wallet_loan_summary(session: AsyncSession, user_id: int, wallet_id: int) -> tuple[int, int]:
-    """For per-wallet reconciliation in Model A.
-
-    Returns (loan_out_total, loan_repayment_total) on this specific wallet.
-    physical_balance = system_balance - loan_out_total + loan_repayment_total
-    """
+    """Per-wallet (loan_out_total, loan_repayment_total), 按 attributed wallet 归集."""
+    aw = _loan_wallet()
     loan_out = (
         await session.execute(
             select(func.sum(Transaction.amount)).where(
                 Transaction.user_id == user_id,
-                Transaction.wallet_id == wallet_id,
+                aw == wallet_id,
                 Transaction.kind == "loan_out",
             )
         )
@@ -87,7 +90,7 @@ async def wallet_loan_summary(session: AsyncSession, user_id: int, wallet_id: in
         await session.execute(
             select(func.sum(Transaction.amount)).where(
                 Transaction.user_id == user_id,
-                Transaction.wallet_id == wallet_id,
+                aw == wallet_id,
                 Transaction.kind == "loan_repayment",
             )
         )

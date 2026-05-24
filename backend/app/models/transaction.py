@@ -27,4 +27,8 @@ class Transaction(Base):
     recurrence_period_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recurrence_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     transfer_pair_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True)
+    # 仅用于 loan_out / loan_repayment 的"名义归属"覆盖: 历史 wallet_id 不动,
+    # 但聚合借贷调整时按 COALESCE(attributed_wallet_id, wallet_id) 计算.
+    # 让用户可以把 Suica 上的借贷在不动账单的前提下挪到 三菱 名下显示.
+    attributed_wallet_id: Mapped[int | None] = mapped_column(ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

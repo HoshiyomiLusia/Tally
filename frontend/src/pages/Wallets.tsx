@@ -352,16 +352,16 @@ function WalletCardItem({
 
   const moveLoans = useMutation({
     mutationFn: async (targetId: number) =>
-      (await api.post<{ amount: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
+      (await api.post<{ reattributed: number; amount: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["loan-accounts"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
-      if (r.amount === 0) {
+      if (r.reattributed === 0) {
         alert("当前钱包没有借贷调整, 无需转移");
       } else {
-        alert(`已创建 ${formatAmount(r.amount, wallet.currency_code, currencies)} 的反向转账, 借贷调整已转移`);
+        alert(`已重新归属 ${r.reattributed} 笔借贷 (共 ${formatAmount(r.amount, wallet.currency_code, currencies)}). 历史交易不动, 仅借贷归属变更.`);
       }
       setPickerOpen(false);
     },
@@ -404,19 +404,20 @@ function WalletCardItem({
       {pickerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 dark:bg-ink-800">
-            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷调整转给哪个钱包？</div>
+            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷调整名义归到哪？</div>
             <div className="mb-3 text-xs text-ink-500">
-              不会改你已有的 loan_out / loan_repayment 交易（历史保留）, 而是新建一笔
-              <span className="font-medium text-ink-700 dark:text-ink-200"> 目标 → 当前 </span>
-              的转账, 金额 = {formatAmount(Math.abs(wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet), wallet.currency_code, currencies)}.
-              结果: 当前钱包物理余额回到 system; 目标钱包物理余额下降同等金额, 相当于接管了那部分对外债权.
+              纯名义操作: 不创建任何新交易, 不改原借贷的钱包归属（历史保留）,
+              只把"借贷调整"的累计点改到目标钱包. 结果: 当前钱包的"含借贷调整"标记消失;
+              目标钱包接管这部分调整, 物理余额相应下降.
+              <br/>
+              <span className="mt-1 inline-block text-ink-400">两个钱包的 system_balance（小字"实际"）都不变.</span>
             </div>
             <div className="space-y-1.5">
               {siblings.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => {
-                    if (confirm(`确认: 新建 ${t.name} → ${wallet.name} 的转账, 金额 ${formatAmount(Math.abs(wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet), wallet.currency_code, currencies)}`)) {
+                    if (confirm(`确认把 ${wallet.name} 的借贷调整名义归到 ${t.name}？\n不会动任何交易, 只改归属.`)) {
                       moveLoans.mutate(t.id);
                     }
                   }}
