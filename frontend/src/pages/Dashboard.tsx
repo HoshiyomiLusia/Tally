@@ -273,19 +273,28 @@ export default function Dashboard() {
           {(dash.data?.recent_transactions ?? []).map((t) => {
             const mname = merchantName(t.merchant_id);
             const sub = [mname, t.note].filter(Boolean).join(" · ");
+            const isTransfer = t.kind === "transfer_in" || t.kind === "transfer_out";
+            const titleEmoji = isTransfer ? "🔁" : catEmoji(t.category_id);
+            const titleName = isTransfer ? (t.kind === "transfer_in" ? "转移 · 转入" : "转移 · 转出") : catName(t.category_id);
+            const isPositive = t.kind === "income" || t.kind === "loan_repayment" || t.kind === "transfer_in";
+            const amtColor =
+              t.kind === "income" || t.kind === "loan_repayment" ? "text-emerald-600"
+              : t.kind === "loan_out" ? "text-amber-600"
+              : isTransfer ? "text-sky-600"
+              : "text-rose-600";
             return (
               <div key={t.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">分摊</span>}
                     {t.is_recurring && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">周期</span>}
-                    <span className="truncate">{catEmoji(t.category_id)} {catName(t.category_id)}</span>
+                    <span className="truncate">{titleEmoji} {titleName}</span>
                     {sub && <span className="truncate text-xs text-ink-500">· {sub}</span>}
                   </div>
                   <div className="text-xs text-ink-500">{t.occurred_on}</div>
                 </div>
-                <div className={`shrink-0 font-medium ${t.kind === "income" ? "text-emerald-600" : t.kind === "loan_out" ? "text-amber-600" : t.kind === "loan_repayment" ? "text-sky-600" : "text-rose-600"}`}>
-                  {t.kind === "income" || t.kind === "loan_repayment" ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
+                <div className={`shrink-0 font-medium ${amtColor}`}>
+                  {isPositive ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
                 </div>
               </div>
             );

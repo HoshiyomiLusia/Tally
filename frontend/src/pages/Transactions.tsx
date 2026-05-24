@@ -202,18 +202,21 @@ export default function Transactions() {
                 const c = catName(t.category_id);
                 const m = merchantName(t.merchant_id);
                 const ct = contactName(t.contact_id);
+                const isTransfer = t.kind === "transfer_in" || t.kind === "transfer_out";
                 const isPositive = t.kind === "income" || t.kind === "loan_repayment" || t.kind === "transfer_in";
                 const amtColor =
                   t.kind === "income" || t.kind === "loan_repayment" ? "text-emerald-600"
                   : t.kind === "loan_out" ? "text-amber-600"
                   : t.kind.startsWith("transfer") ? "text-sky-600"
                   : "text-rose-600";
+                const titleEmoji = isTransfer ? "🔁" : (c?.emoji ?? "");
+                const titleName = isTransfer ? "转移" : (c?.name ?? "未分类");
                 return (
                   <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{c?.emoji}</span>
-                        <span className="font-medium">{c?.name ?? "未分类"}</span>
+                        <span>{titleEmoji}</span>
+                        <span className="font-medium">{titleName}</span>
                         {m && <span className="text-xs text-ink-500">· {m}</span>}
                         {ct && <span className="rounded bg-amber-50 px-1 text-[10px] text-amber-700">@{ct}</span>}
                         {t.kind !== "expense" && t.kind !== "income" && (
