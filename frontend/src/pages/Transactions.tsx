@@ -290,7 +290,7 @@ export default function Transactions() {
             </div>
             {(frequent.data ?? []).length === 0 ? (
               <div className="rounded-md bg-ink-50 p-4 text-center text-sm text-ink-500 dark:bg-ink-800/40">
-                还没有常用账单。同一组合（钱包 / 分类 / 商家 / 金额）出现 3 次以上会自动进入这里。
+                还没有常用账单。同一商家在同一钱包 / 分类下出现 3 次以上会自动进入这里，金额取最近一次。
               </div>
             ) : (
               <div className="space-y-1.5">
