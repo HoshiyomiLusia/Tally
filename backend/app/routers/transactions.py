@@ -37,7 +37,7 @@ class FrequentItem(BaseModel):
     category_id: int | None
     category_name: str
     category_emoji: str
-    merchant_id: int
+    merchant_id: int | None
     merchant_name: str
     amount: int
     currency_code: str
@@ -120,7 +120,8 @@ async def frequent(
 ):
     # 按 (钱包, 分类, 商家, 币种) 分组——故意不把 amount 算进 key, 因为
     # 同一家商店每次金额几乎都不一样, 一旦带上 amount 几乎永远凑不到 min_count.
-    # 建议金额用该组里最近那笔.
+    # 商家可以是 NULL (像自动贩卖机这种没商家的会聚成一组), 但至少要有分类——
+    # 否则只是"花了 150 円"没意义.
     rows = (
         await session.execute(
             select(
@@ -134,7 +135,7 @@ async def frequent(
             .where(
                 Transaction.user_id == user.id,
                 Transaction.kind == "expense",
-                Transaction.merchant_id.is_not(None),
+                Transaction.category_id.is_not(None),
             )
             .group_by(
                 Transaction.wallet_id,
@@ -157,9 +158,9 @@ async def frequent(
     out: list[FrequentItem] = []
     for wid, cid, mid, code, cnt, last_on in rows:
         w = wallets.get(wid)
-        m = merchants.get(mid)
         c = cats.get(cid) if cid else None
-        if not w or not m:
+        m = merchants.get(mid) if mid else None
+        if not w:
             continue
         recent_amt = (
             await session.execute(
@@ -179,7 +180,7 @@ async def frequent(
         out.append(FrequentItem(
             wallet_id=wid, wallet_name=w.name,
             category_id=cid, category_name=c.name if c else "未分类", category_emoji=c.emoji if c else "",
-            merchant_id=mid, merchant_name=m.name,
+            merchant_id=mid, merchant_name=m.name if m else "",
             amount=int(recent_amt), currency_code=code,
             count=int(cnt), last_on=last_on,
         ))

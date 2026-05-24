@@ -13,7 +13,7 @@ interface FrequentItem {
   category_id: number | null;
   category_name: string;
   category_emoji: string;
-  merchant_id: number;
+  merchant_id: number | null;
   merchant_name: string;
   amount: number;
   currency_code: string;
@@ -294,28 +294,30 @@ export default function Transactions() {
               </div>
             ) : (
               <div className="space-y-1.5">
-                {(frequent.data ?? []).map((f) => (
-                  <button
-                    key={`${f.merchant_id}-${f.amount}-${f.currency_code}-${f.wallet_id}-${f.category_id ?? 0}`}
-                    onClick={() => { quickAdd.mutate(f); setQuickOpen(false); }}
-                    disabled={quickAdd.isPending}
-                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3 text-left text-sm hover:border-emerald-500 hover:shadow-sm dark:border-ink-700 dark:bg-ink-800/60 dark:hover:border-emerald-400"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span>{f.category_emoji}</span>
-                        <span className="truncate font-medium">{f.merchant_name}</span>
-                        <span className="shrink-0 rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
+                {(frequent.data ?? []).map((f) => {
+                  const title = f.merchant_name || f.category_name;
+                  const sub = f.merchant_name ? `${f.wallet_name} · ${f.category_name}` : f.wallet_name;
+                  return (
+                    <button
+                      key={`${f.merchant_id ?? "none"}-${f.currency_code}-${f.wallet_id}-${f.category_id ?? 0}`}
+                      onClick={() => { quickAdd.mutate(f); setQuickOpen(false); }}
+                      disabled={quickAdd.isPending}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3 text-left text-sm hover:border-emerald-500 hover:shadow-sm dark:border-ink-700 dark:bg-ink-800/60 dark:hover:border-emerald-400"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span>{f.category_emoji}</span>
+                          <span className="truncate font-medium">{title}</span>
+                          <span className="shrink-0 rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-ink-500">{sub}</div>
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-ink-500">
-                        {f.wallet_name} · {f.category_name}
+                      <div className="shrink-0 font-semibold text-rose-600">
+                        {formatAmount(f.amount, f.currency_code, currencies.data)}
                       </div>
-                    </div>
-                    <div className="shrink-0 font-semibold text-rose-600">
-                      {formatAmount(f.amount, f.currency_code, currencies.data)}
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
