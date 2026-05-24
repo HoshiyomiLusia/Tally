@@ -1,13 +1,15 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Transaction, User, Wallet
 from ..schemas.wallet import WalletCreate, WalletRead, WalletUpdate
-from ..services.balances import all_wallet_loan_summary, wallet_balances
+from ..services.balances import all_wallet_loan_summary, wallet_balances, wallet_loan_summary
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
 
@@ -72,7 +74,9 @@ async def update_wallet(
 
 
 class MoveLoansResponse(BaseModel):
-    moved: int
+    amount: int       # 转账金额 (smallest unit); 0 = 没有借贷调整, 无操作
+    from_wallet_id: int | None = None
+    to_wallet_id: int | None = None
 
 
 @router.post("/{source_id}/move-loans-to/{target_id}", response_model=MoveLoansResponse)
@@ -82,9 +86,13 @@ async def move_loans(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """把 source 钱包上的所有借贷类交易 (loan_out / loan_repayment) 改挂到 target.
-    用于把零散的借贷归到一个主钱包统一对账, 不影响 system_balance, 只改
-    physical_balance 的归属."""
+    """通过创建一笔反向转账, 把 source 钱包的借贷调整 "转移" 到 target.
+    例: source 上有 ¥3000 净 loan_out, 创建 target -> source 的 ¥3000 转账.
+    结果: source 的 system 增 ¥3000 抵消 loan_out 影响, physical 回到原来的
+    "无借贷" 状态; target 的 system 减 ¥3000, physical 相应下降, 相当于
+    target 接管了对外的债权.
+
+    原始的 loan_out / loan_repayment 交易完全不动 —— 历史不该被改写."""
     if source_id == target_id:
         raise HTTPException(400, "source and target must differ")
     src = await session.get(Wallet, source_id)
@@ -95,18 +103,45 @@ async def move_loans(
         raise HTTPException(404, "target wallet not found")
     if src.currency_code != dst.currency_code:
         raise HTTPException(400, "currency must match")
-    result = await session.execute(
-        sql_update(Transaction)
-        .where(
-            Transaction.user_id == user.id,
-            Transaction.wallet_id == source_id,
-            Transaction.kind.in_(("loan_out", "loan_repayment")),
-        )
-        .values(wallet_id=target_id)
+
+    loan_out, loan_in = await wallet_loan_summary(session, user.id, source_id)
+    net = loan_out - loan_in  # 正: 净借出, source physical < system
+    if net == 0:
+        return MoveLoansResponse(amount=0)
+
+    # net > 0: dst -> src (拉回 src 被借走的钱);  net < 0: src -> dst (src 多出来的还回去)
+    if net > 0:
+        from_w, to_w, amount = dst, src, net
+    else:
+        from_w, to_w, amount = src, dst, -net
+
+    today = date.today()
+    note = f"借贷调整转移: {to_w.name} 接管 {from_w.name} 上的 {amount} ({src.currency_code}) 借贷"
+    out_tx = Transaction(
+        user_id=user.id,
+        wallet_id=from_w.id,
+        amount=amount,
+        currency_code=from_w.currency_code,
+        kind="transfer_out",
+        occurred_on=today,
+        note=note,
     )
-    moved = result.rowcount or 0
+    in_tx = Transaction(
+        user_id=user.id,
+        wallet_id=to_w.id,
+        amount=amount,
+        currency_code=to_w.currency_code,
+        kind="transfer_in",
+        occurred_on=today,
+        note=note,
+    )
+    session.add(out_tx)
+    session.add(in_tx)
+    await session.flush()
+    out_tx.transfer_pair_id = in_tx.id
+    in_tx.transfer_pair_id = out_tx.id
     await session.commit()
-    return MoveLoansResponse(moved=moved)
+    return MoveLoansResponse(amount=amount, from_wallet_id=from_w.id, to_wallet_id=to_w.id)
 
 
 @router.delete("/{wallet_id}", status_code=status.HTTP_204_NO_CONTENT)

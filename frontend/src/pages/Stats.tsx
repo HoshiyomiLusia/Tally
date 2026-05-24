@@ -32,10 +32,15 @@ function thisMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+interface FxRate { id: number; on_date: string; base: string; quote: string; rate: number; }
+
 export default function Stats() {
   const [month, setMonth] = useState(thisMonth());
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
+  useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
 
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<FxRate[]>("/exchange-rates")).data });
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
   const monthly = useQuery({ queryKey: ["stats-monthly"], queryFn: async () => (await api.get<MonthlyPoint[]>("/stats/monthly-trend?months=12")).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
@@ -56,25 +61,126 @@ export default function Stats() {
     return Array.from(set).sort();
   }, [summary.data, monthly.data]);
 
+  // "" = 全部 (合并); 其他值 = 单币种
   const [activeCurrency, setActiveCurrency] = useState<string>("");
-  useEffect(() => {
-    if (!activeCurrency && allCurrencies.length) setActiveCurrency(allCurrencies[0]);
-  }, [allCurrencies, activeCurrency]);
 
-  const cur = (summary.data?.per_currency ?? []).find((s) => s.currency_code === activeCurrency);
-  const monthlyForCurrency = (monthly.data ?? []).filter((p) => p.currency_code === activeCurrency)
-    .map((p) => ({ ...p, net: p.income - p.expense }));
-  const compareForCurrency = (compare.data ?? []).filter((c) => c.currency_code === activeCurrency).slice(0, 15);
+  // FX: 把 amount 从 fromCode 换成 toCode (单位都是 smallest, 自动处理 digit 差)
+  const digitsMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of currencies.data ?? []) m.set(c.code, c.decimal_digits);
+    return m;
+  }, [currencies.data]);
+  const rateMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rates.data ?? []) {
+      const k = `${r.base}->${r.quote}`;
+      if (!m.has(k)) m.set(k, r.rate);  // 第一条 (按 date desc 排序)
+    }
+    return m;
+  }, [rates.data]);
+  const fxTo = (amount: number, fromCode: string, toCode: string): number => {
+    if (fromCode === toCode) return amount;
+    const fd = digitsMap.get(fromCode) ?? 2;
+    const td = digitsMap.get(toCode) ?? 2;
+    let rate = rateMap.get(`${fromCode}->${toCode}`);
+    if (rate == null) {
+      const rev = rateMap.get(`${toCode}->${fromCode}`);
+      if (rev == null || rev === 0) return 0;
+      rate = 1 / rev;
+    }
+    return Math.round(amount * rate * Math.pow(10, td - fd));
+  };
+
+  // === 单币种模式: 直接 filter (原行为) ===
+  // === 全部模式: 跨币种聚合, 全部换算到 baseCurrency ===
+  const isAll = activeCurrency === "";
+  const displayCode = isAll ? baseCurrency : activeCurrency;
+
+  // KPI 汇总
+  const cur = useMemo(() => {
+    const rows = summary.data?.per_currency ?? [];
+    if (!isAll) return rows.find((s) => s.currency_code === activeCurrency);
+    if (rows.length === 0) return undefined;
+    let income = 0, expense = 0, income_prev = 0, expense_prev = 0, avg_daily_expense = 0;
+    let days = 0;
+    for (const r of rows) {
+      income += fxTo(r.income, r.currency_code, baseCurrency);
+      expense += fxTo(r.expense, r.currency_code, baseCurrency);
+      income_prev += fxTo(r.income_prev, r.currency_code, baseCurrency);
+      expense_prev += fxTo(r.expense_prev, r.currency_code, baseCurrency);
+      avg_daily_expense += fxTo(r.avg_daily_expense, r.currency_code, baseCurrency);
+      days = Math.max(days, r.days_in_month);
+    }
+    return {
+      currency_code: baseCurrency, income, expense, net: income - expense,
+      income_prev, expense_prev, days_in_month: days, avg_daily_expense,
+    } as CurrencySummary;
+  }, [summary.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // 月趋势
+  const monthlyForCurrency = useMemo(() => {
+    const src = monthly.data ?? [];
+    if (!isAll) return src.filter((p) => p.currency_code === activeCurrency).map((p) => ({ ...p, net: p.income - p.expense }));
+    const m = new Map<string, { month: string; income: number; expense: number }>();
+    for (const p of src) {
+      const row = m.get(p.month) ?? { month: p.month, income: 0, expense: 0 };
+      row.income += fxTo(p.income, p.currency_code, baseCurrency);
+      row.expense += fxTo(p.expense, p.currency_code, baseCurrency);
+      m.set(p.month, row);
+    }
+    return Array.from(m.values())
+      .sort((a, b) => (a.month < b.month ? -1 : 1))
+      .map((p) => ({ ...p, currency_code: baseCurrency, net: p.income - p.expense }));
+  }, [monthly.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // 分类对比
+  const compareForCurrency = useMemo(() => {
+    const src = compare.data ?? [];
+    if (!isAll) return src.filter((c) => c.currency_code === activeCurrency).slice(0, 15);
+    const m = new Map<number | string, CatCompare>();
+    for (const c of src) {
+      const key = c.category_id ?? `null-${c.category_name}`;
+      const row = m.get(key) ?? { ...c, currency_code: baseCurrency, current: 0, previous: 0, delta: 0 };
+      row.current += fxTo(c.current, c.currency_code, baseCurrency);
+      row.previous += fxTo(c.previous, c.currency_code, baseCurrency);
+      row.delta = row.current - row.previous;
+      m.set(key, row);
+    }
+    return Array.from(m.values()).sort((a, b) => b.current - a.current).slice(0, 15);
+  }, [compare.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // 日热力
   const dailyForCurrency = useMemo(() => {
     const m = new Map<string, number>();
     for (const d of daily.data ?? []) {
-      if (d.currency_code !== activeCurrency) continue;
-      m.set(d.on_date, (m.get(d.on_date) ?? 0) + d.amount);
+      if (!isAll && d.currency_code !== activeCurrency) continue;
+      const v = isAll ? fxTo(d.amount, d.currency_code, baseCurrency) : d.amount;
+      m.set(d.on_date, (m.get(d.on_date) ?? 0) + v);
     }
     return m;
-  }, [daily.data, activeCurrency]);
-  const topMerchForCurrency = (topMerch.data ?? []).filter((m) => m.currency_code === activeCurrency);
-  const topTxForCurrency = (topTx.data ?? []).filter((t) => t.currency_code === activeCurrency);
+  }, [daily.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // Top 商家
+  const topMerchForCurrency = useMemo(() => {
+    const src = topMerch.data ?? [];
+    if (!isAll) return src.filter((m) => m.currency_code === activeCurrency);
+    const m = new Map<number | string, TopMerchant>();
+    for (const t of src) {
+      const key = t.merchant_id ?? `null-${t.merchant_name}`;
+      const row = m.get(key) ?? { ...t, currency_code: baseCurrency, total: 0, count: 0 };
+      row.total += fxTo(t.total, t.currency_code, baseCurrency);
+      row.count += t.count;
+      m.set(key, row);
+    }
+    return Array.from(m.values()).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [topMerch.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // Top tx: 单笔保留原币种, 全部模式下按折算值排序
+  const topTxForCurrency = useMemo(() => {
+    const src = topTx.data ?? [];
+    if (!isAll) return src.filter((t) => t.currency_code === activeCurrency);
+    return [...src].sort((a, b) => fxTo(b.amount, b.currency_code, baseCurrency) - fxTo(a.amount, a.currency_code, baseCurrency)).slice(0, 10);
+  }, [topTx.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
   return (
     <div className="px-4 py-5 md:px-6">
@@ -86,7 +192,11 @@ export default function Stats() {
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1">
+      <div className="mb-4 flex flex-wrap items-center gap-1">
+        <button
+          onClick={() => setActiveCurrency("")}
+          className={`rounded-full border px-3 py-1 text-xs ${isAll ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+        >全部 · 折算到 {baseCurrency}</button>
         {allCurrencies.map((c) => (
           <button
             key={c}
@@ -94,17 +204,27 @@ export default function Stats() {
             className={`rounded-full border px-3 py-1 text-xs ${activeCurrency === c ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
           >{c}</button>
         ))}
+        {isAll && allCurrencies.length > 0 && (
+          <select
+            value={baseCurrency}
+            onChange={(e) => setBaseCurrency(e.target.value)}
+            className="ml-1 rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:bg-ink-800"
+            title="选择折算基准币种"
+          >
+            {allCurrencies.map((c) => <option key={c} value={c}>基准 {c}</option>)}
+          </select>
+        )}
         {allCurrencies.length === 0 && <div className="text-sm text-ink-500">还没有交易数据</div>}
       </div>
 
       {cur && (
         <section className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <KPI label="支出" current={cur.expense} previous={cur.expense_prev} currency={activeCurrency} currencies={currencies.data} negativeIsBad />
-          <KPI label="收入" current={cur.income} previous={cur.income_prev} currency={activeCurrency} currencies={currencies.data} negativeIsBad={false} />
-          <KPI label="净额" current={cur.net} previous={cur.income_prev - cur.expense_prev} currency={activeCurrency} currencies={currencies.data} negativeIsBad={false} />
+          <KPI label="支出" current={cur.expense} previous={cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad />
+          <KPI label="收入" current={cur.income} previous={cur.income_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} />
+          <KPI label="净额" current={cur.net} previous={cur.income_prev - cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} />
           <div className="card">
             <div className="text-xs text-ink-500">日均支出</div>
-            <div className="mt-1 text-lg font-semibold">{formatAmount(cur.avg_daily_expense, activeCurrency, currencies.data)}</div>
+            <div className="mt-1 text-lg font-semibold">{formatAmount(cur.avg_daily_expense, displayCode, currencies.data)}</div>
             <div className="text-[10px] text-ink-400">月内 {cur.days_in_month} 天</div>
           </div>
         </section>
@@ -121,7 +241,7 @@ export default function Stats() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
                 <XAxis dataKey="month" fontSize={10} />
                 <YAxis fontSize={10} />
-                <Tooltip formatter={(v: number) => formatAmount(v, activeCurrency, currencies.data)} />
+                <Tooltip formatter={(v: number) => formatAmount(v, displayCode, currencies.data)} />
                 <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} name="收入" />
                 <Line type="monotone" dataKey="expense" stroke="#e11d48" strokeWidth={2} dot={{ r: 3 }} name="支出" />
                 <Line type="monotone" dataKey="net" stroke="#3b82f6" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} name="净" />

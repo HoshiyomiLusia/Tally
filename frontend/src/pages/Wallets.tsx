@@ -352,18 +352,22 @@ function WalletCardItem({
 
   const moveLoans = useMutation({
     mutationFn: async (targetId: number) =>
-      (await api.post<{ moved: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
+      (await api.post<{ amount: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["loan-accounts"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
-      alert(`已挪走 ${r.moved} 笔借贷交易`);
+      if (r.amount === 0) {
+        alert("当前钱包没有借贷调整, 无需转移");
+      } else {
+        alert(`已创建 ${formatAmount(r.amount, wallet.currency_code, currencies)} 的反向转账, 借贷调整已转移`);
+      }
       setPickerOpen(false);
     },
     onError: (e: unknown) => {
       const r = (e as { response?: { data?: { detail?: string } } }).response;
-      alert(r?.data?.detail ?? "合并失败");
+      alert(r?.data?.detail ?? "转移失败");
     },
   });
 
@@ -400,17 +404,19 @@ function WalletCardItem({
       {pickerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 dark:bg-ink-800">
-            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷挪到哪？</div>
+            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷调整转给哪个钱包？</div>
             <div className="mb-3 text-xs text-ink-500">
-              所有 loan_out / loan_repayment 交易会改挂到目标钱包. 不影响 system_balance,
-              只会让两边的物理余额重新分布.
+              不会改你已有的 loan_out / loan_repayment 交易（历史保留）, 而是新建一笔
+              <span className="font-medium text-ink-700 dark:text-ink-200"> 目标 → 当前 </span>
+              的转账, 金额 = {formatAmount(Math.abs(wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet), wallet.currency_code, currencies)}.
+              结果: 当前钱包物理余额回到 system; 目标钱包物理余额下降同等金额, 相当于接管了那部分对外债权.
             </div>
             <div className="space-y-1.5">
               {siblings.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => {
-                    if (confirm(`确认把 ${wallet.name} 的借贷全部挪到 ${t.name}？`)) {
+                    if (confirm(`确认: 新建 ${t.name} → ${wallet.name} 的转账, 金额 ${formatAmount(Math.abs(wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet), wallet.currency_code, currencies)}`)) {
                       moveLoans.mutate(t.id);
                     }
                   }}
