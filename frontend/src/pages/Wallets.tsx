@@ -82,8 +82,8 @@ export default function Wallets() {
         <div className="card text-sm text-ink-500">还没建 Wallet。点右上"新建 Wallet"开始。</div>
       )}
 
-      <div className="space-y-4">
-        {grouped.map(([code, list]) => {
+      <div className="space-y-6">
+        {grouped.map(([code, list], idx) => {
           const total = list.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
@@ -93,6 +93,7 @@ export default function Wallets() {
           }
           return (
             <div key={code}>
+              {idx > 0 && <div className="mb-6 border-t border-ink-200 dark:border-ink-700" />}
               <div className="mb-2 flex items-baseline justify-between px-1">
                 <div className="text-sm font-medium">{code} 账户</div>
                 <div className="text-sm font-semibold">{formatAmount(total, code, currencies.data)}</div>
