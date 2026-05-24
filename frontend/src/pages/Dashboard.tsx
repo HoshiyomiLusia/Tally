@@ -76,15 +76,15 @@ export default function Dashboard() {
       </div>
 
       <section className="mb-5">
-        <div className="rounded-2xl bg-gradient-to-br from-ink-800 to-ink-900 p-5 text-white shadow-lg dark:from-ink-700 dark:to-ink-900">
+        <div className="overview-card rounded-2xl p-5 shadow-sm">
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wider opacity-70">总资产（折算到）</span>
+            <span className="text-xs uppercase tracking-wider opacity-60">总资产（折算到）</span>
             <select
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
-              className="rounded bg-white/10 px-2 py-0.5 text-xs text-white outline-none"
+              className="overview-select rounded px-2 py-0.5 text-xs outline-none"
             >
-              {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code} className="text-ink-900">{c.code}</option>)}
+              {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
           </div>
           <div className="text-3xl font-semibold tracking-tight">
@@ -92,12 +92,12 @@ export default function Dashboard() {
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0).map((b) => (
-              <div key={b.currency_code} className="rounded-lg bg-white/10 p-2 backdrop-blur">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider opacity-70">
+              <div key={b.currency_code} className="overview-chip rounded-lg p-2">
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider opacity-60">
                   <span>{b.currency_code}</span>
                   {b.currency_code !== baseCurrency && <span>× {b.rate.toFixed(4)}</span>}
                 </div>
-                <div className={`mt-0.5 text-sm font-semibold ${b.balance < 0 ? "text-rose-300" : ""}`}>
+                <div className={`mt-0.5 text-sm font-semibold ${b.balance < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
                   {formatAmount(b.balance, b.currency_code, currencies.data)}
                 </div>
                 {b.currency_code !== baseCurrency && (

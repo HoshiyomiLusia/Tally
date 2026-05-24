@@ -47,6 +47,33 @@ body, #root {
 }
 
 /* --- Dark mode global tints for components not using @apply --- */
+/* --- Dashboard overview card (theme-aware) --- */
+.overview-card {
+  background: linear-gradient(135deg, #ffffff 0%, #ececef 100%);
+  color: #0f1014;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.overview-chip {
+  background: rgba(15, 16, 20, 0.05);
+}
+.overview-select {
+  background: rgba(15, 16, 20, 0.06);
+  color: #0f1014;
+}
+html.dark .overview-card {
+  background: linear-gradient(135deg, #1e1f24 0%, #0a0b0d 100%);
+  color: #ececef;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+html.dark .overview-chip {
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .overview-select {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ececef;
+}
+html.dark .overview-select option { color: #0f1014; }
+
 html.dark .bg-white { background-color: rgb(30 31 36); }
 html.dark .bg-ink-50 { background-color: rgb(15 16 20); }
 html.dark .bg-ink-100 { background-color: rgb(51 52 58 / 0.65); }
