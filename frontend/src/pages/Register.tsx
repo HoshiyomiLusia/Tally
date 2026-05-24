@@ -38,7 +38,7 @@ export default function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ink-50 px-4">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <form onSubmit={submit} className="card w-full max-w-sm space-y-4">
         <div>
           <div className="text-2xl font-semibold tracking-tight">注册</div>

@@ -1,10 +1,11 @@
 import {
-  BarChart3, HandCoins, LayoutDashboard, ListChecks, LogOut, PieChart, Settings as SettingsIcon,
-  Store, Tags, Users, Wallet,
+  BarChart3, HandCoins, LayoutDashboard, ListChecks, LogOut, Moon, PieChart,
+  Settings as SettingsIcon, Store, Sun, Tags, Users, Wallet,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
+import { useTheme } from "../lib/theme";
 
 const nav = [
   { to: "/", label: "仪表盘", icon: LayoutDashboard, end: true },
@@ -21,10 +22,20 @@ const nav = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 border-r border-ink-100 bg-white p-4 md:flex md:flex-col">
-        <div className="mb-6 px-2 text-xl font-semibold tracking-tight">Tally</div>
+        <div className="mb-6 flex items-center justify-between px-2">
+          <span className="text-xl font-semibold tracking-tight">Tally</span>
+          <button
+            onClick={toggle}
+            className="rounded-md p-1.5 text-ink-500 hover:bg-ink-100"
+            title={theme === "dark" ? "切换到浅色" : "切换到深色"}
+          >
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+        </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto">
           {nav.map((n) => (
             <NavLink

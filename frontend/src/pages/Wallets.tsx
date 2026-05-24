@@ -2,10 +2,30 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, Pencil, Plus, Scale, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } from "lucide-react";
+
 import ReconcileModal from "../components/ReconcileModal";
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount } from "../lib/format";
 import { REGION_LABELS, WALLET_PRESETS, type WalletPreset } from "../lib/walletPresets";
+
+const TYPE_ICON: Record<WalletType, LucideIcon> = {
+  cash: Banknote,
+  bank: Landmark,
+  credit_card: CreditCard,
+  e_wallet: Smartphone,
+  virtual: Globe2,
+};
+
+const TYPE_ORDER: WalletType[] = ["bank", "credit_card", "e_wallet", "cash", "virtual"];
+
+const TYPE_SECTION_LABEL: Record<WalletType, string> = {
+  bank: "借记卡 / 银行",
+  credit_card: "信用卡",
+  e_wallet: "电子钱包",
+  cash: "现金",
+  virtual: "虚拟",
+};
 
 const TYPE_LABELS: Record<WalletType, string> = {
   cash: "现金",
@@ -74,44 +94,47 @@ export default function Wallets() {
         <div className="card text-sm text-ink-500">还没建 Wallet。点右上"新建 Wallet"开始。</div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {grouped.map(([code, list]) => {
           const total = list.filter((w) => !w.archived).reduce((s, w) => s + w.balance, 0);
+          const byType = new Map<WalletType, Wallet[]>();
+          for (const w of list) {
+            const arr = byType.get(w.type) ?? [];
+            arr.push(w);
+            byType.set(w.type, arr);
+          }
           return (
-            <div key={code} className="card">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="font-medium">{code} 账户</div>
-                <div className="text-sm text-ink-700">{formatAmount(total, code, currencies.data)}</div>
+            <div key={code}>
+              <div className="mb-2 flex items-baseline justify-between px-1">
+                <div className="text-sm font-medium">{code} 账户</div>
+                <div className="text-sm font-semibold">{formatAmount(total, code, currencies.data)}</div>
               </div>
-              <div className="divide-y divide-ink-100">
-                {list.map((w) => (
-                  <div key={w.id} className={`flex items-center justify-between gap-2 py-2 ${w.archived ? "opacity-50" : ""}`}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-sm font-medium">{w.name}</span>
-                        <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-600">{TYPE_LABELS[w.type]}</span>
-                        {w.archived && <span className="text-[10px] text-ink-400">已归档</span>}
+              <div className="space-y-3">
+                {TYPE_ORDER.filter((t) => byType.has(t)).map((t) => {
+                  const wallets = byType.get(t)!;
+                  const Icon = TYPE_ICON[t];
+                  return (
+                    <div key={t}>
+                      <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
+                        <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      <div className="text-xs text-ink-500">初始 {formatAmount(w.initial_balance, code, currencies.data)}</div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {wallets.map((w) => (
+                          <WalletCardItem
+                            key={w.id}
+                            wallet={w}
+                            currencyCode={code}
+                            currencies={currencies.data ?? []}
+                            onReconcile={() => setReconcileFor(w)}
+                            onEdit={() => { setEditing(w); setOpen(true); }}
+                            onToggleArchive={() => archiveMut.mutate(w)}
+                            onDelete={() => { if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id); }}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className={`shrink-0 text-sm font-semibold ${w.type === "credit_card" && w.balance < 0 ? "text-rose-600" : ""}`}>
-                      {formatAmount(w.balance, code, currencies.data)}
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      <button onClick={() => setReconcileFor(w)} className="btn-ghost p-1.5" title="对账"><Scale size={14} /></button>
-                      <button onClick={() => { setEditing(w); setOpen(true); }} className="btn-ghost p-1.5"><Pencil size={14} /></button>
-                      <button onClick={() => archiveMut.mutate(w)} className="btn-ghost p-1.5" title={w.archived ? "取消归档" : "归档"}>
-                        {w.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id);
-                        }}
-                        className="btn-danger p-1.5"
-                      ><Trash2 size={14} /></button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -212,23 +235,19 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                 >{REGION_LABELS[r]}</button>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {presetsInRegion.map((p) => (
-                <button
-                  key={p.name}
-                  onClick={() => pickPreset(p)}
-                  className="group relative h-20 rounded-lg p-2 text-left transition hover:scale-[1.02]"
-                  style={{ background: `linear-gradient(135deg, ${p.color}, ${shade(p.color, -25)})` }}
-                >
-                  <div className="absolute inset-0 rounded-lg ring-1 ring-inset ring-white/20" />
-                  <div className="relative flex h-full flex-col justify-between text-white">
-                    <div className="flex items-start justify-between gap-1">
-                      <span className="text-xs font-semibold drop-shadow-sm">{p.name}</span>
-                      <span className="shrink-0 rounded bg-white/20 px-1 text-[9px]">{p.tag}</span>
-                    </div>
-                    <div className="text-[10px] opacity-80">{p.currency_code} · {TYPE_LABELS[p.type]}</div>
+            <div className="space-y-4">
+              {TYPE_ORDER.filter((t) => presetsInRegion.some((p) => p.type === t)).map((t) => (
+                <div key={t}>
+                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-500">
+                    {(() => { const I = TYPE_ICON[t]; return <I size={11} />; })()}
+                    <span>{TYPE_SECTION_LABEL[t]}</span>
                   </div>
-                </button>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {presetsInRegion.filter((p) => p.type === t).map((p) => (
+                      <PresetCard key={p.name} preset={p} onClick={() => pickPreset(p)} />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
             <button onClick={() => setShowCustom(true)} className="btn-ghost w-full justify-center border border-dashed border-ink-200">
@@ -315,4 +334,99 @@ function shade(hex: string, percent: number): string {
   const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * percent / 100)));
   const b = Math.max(0, Math.min(255, (num & 0xff) + Math.round(255 * percent / 100)));
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+}
+
+function WalletCardItem({
+  wallet,
+  currencyCode,
+  currencies,
+  onReconcile,
+  onEdit,
+  onToggleArchive,
+  onDelete,
+}: {
+  wallet: Wallet;
+  currencyCode: string;
+  currencies: Currency[];
+  onReconcile: () => void;
+  onEdit: () => void;
+  onToggleArchive: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = TYPE_ICON[wallet.type];
+  const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
+  const isNegative = wallet.balance < 0;
+  return (
+    <div
+      className={`group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60 ${wallet.archived ? "opacity-50" : ""}`}
+    >
+      <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
+      <div className="absolute right-2 top-2 opacity-30" style={{ color }}>
+        <Icon size={36} />
+      </div>
+      <div className="relative">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium">{wallet.name}</span>
+          {wallet.archived && <span className="text-[10px] text-ink-400">已归档</span>}
+        </div>
+        <div className="text-xs text-ink-500">
+          {TYPE_LABELS[wallet.type]} · 初始 {formatAmount(wallet.initial_balance, currencyCode, currencies)}
+        </div>
+        <div className={`mt-1 text-lg font-semibold ${wallet.type === "credit_card" && isNegative ? "text-rose-600" : isNegative ? "text-rose-500" : ""}`}>
+          {formatAmount(wallet.balance, currencyCode, currencies)}
+        </div>
+        <div className="mt-1 flex gap-0.5">
+          <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
+          <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>
+          <button onClick={onToggleArchive} className="btn-ghost px-2 py-1 text-xs" title={wallet.archived ? "取消归档" : "归档"}>
+            {wallet.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+          </button>
+          <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DEFAULT_TYPE_COLOR: Record<WalletType, string> = {
+  cash: "#5f6068",
+  bank: "#0b59a8",
+  credit_card: "#9b1c2f",
+  e_wallet: "#0f7d3a",
+  virtual: "#7c3aed",
+};
+
+function PresetCard({ preset, onClick }: { preset: WalletPreset; onClick: () => void }) {
+  const Icon = TYPE_ICON[preset.type];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative aspect-[16/10] overflow-hidden rounded-xl p-2.5 text-left text-white shadow-md transition hover:scale-[1.02]"
+      style={{
+        background: `linear-gradient(135deg, ${preset.color} 0%, ${shade(preset.color, -32)} 100%)`,
+      }}
+    >
+      <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/15" />
+      <div
+        className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-15"
+        style={{ background: "radial-gradient(circle, white, transparent 70%)" }}
+      />
+      <div className="relative flex h-full flex-col justify-between">
+        <div className="flex items-start justify-between gap-1">
+          <span className="line-clamp-2 text-xs font-semibold leading-tight drop-shadow-sm">{preset.name}</span>
+          <span className="shrink-0 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider">
+            {preset.tag}
+          </span>
+        </div>
+        <div className="flex items-end justify-between">
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-4 rounded-[2px] bg-gradient-to-br from-amber-200 to-amber-400 opacity-80 shadow-inner" />
+            <span className="text-[10px] font-medium tracking-wider opacity-90">{preset.currency_code}</span>
+          </div>
+          <Icon size={14} className="opacity-70" />
+        </div>
+      </div>
+    </button>
+  );
 }

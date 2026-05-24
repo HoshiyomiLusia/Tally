@@ -4,8 +4,20 @@
 
 html, body, #root {
   height: 100%;
-  background: #f7f7f8;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+html {
+  background: #f7f7f8;
+  color: #1e1f24;
+}
+html.dark {
+  background: #0a0b0d;
+  color: #ececef;
+}
+body, #root {
+  background: inherit;
+  color: inherit;
 }
 
 @layer components {
@@ -13,18 +25,55 @@ html, body, #root {
     @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
   }
   .btn-primary {
-    @apply btn bg-ink-800 text-white hover:bg-ink-700 disabled:opacity-50;
+    @apply btn bg-ink-800 text-white hover:bg-ink-700 disabled:opacity-50
+           dark:bg-ink-100 dark:text-ink-900 dark:hover:bg-white;
   }
   .btn-ghost {
-    @apply btn text-ink-700 hover:bg-ink-100;
+    @apply btn text-ink-700 hover:bg-ink-100
+           dark:text-ink-200 dark:hover:bg-ink-800;
   }
   .btn-danger {
-    @apply btn text-red-600 hover:bg-red-50;
+    @apply btn text-red-600 hover:bg-red-50
+           dark:text-red-400 dark:hover:bg-red-950/40;
   }
   .input {
-    @apply w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-ink-500;
+    @apply w-full rounded-md border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-ink-500
+           dark:border-ink-700 dark:bg-ink-800 dark:text-ink-100 dark:placeholder:text-ink-500 dark:focus:border-ink-400;
   }
   .card {
-    @apply rounded-xl border border-ink-100 bg-white p-4 shadow-sm;
+    @apply rounded-xl border border-ink-100 bg-white p-4 shadow-sm
+           dark:border-ink-800 dark:bg-ink-800/60 dark:shadow-none;
   }
 }
+
+/* --- Dark mode global tints for components not using @apply --- */
+html.dark .bg-white { background-color: rgb(30 31 36); }
+html.dark .bg-ink-50 { background-color: rgb(15 16 20); }
+html.dark .bg-ink-100 { background-color: rgb(51 52 58 / 0.65); }
+html.dark .border-ink-100 { border-color: rgb(51 52 58); }
+html.dark .border-ink-200 { border-color: rgb(72 73 79); }
+html.dark .divide-ink-100 > * + * { border-color: rgb(51 52 58); }
+html.dark .text-ink-900 { color: rgb(236 236 239); }
+html.dark .text-ink-800 { color: rgb(211 211 216); }
+html.dark .text-ink-700 { color: rgb(171 172 180); }
+html.dark .text-ink-600 { color: rgb(171 172 180); }
+html.dark .text-ink-500 { color: rgb(127 128 137); }
+html.dark .text-ink-400 { color: rgb(95 96 104); }
+html.dark .hover\:bg-ink-50:hover { background-color: rgb(30 31 36); }
+html.dark .hover\:bg-ink-100:hover { background-color: rgb(51 52 58); }
+html.dark .hover\:bg-ink-200:hover { background-color: rgb(72 73 79); }
+html.dark .ring-ink-800 { --tw-ring-color: rgb(236 236 239); }
+
+/* Soft color tints used in chips look too harsh on dark — soften them */
+html.dark .bg-purple-50 { background-color: rgb(76 29 149 / 0.3); }
+html.dark .bg-blue-50 { background-color: rgb(30 58 138 / 0.3); }
+html.dark .bg-amber-50 { background-color: rgb(120 53 15 / 0.3); }
+html.dark .bg-rose-50 { background-color: rgb(159 18 57 / 0.25); }
+html.dark .bg-emerald-50 { background-color: rgb(6 78 59 / 0.3); }
+html.dark .text-amber-700 { color: rgb(252 211 77); }
+html.dark .text-purple-700 { color: rgb(196 181 253); }
+html.dark .text-blue-700 { color: rgb(147 197 253); }
+html.dark .text-amber-600 { color: rgb(252 211 77); }
+html.dark .text-emerald-600 { color: rgb(110 231 183); }
+html.dark .text-rose-600 { color: rgb(252 165 165); }
+html.dark .text-sky-600 { color: rgb(125 211 252); }
