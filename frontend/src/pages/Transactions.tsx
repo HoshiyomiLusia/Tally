@@ -133,7 +133,7 @@ export default function Transactions() {
   const hasMore = (txs.data?.length ?? 0) === pageSize;
 
   return (
-    <div className="px-4 py-5 md:px-6">
+    <div className="px-4 py-5 pb-28 md:px-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">账单</h1>
@@ -262,20 +262,28 @@ export default function Transactions() {
         ))}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-2 text-sm">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-ink-500">每页</span>
           <select className="input w-20" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
             {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-ink-500">第 {page + 1} 页</span>
-          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="btn-ghost px-2 py-1 disabled:opacity-30">
-            <ChevronLeft size={14} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPage(Math.max(0, page - 1))}
+            disabled={page === 0}
+            className="btn-ghost flex items-center gap-1 px-3 py-1.5 disabled:opacity-30"
+          >
+            <ChevronLeft size={14} /> 上一页
           </button>
-          <button onClick={() => setPage(page + 1)} disabled={!hasMore} className="btn-ghost px-2 py-1 disabled:opacity-30">
-            <ChevronRight size={14} />
+          <span className="rounded bg-ink-100 px-2 py-1 text-xs font-medium text-ink-700 dark:bg-ink-700 dark:text-ink-200">第 {page + 1} 页</span>
+          <button
+            onClick={() => setPage(page + 1)}
+            disabled={!hasMore}
+            className="btn-ghost flex items-center gap-1 px-3 py-1.5 disabled:opacity-30"
+          >
+            下一页 <ChevronRight size={14} />
           </button>
         </div>
       </div>
