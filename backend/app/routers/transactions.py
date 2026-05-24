@@ -7,10 +7,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Category, Merchant, Transaction, User, Wallet
+from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+class TransferCreate(BaseModel):
+    from_wallet_id: int
+    to_wallet_id: int
+    from_amount: int
+    to_amount: int
+    occurred_on: date
+    note: str = ""
+
+
+class FxPreview(BaseModel):
+    from_currency: str
+    to_currency: str
+    from_amount: int
+    to_amount: int
+    rate: float | None
+    on_date: date | None
 
 
 class FrequentItem(BaseModel):
@@ -150,6 +168,101 @@ async def frequent(
             count=int(cnt), last_on=last_on,
         ))
     return out
+
+
+@router.get("/fx-preview", response_model=FxPreview)
+async def fx_preview(
+    from_currency: str,
+    to_currency: str,
+    from_amount: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if from_currency == to_currency:
+        return FxPreview(
+            from_currency=from_currency, to_currency=to_currency,
+            from_amount=from_amount, to_amount=from_amount, rate=1.0, on_date=None,
+        )
+    digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
+    fd = digits.get(from_currency, 2)
+    td = digits.get(to_currency, 2)
+
+    r = (
+        await session.execute(
+            select(ExchangeRate.rate, ExchangeRate.on_date)
+            .where(ExchangeRate.base == from_currency, ExchangeRate.quote == to_currency)
+            .order_by(ExchangeRate.on_date.desc())
+            .limit(1)
+        )
+    ).first()
+    if r is None:
+        # try reverse pair
+        rev = (
+            await session.execute(
+                select(ExchangeRate.rate, ExchangeRate.on_date)
+                .where(ExchangeRate.base == to_currency, ExchangeRate.quote == from_currency)
+                .order_by(ExchangeRate.on_date.desc())
+                .limit(1)
+            )
+        ).first()
+        if rev is None:
+            return FxPreview(
+                from_currency=from_currency, to_currency=to_currency,
+                from_amount=from_amount, to_amount=0, rate=None, on_date=None,
+            )
+        rate = 1.0 / rev[0] if rev[0] else 0.0
+        on_d = rev[1]
+    else:
+        rate = float(r[0])
+        on_d = r[1]
+
+    to_amount = int(round(from_amount * rate * (10 ** (td - fd))))
+    return FxPreview(
+        from_currency=from_currency, to_currency=to_currency,
+        from_amount=from_amount, to_amount=to_amount, rate=rate, on_date=on_d,
+    )
+
+
+@router.post("/transfer", response_model=list[TransactionRead], status_code=status.HTTP_201_CREATED)
+async def create_transfer(
+    payload: TransferCreate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    if payload.from_wallet_id == payload.to_wallet_id:
+        raise HTTPException(400, "from and to wallet must differ")
+    if payload.from_amount <= 0 or payload.to_amount <= 0:
+        raise HTTPException(400, "amounts must be positive")
+    src = await _check_wallet(session, user, payload.from_wallet_id)
+    dst = await _check_wallet(session, user, payload.to_wallet_id)
+
+    out_tx = Transaction(
+        user_id=user.id,
+        wallet_id=src.id,
+        amount=payload.from_amount,
+        currency_code=src.currency_code,
+        kind="transfer_out",
+        occurred_on=payload.occurred_on,
+        note=payload.note,
+    )
+    in_tx = Transaction(
+        user_id=user.id,
+        wallet_id=dst.id,
+        amount=payload.to_amount,
+        currency_code=dst.currency_code,
+        kind="transfer_in",
+        occurred_on=payload.occurred_on,
+        note=payload.note,
+    )
+    session.add(out_tx)
+    session.add(in_tx)
+    await session.flush()
+    out_tx.transfer_pair_id = in_tx.id
+    in_tx.transfer_pair_id = out_tx.id
+    await session.commit()
+    await session.refresh(out_tx)
+    await session.refresh(in_tx)
+    return [out_tx, in_tx]
 
 
 @router.get("/{tid}", response_model=TransactionRead)

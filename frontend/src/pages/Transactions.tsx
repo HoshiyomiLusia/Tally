@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import TransactionForm from "../components/TransactionForm";
+import TransferForm from "../components/TransferForm";
 import { api, type Category, type Contact, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
 import { formatAmount, todayIso } from "../lib/format";
 
@@ -41,6 +42,7 @@ export default function Transactions() {
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   useEffect(() => { setPage(0); }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
   useEffect(() => { setChildCatId(""); }, [parentCatId]);
@@ -134,9 +136,14 @@ export default function Transactions() {
           <h1 className="text-xl font-semibold tracking-tight">账单</h1>
           <p className="text-sm text-ink-500">所有记账记录（含分摊、借贷）</p>
         </div>
-        <button onClick={() => { setEditing(null); setOpen(true); }} className="btn-primary">
-          <Plus size={14} /> 添加
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setTransferOpen(true)} className="btn-ghost">
+            <ArrowLeftRight size={14} /> 转移
+          </button>
+          <button onClick={() => { setEditing(null); setOpen(true); }} className="btn-primary">
+            <Plus size={14} /> 添加
+          </button>
+        </div>
       </div>
 
       {(frequent.data ?? []).length > 0 && (
@@ -294,6 +301,7 @@ export default function Transactions() {
       </div>
 
       <TransactionForm open={open} onClose={() => { setOpen(false); setEditing(null); }} editing={editing} />
+      <TransferForm open={transferOpen} onClose={() => setTransferOpen(false)} />
     </div>
   );
 }
