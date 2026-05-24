@@ -47,6 +47,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [participants, setParticipants] = useState<ParticipantState[]>([]);
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
+  const merchantInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +56,9 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setWalletId(editing.wallet_id);
       setCategoryId(editing.category_id);
       setMerchantId(editing.merchant_id);
-      setMerchantInput(merchants.data?.find((m) => m.id === editing.merchant_id)?.name ?? "");
+      const initName = merchants.data?.find((m) => m.id === editing.merchant_id)?.name ?? "";
+      setMerchantInput(initName);
+      if (merchantInputRef.current) merchantInputRef.current.value = initName;
       setOccurredOn(editing.occurred_on);
       setNote(editing.note);
       setIsRecurring(editing.is_recurring);
@@ -69,6 +72,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setKind("expense");
       setCategoryId(null);
       setMerchantInput("");
+      if (merchantInputRef.current) merchantInputRef.current.value = "";
       setMerchantId(null);
       setAmountText("");
       setOccurredOn(todayIso());
@@ -142,6 +146,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     onSuccess: (m) => {
       qc.invalidateQueries({ queryKey: ["merchants"] });
       setMerchantInput(m.name);
+      if (merchantInputRef.current) merchantInputRef.current.value = m.name;
       setMerchantId(m.id);
     },
   });
@@ -179,6 +184,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
   function onMerchantPick(m: Merchant) {
     setMerchantInput(m.name);
+    if (merchantInputRef.current) merchantInputRef.current.value = m.name;
     setMerchantId(m.id);
     if (m.default_category_id && !categoryId) {
       setCategoryId(m.default_category_id);
@@ -403,11 +409,11 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           <div>
             <div className="mb-1 text-xs text-ink-500">商家 (可选)</div>
             <input
+              ref={merchantInputRef}
               className="input"
-              value={merchantInput}
+              defaultValue=""
               placeholder="输入或选择 (支持中/日/英别名匹配)"
-              autoComplete="off"
-              onChange={(e) => { setMerchantInput(e.target.value); setMerchantId(null); }}
+              onInput={(e) => { setMerchantInput((e.target as HTMLInputElement).value); setMerchantId(null); }}
             />
             {merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
