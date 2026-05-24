@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
 import TransactionForm from "../components/TransactionForm";
-import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
+import { api, type Budget, type BudgetProgress, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
 
 interface CrossTotal {
@@ -14,7 +13,6 @@ interface CrossTotal {
   breakdown: { currency_code: string; balance: number; rate: number; converted: number }[];
 }
 
-const PIE_COLORS = ["#1e1f24", "#48494f", "#7f8089", "#abacb4", "#d3d3d8", "#ececef", "#33343a", "#5f6068"];
 
 export default function Dashboard() {
   const [month, setMonth] = useState<string>(() => {
@@ -32,6 +30,7 @@ export default function Dashboard() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({ queryKey: ["recurring-upcoming"], queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?days=14")).data });
   const budgetProgress = useQuery({ queryKey: ["budgets-progress", month], queryFn: async () => (await api.get<BudgetProgress[]>(`/budgets/progress?on_date=${month}-15`)).data });
+  const budgets = useQuery({ queryKey: ["budgets"], queryFn: async () => (await api.get<Budget[]>("/budgets")).data });
 
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
@@ -218,10 +217,14 @@ export default function Dashboard() {
               const over = p.percent > 1;
               const warn = p.percent > 0.8 && !over;
               const barColor = over ? "bg-rose-500" : warn ? "bg-amber-500" : "bg-emerald-500";
+              const note = budgets.data?.find((b) => b.id === p.budget_id)?.note ?? "";
               return (
                 <div key={p.budget_id}>
                   <div className="flex justify-between text-sm">
-                    <span>{p.category_name} <span className="text-xs text-ink-400">{p.currency_code}</span></span>
+                    <span>
+                      {p.category_name} <span className="text-xs text-ink-400">{p.currency_code}</span>
+                      {note && <span className="ml-1 text-xs text-ink-500">· {note}</span>}
+                    </span>
                     <span className={over ? "text-rose-600" : ""}>
                       {formatAmount(p.spent, p.currency_code, currencies.data)} / {formatAmount(p.budget_amount, p.currency_code, currencies.data)}
                     </span>
@@ -240,34 +243,31 @@ export default function Dashboard() {
         <section className="mb-5">
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类支出</h2>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {breakdownByCurrency.map(([code, items]) => (
-              <div key={code} className="card">
-                <div className="mb-2 text-sm text-ink-600">{code}</div>
-                <div className="grid grid-cols-2 gap-4">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie data={items.slice(0, 8)} dataKey="amount" nameKey="category_name" innerRadius={40} outerRadius={80}>
-                        {items.slice(0, 8).map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => formatAmount(v, code, currencies.data)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="space-y-1 self-center text-sm">
-                    {items.slice(0, 8).map((it, i) => (
-                      <div key={it.category_id ?? -i} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                          <span className="truncate">{it.emoji} {it.category_name}</span>
+            {breakdownByCurrency.map(([code, items]) => {
+              const top = items.slice(0, 8);
+              const max = Math.max(1, ...top.map((it) => it.amount));
+              return (
+                <div key={code} className="card">
+                  <div className="mb-2 text-sm text-ink-600">{code}</div>
+                  <div className="space-y-1.5">
+                    {top.map((it, i) => (
+                      <div key={it.category_id ?? -i}>
+                        <div className="mb-0.5 flex items-center justify-between gap-2 text-sm">
+                          <span className="flex items-center gap-1.5 truncate">
+                            <span>{it.emoji}</span>
+                            <span className="truncate">{it.category_name}</span>
+                          </span>
+                          <span className="shrink-0 font-medium text-rose-600">{formatAmount(it.amount, code, currencies.data)}</span>
                         </div>
-                        <span className="shrink-0 text-ink-700">{formatAmount(it.amount, code, currencies.data)}</span>
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-700/40">
+                          <div className="h-full bg-rose-500/70" style={{ width: `${(it.amount / max) * 100}%` }} />
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
