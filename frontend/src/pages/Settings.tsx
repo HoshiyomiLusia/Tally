@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronRight, Download, Plus, RefreshCw, Store, Tags, Trash2, Upload, Users } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Store, Tags, Trash2, Upload, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -17,7 +17,7 @@ interface Rate {
 }
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [resetOpen, setResetOpen] = useState(false);
@@ -105,9 +105,12 @@ export default function Settings() {
         <p className="text-sm text-ink-500">账号 · 汇率 · 备份导入导出</p>
       </div>
 
-      <div className="card mb-3">
-        <div className="text-sm text-ink-500">已登录</div>
-        <div className="font-medium">{user?.username}</div>
+      <div className="card mb-3 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm text-ink-500">已登录</div>
+          <div className="font-medium">{user?.username}</div>
+        </div>
+        <button onClick={logout} className="btn-ghost"><LogOut size={14} /> 登出</button>
       </div>
 
       <div className="card mb-3 p-0">

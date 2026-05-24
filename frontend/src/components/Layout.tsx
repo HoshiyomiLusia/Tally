@@ -1,10 +1,9 @@
 import {
-  BarChart3, HandCoins, LayoutDashboard, ListChecks, LogOut, Moon, PieChart,
+  BarChart3, HandCoins, LayoutDashboard, ListChecks, Moon, PieChart,
   Settings as SettingsIcon, Sun, Wallet,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
 
 const nav = [
@@ -18,7 +17,6 @@ const nav = [
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   return (
     <div className="flex min-h-screen">
@@ -49,12 +47,6 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-4 border-t border-ink-100 pt-3 text-xs">
-          <div className="truncate px-2 text-ink-500" title={user?.username}>{user?.username}</div>
-          <button onClick={logout} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-ink-500 hover:bg-ink-50">
-            <LogOut size={14} /> 登出
-          </button>
-        </div>
       </aside>
       <nav className="fixed inset-x-0 bottom-0 z-10 flex justify-around overflow-x-auto border-t border-ink-100 bg-white py-1 md:hidden">
         {nav.map((n) => (
