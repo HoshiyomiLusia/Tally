@@ -133,21 +133,25 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const deferredMerchantInput = useDeferredValue(merchantInput);
   const merchantSuggestions = useMemo(() => {
     const all = merchants.data ?? [];
+    // 用户在输入时, 搜全量 —— 跨分类也能命中 (例: Uber 默认挂"共享打车", 但我
+    // 现在在"固定账单"下记账, 也应该能搜到 Uber 然后用它). 分类过滤只在没输入
+    // 时收窄默认 12 个建议.
+    if (deferredMerchantInput) {
+      const q = deferredMerchantInput.toLowerCase();
+      return all.filter((m) => {
+        if (m.name.toLowerCase().includes(q)) return true;
+        if (m.aliases && m.aliases.toLowerCase().includes(q)) return true;
+        return false;
+      }).slice(0, 12);
+    }
     let pool = all;
     if (categoryId) {
-      // 选的是父类时, 子类下的商家也算; 选的是子类时, 就严格只匹配该子类
       const kids = childrenByParent.get(categoryId) ?? [];
       const accept = new Set<number>([categoryId, ...kids.map((c) => c.id)]);
       const matched = all.filter((m) => m.default_category_id != null && accept.has(m.default_category_id));
       if (matched.length > 0) pool = matched;
     }
-    if (!deferredMerchantInput) return pool.slice(0, 12);
-    const q = deferredMerchantInput.toLowerCase();
-    return pool.filter((m) => {
-      if (m.name.toLowerCase().includes(q)) return true;
-      if (m.aliases && m.aliases.toLowerCase().includes(q)) return true;
-      return false;
-    }).slice(0, 12);
+    return pool.slice(0, 12);
   }, [merchants.data, deferredMerchantInput, categoryId, childrenByParent]);
 
   const createCustomMerchant = useMutation({
