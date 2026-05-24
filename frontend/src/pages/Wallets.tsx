@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import ReconcileModal from "../components/ReconcileModal";
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount } from "../lib/format";
+import { REGION_LABELS, WALLET_PRESETS, type WalletPreset } from "../lib/walletPresets";
 
 const TYPE_LABELS: Record<WalletType, string> = {
   cash: "现金",
@@ -130,7 +131,10 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
   const [name, setName] = useState("");
   const [type, setType] = useState<WalletType>("cash");
   const [currencyCode, setCurrencyCode] = useState("JPY");
+  const [color, setColor] = useState("");
   const [initialText, setInitialText] = useState("");
+  const [region, setRegion] = useState<WalletPreset["region"] | "ALL">("JP");
+  const [showCustom, setShowCustom] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -139,24 +143,37 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       setName(editing.name);
       setType(editing.type);
       setCurrencyCode(editing.currency_code);
+      setColor(editing.color || "");
       const cur = currencies.data?.find((c) => c.code === editing.currency_code);
       const d = cur?.decimal_digits ?? 2;
       setInitialText((editing.initial_balance / Math.pow(10, d)).toString());
+      setShowCustom(true);
     } else {
       setName("");
       setType("cash");
       setCurrencyCode("JPY");
+      setColor("");
       setInitialText("");
+      setRegion("JP");
+      setShowCustom(false);
     }
     setError("");
   }, [open, editing, currencies.data]);
+
+  function pickPreset(p: WalletPreset) {
+    setName(p.name);
+    setType(p.type);
+    setCurrencyCode(p.currency_code);
+    setColor(p.color);
+    setShowCustom(true);
+  }
 
   const save = useMutation({
     mutationFn: async () => {
       const cur = currencies.data?.find((c) => c.code === currencyCode);
       const d = cur?.decimal_digits ?? 2;
       const initial = parseAmount(initialText || "0", d);
-      const payload: Record<string, unknown> = { name, type };
+      const payload: Record<string, unknown> = { name, type, color };
       if (!editing) {
         payload.currency_code = currencyCode;
         payload.initial_balance = initial;
@@ -176,50 +193,126 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
 
   if (!open) return null;
 
+  const presetsInRegion = WALLET_PRESETS.filter((p) => p.region === region);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 text-lg font-semibold">{editing ? "编辑 Wallet" : "新建 Wallet"}</div>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs text-ink-500">名称</span>
-            <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 三井卡 / 微信余额" autoFocus />
-          </label>
-          <label className="block">
-            <span className="text-xs text-ink-500">类型</span>
-            <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as WalletType)}>
-              <option value="cash">现金</option>
-              <option value="bank">借记卡</option>
-              <option value="credit_card">信用卡</option>
-              <option value="e_wallet">电子钱包</option>
-              <option value="virtual">虚拟</option>
-            </select>
-          </label>
-          {!editing && (
-            <>
+
+        {!editing && !showCustom && (
+          <div className="space-y-3">
+            <div className="text-xs text-ink-500">选择预设卡片（或下方"自定义"）</div>
+            <div className="flex gap-1 overflow-x-auto">
+              {(["JP", "CN", "GLOBAL", "CASH"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRegion(r)}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs ${region === r ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+                >{REGION_LABELS[r]}</button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {presetsInRegion.map((p) => (
+                <button
+                  key={p.name}
+                  onClick={() => pickPreset(p)}
+                  className="group relative h-20 rounded-lg p-2 text-left transition hover:scale-[1.02]"
+                  style={{ background: `linear-gradient(135deg, ${p.color}, ${shade(p.color, -25)})` }}
+                >
+                  <div className="absolute inset-0 rounded-lg ring-1 ring-inset ring-white/20" />
+                  <div className="relative flex h-full flex-col justify-between text-white">
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="text-xs font-semibold drop-shadow-sm">{p.name}</span>
+                      <span className="shrink-0 rounded bg-white/20 px-1 text-[9px]">{p.tag}</span>
+                    </div>
+                    <div className="text-[10px] opacity-80">{p.currency_code} · {TYPE_LABELS[p.type]}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowCustom(true)} className="btn-ghost w-full justify-center border border-dashed border-ink-200">
+              + 自定义（不用预设）
+            </button>
+          </div>
+        )}
+
+        {(editing || showCustom) && (
+          <div className="space-y-3">
+            {!editing && (
+              <button onClick={() => setShowCustom(false)} className="text-xs text-ink-500 hover:text-ink-700">← 回到预设</button>
+            )}
+            {color && (
+              <div className="h-16 rounded-lg p-2 text-white" style={{ background: `linear-gradient(135deg, ${color}, ${shade(color, -25)})` }}>
+                <div className="text-xs font-semibold">{name || "未命名"}</div>
+                <div className="text-[10px] opacity-80">{currencyCode} · {TYPE_LABELS[type]}</div>
+              </div>
+            )}
+            <label className="block">
+              <span className="text-xs text-ink-500">名称</span>
+              <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 三井卡 / 微信余额" autoFocus />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
               <label className="block">
-                <span className="text-xs text-ink-500">币种</span>
-                <select className="input mt-1" value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
-                  {(currencies.data ?? []).map((c) => (
-                    <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
-                  ))}
+                <span className="text-xs text-ink-500">类型</span>
+                <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as WalletType)}>
+                  <option value="cash">现金</option>
+                  <option value="bank">借记卡</option>
+                  <option value="credit_card">信用卡</option>
+                  <option value="e_wallet">电子钱包</option>
+                  <option value="virtual">虚拟</option>
                 </select>
               </label>
+              {!editing && (
+                <label className="block">
+                  <span className="text-xs text-ink-500">币种</span>
+                  <select className="input mt-1" value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
+                    {(currencies.data ?? []).map((c) => (
+                      <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <label className="block">
+              <span className="text-xs text-ink-500">卡片颜色（可选）</span>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {["#5f6068", "#0f7d3a", "#0b59a8", "#a8051c", "#ec7c2f", "#bf0000", "#c8102e", "#07c160", "#1677ff", "#9b1c2f", "#1d1d1f"].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    className={`h-6 w-6 rounded-full ring-2 ${color === c ? "ring-ink-800" : "ring-transparent"}`}
+                    style={{ background: c }}
+                  />
+                ))}
+                <button type="button" onClick={() => setColor("")} className="text-xs text-ink-500">清除</button>
+              </div>
+            </label>
+            {!editing && (
               <label className="block">
                 <span className="text-xs text-ink-500">初始余额</span>
                 <input className="input mt-1" inputMode="decimal" value={initialText} onChange={(e) => setInitialText(e.target.value)} placeholder="0" />
               </label>
-            </>
-          )}
-          {error && <div className="text-sm text-red-600">{error}</div>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="btn-ghost">取消</button>
-            <button onClick={() => save.mutate()} disabled={save.isPending || !name} className="btn-primary">
-              {save.isPending ? "保存中…" : "保存"}
-            </button>
+            )}
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={onClose} className="btn-ghost">取消</button>
+              <button onClick={() => save.mutate()} disabled={save.isPending || !name} className="btn-primary">
+                {save.isPending ? "保存中…" : "保存"}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
+}
+
+function shade(hex: string, percent: number): string {
+  const num = parseInt(hex.replace("#", ""), 16);
+  const r = Math.max(0, Math.min(255, ((num >> 16) & 0xff) + Math.round(255 * percent / 100)));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + Math.round(255 * percent / 100)));
+  const b = Math.max(0, Math.min(255, (num & 0xff) + Math.round(255 * percent / 100)));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }

@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 
 import { api, type Contact } from "../lib/api";
 
+const CONTACT_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
+  "#3b82f6", "#8b5cf6", "#ec4899", "#92400e", "#5f6068",
+];
+
 export default function Contacts() {
   const qc = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
@@ -71,14 +76,14 @@ export default function Contacts() {
 function ContactForm({ open, onClose, editing }: { open: boolean; onClose: () => void; editing: Contact | null }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
-  const [color, setColor] = useState("#888888");
+  const [color, setColor] = useState(CONTACT_COLORS[0]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setName(editing?.name ?? "");
-    setColor(editing?.color || "#888888");
+    setColor(editing?.color || CONTACT_COLORS[0]);
     setNote(editing?.note ?? "");
     setError("");
   }, [open, editing]);
@@ -109,10 +114,21 @@ function ContactForm({ open, onClose, editing }: { open: boolean; onClose: () =>
             <span className="text-xs text-ink-500">名称</span>
             <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
-          <label className="block">
+          <div className="block">
             <span className="text-xs text-ink-500">标识色</span>
-            <input className="mt-1 h-8 w-16" type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-          </label>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {CONTACT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`h-7 w-7 rounded-full ring-2 transition ${color === c ? "ring-ink-800" : "ring-transparent hover:ring-ink-200"}`}
+                  style={{ background: c }}
+                  aria-label={c}
+                />
+              ))}
+            </div>
+          </div>
           <label className="block">
             <span className="text-xs text-ink-500">备注 (可选)</span>
             <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} />

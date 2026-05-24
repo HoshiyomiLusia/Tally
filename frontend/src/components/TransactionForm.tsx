@@ -116,10 +116,19 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
   const merchantSuggestions = useMemo(() => {
     const all = merchants.data ?? [];
-    if (!merchantInput) return all.slice(0, 8);
+    let pool = all;
+    if (categoryId) {
+      const cat = filteredCategories.find((c) => c.id === categoryId);
+      const parentId = cat?.parent_id ?? categoryId;
+      const siblings = filteredCategories.filter((c) => c.id === parentId || c.parent_id === parentId).map((c) => c.id);
+      const relevant = new Set<number>([categoryId, ...siblings]);
+      const matched = all.filter((m) => m.default_category_id != null && relevant.has(m.default_category_id));
+      if (matched.length > 0) pool = matched;
+    }
+    if (!merchantInput) return pool.slice(0, 8);
     const q = merchantInput.toLowerCase();
-    return all.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [merchants.data, merchantInput]);
+    return pool.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [merchants.data, merchantInput, categoryId, filteredCategories]);
 
   const equalSplit = () => {
     if (totalAmount <= 0 || !participants.length) return;
@@ -250,16 +259,43 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             >收入</button>
           </div>
 
-          <div className="flex items-baseline gap-2">
-            <input
-              ref={amountRef}
-              inputMode="decimal"
-              className="input flex-1 text-2xl"
-              placeholder="0"
-              value={amountText}
-              onChange={(e) => setAmountText(e.target.value)}
-            />
-            <div className="text-ink-500">{wallet?.currency_code ?? ""}</div>
+          <div>
+            <div className="flex items-stretch gap-2">
+              <input
+                ref={amountRef}
+                inputMode="decimal"
+                className="input flex-1 text-2xl"
+                placeholder="0"
+                value={amountText}
+                onChange={(e) => setAmountText(e.target.value)}
+              />
+              <div className={`flex shrink-0 items-center rounded-md px-3 text-sm font-semibold ${wallet ? "bg-ink-800 text-white" : "bg-amber-50 text-amber-700"}`}>
+                {wallet?.currency_code ?? "选 Wallet"}
+              </div>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {[
+                { label: "×10", factor: 10 },
+                { label: "×100", factor: 100 },
+                { label: "×千", factor: 1000 },
+                { label: "×万", factor: 10000 },
+              ].map((b) => (
+                <button
+                  key={b.label}
+                  type="button"
+                  onClick={() => {
+                    const cur = parseFloat(amountText) || 1;
+                    setAmountText(stripTrailingZero(cur * b.factor));
+                  }}
+                  className="rounded-md bg-ink-100 px-2.5 py-1 text-xs text-ink-700 hover:bg-ink-200"
+                >{b.label}</button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAmountText("")}
+                className="rounded-md bg-ink-50 px-2.5 py-1 text-xs text-ink-500 hover:bg-ink-100"
+              >清空</button>
+            </div>
           </div>
 
           <div>
@@ -457,6 +493,11 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
 function formatAmountInput(amount: number, digits: number): string {
   return (amount / Math.pow(10, digits)).toString();
+}
+
+function stripTrailingZero(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(parseFloat(n.toFixed(8)));
 }
 
 function AttachmentsSection({ transactionId }: { transactionId: number }) {
