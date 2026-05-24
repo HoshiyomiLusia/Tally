@@ -279,7 +279,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
                 {wallet?.currency_code ?? "选 Wallet"}
               </div>
             </div>
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
               {[
                 { label: "×10", factor: 10 },
                 { label: "×100", factor: 100 },
@@ -293,13 +293,13 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
                     const cur = parseFloat(amountText) || 1;
                     setAmountText(stripTrailingZero(cur * b.factor));
                   }}
-                  className="rounded-md bg-ink-100 px-2.5 py-1 text-xs text-ink-700 hover:bg-ink-200"
+                  className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs"
                 >{b.label}</button>
               ))}
               <button
                 type="button"
                 onClick={() => setAmountText("")}
-                className="rounded-md bg-ink-50 px-2.5 py-1 text-xs text-ink-500 hover:bg-ink-100"
+                className="min-h-[36px] rounded-md bg-ink-50 px-3.5 py-1.5 text-sm text-ink-500 hover:bg-ink-100 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs"
               >清空</button>
             </div>
           </div>
@@ -389,13 +389,13 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
               onChange={(e) => { setMerchantInput(e.target.value); setMerchantId(null); }}
             />
             {merchantSuggestions.length > 0 && merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
-              <div className="mt-1 flex flex-wrap gap-1">
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {merchantSuggestions.map((m) => (
                   <button
                     key={m.id}
                     type="button"
                     onClick={() => onMerchantPick(m)}
-                    className="rounded-full bg-ink-50 px-2 py-0.5 text-xs text-ink-600 hover:bg-ink-100"
+                    className="min-h-[32px] rounded-full bg-ink-50 px-3 py-1 text-sm text-ink-600 hover:bg-ink-100 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-xs dark:bg-ink-700/50 dark:text-ink-200"
                   >{m.name}</button>
                 ))}
               </div>
@@ -523,9 +523,9 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
           {error && <div className="text-sm text-red-600">{error}</div>}
 
-          <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onClose} className="btn-ghost">取消</button>
-            <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary">
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end sm:pt-1">
+            <button onClick={onClose} className="btn-ghost min-h-[44px] sm:min-h-0">取消</button>
+            <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary min-h-[44px] sm:min-h-0">
               {save.isPending ? "保存中…" : "保存"}
             </button>
           </div>

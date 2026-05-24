@@ -187,17 +187,17 @@ export default function Transactions() {
                       {t.split_group_id && t.kind === "expense" && (
                         <button
                           onClick={() => { if (confirm("撤销分摊？相关贷款条目会被合并回单笔全额消费")) unsplit.mutate(t.split_group_id!); }}
-                          className="btn-ghost p-1.5"
+                          className="btn-ghost p-2 sm:p-1.5"
                           title="撤销分摊"
                         ><Split size={14} /></button>
                       )}
-                      <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-1.5"><Pencil size={14} /></button>
+                      <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
                       <button
                         onClick={() => {
                           const msg = t.split_group_id ? "这是分摊订单，删除会一并清掉该组所有条目，确认？" : "删除这笔交易？";
                           if (confirm(msg)) del.mutate(t.id);
                         }}
-                        className="btn-danger p-1.5"
+                        className="btn-danger p-2 sm:p-1.5"
                       ><Trash2 size={14} /></button>
                     </div>
                   </div>
