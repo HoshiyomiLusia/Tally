@@ -80,6 +80,7 @@ EXPENSE_TREE = [
 INCOME_TREE = [
     ("收入", "💰", [
         ("工资", "💼"),
+        ("生活费", "🏠"),
         ("报销", "🧾"),
         ("退款", "↩️"),
         ("投资收益", "📈"),
@@ -207,6 +208,8 @@ MERCHANTS = [
     ("Suica チャージ", "电车地铁", "JP"),
     ("PASMO チャージ", "电车地铁", "JP"),
     ("Uber Japan", "共享打车", "JP"),
+    ("Uber Eats Japan", "外卖", "JP"),
+    ("出前館", "外卖", "JP"),
     ("GO タクシー", "出租车", "JP"),
     # 通信/订阅 (JP)
     ("ドコモ", "网费通信", "JP"),
@@ -360,7 +363,9 @@ MERCHANTS = [
     ("1Password", "云盘软件", "GLOBAL"),
     # 出行 / 旅行
     ("Uber", "共享打车", "GLOBAL"),
+    ("Uber Eats", "外卖", "GLOBAL"),
     ("Lyft", "共享打车", "GLOBAL"),
+    ("DoorDash", "外卖", "GLOBAL"),
     ("Airbnb", "旅行", "GLOBAL"),
     ("Booking.com", "旅行", "GLOBAL"),
     ("Agoda", "旅行", "GLOBAL"),
