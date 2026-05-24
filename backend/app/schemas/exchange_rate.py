@@ -18,3 +18,4 @@ class ExchangeRateRead(BaseModel):
     base: str
     quote: str
     rate: float
+    source: str

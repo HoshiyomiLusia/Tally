@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
@@ -36,6 +36,10 @@ async def list_transactions(
         stmt = stmt.where(Transaction.currency_code == f.currency_code)
     if f.kind:
         stmt = stmt.where(Transaction.kind == f.kind)
+    if f.contact_id is not None:
+        stmt = stmt.where(Transaction.contact_id == f.contact_id)
+    if f.is_recurring is not None:
+        stmt = stmt.where(Transaction.is_recurring == f.is_recurring)
     if f.q:
         stmt = stmt.where(Transaction.note.ilike(f"%{f.q}%"))
     stmt = stmt.order_by(Transaction.occurred_on.desc(), Transaction.id.desc()).limit(f.limit).offset(f.offset)
@@ -109,5 +113,20 @@ async def delete_transaction(
     t = await session.get(Transaction, tid)
     if not t or t.user_id != user.id:
         raise HTTPException(404)
-    await session.delete(t)
+    if t.split_group_id:
+        await session.execute(
+            sql_delete(Transaction).where(
+                Transaction.user_id == user.id,
+                Transaction.split_group_id == t.split_group_id,
+            )
+        )
+    elif t.transfer_pair_id:
+        await session.execute(
+            sql_delete(Transaction).where(
+                Transaction.user_id == user.id,
+                Transaction.id.in_([t.id, t.transfer_pair_id]),
+            )
+        )
+    else:
+        await session.delete(t)
     await session.commit()

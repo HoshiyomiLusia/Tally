@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { CalendarClock, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import TransactionForm from "../components/TransactionForm";
-import { api, type Currency, type DashboardData } from "../lib/api";
+import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Transaction } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
 
 const PIE_COLORS = ["#1e1f24", "#48494f", "#7f8089", "#abacb4", "#d3d3d8", "#ececef", "#33343a", "#5f6068"];
@@ -21,6 +21,12 @@ export default function Dashboard() {
     queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${month}`)).data,
   });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+  const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
+  const upcoming = useQuery({ queryKey: ["recurring-upcoming"], queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?days=14")).data });
+  const budgetProgress = useQuery({ queryKey: ["budgets-progress", month], queryFn: async () => (await api.get<BudgetProgress[]>(`/budgets/progress?on_date=${month}-15`)).data });
+
+  const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
+  const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
 
   const groupedWallets = useMemo(() => {
     const m = new Map<string, { wallet_id: number; wallet_name: string; currency_code: string; balance: number; type: string; archived: boolean }[]>();
@@ -48,15 +54,10 @@ export default function Dashboard() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">{monthLabel(month)}</h1>
-          <p className="text-sm text-ink-500">当月汇总 · Wallet 余额 · 最近交易</p>
+          <p className="text-sm text-ink-500">当月汇总 · Wallet 余额 · 周期提醒 · 预算进度</p>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="input w-40"
-          />
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
           <button onClick={() => setAddOpen(true)} className="btn-primary"><Plus size={14} /> 添加</button>
         </div>
       </div>
@@ -125,6 +126,56 @@ export default function Dashboard() {
         )}
       </section>
 
+      {(upcoming.data ?? []).length > 0 && (
+        <section className="mb-5">
+          <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 即将到期的周期账单</h2>
+          <div className="card divide-y divide-ink-100 p-0">
+            {(upcoming.data ?? []).map((t) => {
+              const nextDue = addDaysIso(t.occurred_on, t.recurrence_period_days || 0);
+              return (
+                <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span>{catEmoji(t.category_id)}</span>
+                      <span className="font-medium">{catName(t.category_id)}</span>
+                      {t.note && <span className="text-xs text-ink-500">· {t.note}</span>}
+                    </div>
+                    <div className="text-xs text-ink-500">上次 {t.occurred_on} · 下次约 {nextDue}</div>
+                  </div>
+                  <div className="text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {(budgetProgress.data ?? []).length > 0 && (
+        <section className="mb-5">
+          <h2 className="mb-2 text-sm font-medium text-ink-600">预算进度</h2>
+          <div className="card space-y-2">
+            {(budgetProgress.data ?? []).map((p) => {
+              const over = p.percent > 1;
+              const warn = p.percent > 0.8 && !over;
+              const barColor = over ? "bg-rose-500" : warn ? "bg-amber-500" : "bg-emerald-500";
+              return (
+                <div key={p.budget_id}>
+                  <div className="flex justify-between text-sm">
+                    <span>{p.category_name} <span className="text-xs text-ink-400">{p.currency_code}</span></span>
+                    <span className={over ? "text-rose-600" : ""}>
+                      {formatAmount(p.spent, p.currency_code, currencies.data)} / {formatAmount(p.budget_amount, p.currency_code, currencies.data)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
+                    <div className={`h-full ${barColor}`} style={{ width: `${Math.min(p.percent * 100, 100)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {breakdownByCurrency.length > 0 && (
         <section className="mb-5">
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类支出</h2>
@@ -170,11 +221,15 @@ export default function Dashboard() {
           {(dash.data?.recent_transactions ?? []).map((t) => (
             <div key={t.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
               <div className="min-w-0 flex-1">
-                <div className="truncate">{t.note || "(无备注)"}</div>
+                <div className="flex items-center gap-1.5">
+                  {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">分摊</span>}
+                  {t.is_recurring && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">周期</span>}
+                  <span className="truncate">{t.note || "(无备注)"}</span>
+                </div>
                 <div className="text-xs text-ink-500">{t.occurred_on}</div>
               </div>
-              <div className={`shrink-0 font-medium ${t.kind === "income" ? "text-emerald-600" : "text-rose-600"}`}>
-                {t.kind === "income" ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
+              <div className={`shrink-0 font-medium ${t.kind === "income" ? "text-emerald-600" : t.kind === "loan_out" ? "text-amber-600" : t.kind === "loan_repayment" ? "text-sky-600" : "text-rose-600"}`}>
+                {t.kind === "income" || t.kind === "loan_repayment" ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
               </div>
             </div>
           ))}
@@ -184,4 +239,10 @@ export default function Dashboard() {
       <TransactionForm open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

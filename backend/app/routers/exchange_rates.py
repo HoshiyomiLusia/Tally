@@ -7,6 +7,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import ExchangeRate, User
 from ..schemas.exchange_rate import ExchangeRateCreate, ExchangeRateRead
+from ..services.fx import refresh_rates
 
 router = APIRouter(prefix="/exchange-rates", tags=["exchange_rates"])
 
@@ -37,10 +38,11 @@ async def upsert_rate(
     ).scalar_one_or_none()
     if existing:
         existing.rate = payload.rate
+        existing.source = "manual"
         await session.commit()
         await session.refresh(existing)
         return existing
-    r = ExchangeRate(**payload.model_dump())
+    r = ExchangeRate(source="manual", **payload.model_dump())
     session.add(r)
     try:
         await session.commit()
@@ -62,3 +64,12 @@ async def delete_rate(
         raise HTTPException(404)
     await session.delete(r)
     await session.commit()
+
+
+@router.post("/refresh")
+async def refresh(
+    _: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    count = await refresh_rates(session)
+    return {"updated": count}

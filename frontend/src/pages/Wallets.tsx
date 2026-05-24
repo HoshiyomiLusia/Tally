@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Plus, Scale, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import ReconcileModal from "../components/ReconcileModal";
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount } from "../lib/format";
 
@@ -18,6 +19,7 @@ export default function Wallets() {
   const [showArchived, setShowArchived] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Wallet | null>(null);
+  const [reconcileFor, setReconcileFor] = useState<Wallet | null>(null);
 
   const wallets = useQuery({
     queryKey: ["wallets", { archived: showArchived }],
@@ -95,6 +97,7 @@ export default function Wallets() {
                       {formatAmount(w.balance, code, currencies.data)}
                     </div>
                     <div className="flex shrink-0 gap-1">
+                      <button onClick={() => setReconcileFor(w)} className="btn-ghost p-1.5" title="对账"><Scale size={14} /></button>
                       <button onClick={() => { setEditing(w); setOpen(true); }} className="btn-ghost p-1.5"><Pencil size={14} /></button>
                       <button onClick={() => archiveMut.mutate(w)} className="btn-ghost p-1.5" title={w.archived ? "取消归档" : "归档"}>
                         {w.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
@@ -115,6 +118,7 @@ export default function Wallets() {
       </div>
 
       <WalletForm open={open} onClose={() => setOpen(false)} editing={editing} />
+      <ReconcileModal wallet={reconcileFor} onClose={() => setReconcileFor(null)} />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,8 +12,16 @@ from fastapi.staticfiles import StaticFiles
 
 from .core.config import settings
 from .core.db import SessionLocal
-from .routers import account, auth, categories, currencies, dashboard, exchange_rates, merchants, transactions, wallets
+from .routers import (
+    account, attachments, auth, budgets, categories, contacts, currencies,
+    dashboard, exchange_rates, io, loans, merchants, reconciliation, recurring,
+    stats, transactions, wallets,
+)
+from .services.fx import refresh_rates, schedule_refresh
 from .services.seed import seed_currencies
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("tally")
 
 
 def _run_migrations() -> None:
@@ -27,7 +37,15 @@ async def lifespan(app: FastAPI):
     _run_migrations()
     async with SessionLocal() as session:
         await seed_currencies(session)
-    yield
+        try:
+            await refresh_rates(session)
+        except Exception as e:
+            logger.warning("initial fx refresh failed: %s", e)
+    task = asyncio.create_task(schedule_refresh())
+    try:
+        yield
+    finally:
+        task.cancel()
 
 
 app = FastAPI(title="Tally", lifespan=lifespan)
@@ -47,7 +65,15 @@ api.include_router(currencies.router)
 api.include_router(wallets.router)
 api.include_router(categories.router)
 api.include_router(merchants.router)
+api.include_router(contacts.router)
 api.include_router(transactions.router)
+api.include_router(loans.router)
+api.include_router(reconciliation.router)
+api.include_router(budgets.router)
+api.include_router(recurring.router)
+api.include_router(stats.router)
+api.include_router(attachments.router)
+api.include_router(io.router)
 api.include_router(exchange_rates.router)
 api.include_router(dashboard.router)
 api.include_router(account.router)

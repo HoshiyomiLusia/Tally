@@ -1,14 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Category, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
-import { parseAmount, todayIso } from "../lib/format";
+import {
+  api,
+  type Attachment,
+  type Category,
+  type Contact,
+  type Currency,
+  type Merchant,
+  type Transaction,
+  type Wallet,
+} from "../lib/api";
+import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   editing?: Transaction | null;
+}
+
+interface ParticipantState {
+  contact_id: number;
+  share_text: string;
 }
 
 export default function TransactionForm({ open, onClose, editing }: Props) {
@@ -17,6 +31,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data, enabled: open });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data, enabled: open });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data, enabled: open });
+  const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts")).data, enabled: open });
 
   const [kind, setKind] = useState<"expense" | "income">("expense");
   const [walletId, setWalletId] = useState<number | null>(null);
@@ -26,6 +41,10 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [amountText, setAmountText] = useState("");
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [note, setNote] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceText, setRecurrenceText] = useState("30");
+  const [splitOn, setSplitOn] = useState(false);
+  const [participants, setParticipants] = useState<ParticipantState[]>([]);
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -39,9 +58,13 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setMerchantInput(merchants.data?.find((m) => m.id === editing.merchant_id)?.name ?? "");
       setOccurredOn(editing.occurred_on);
       setNote(editing.note);
+      setIsRecurring(editing.is_recurring);
+      setRecurrenceText(editing.recurrence_period_days?.toString() ?? "30");
       const cur = currencies.data?.find((c) => c.code === editing.currency_code);
       const digits = cur?.decimal_digits ?? 2;
       setAmountText((editing.amount / Math.pow(10, digits)).toString());
+      setSplitOn(false);
+      setParticipants([]);
     } else {
       setKind("expense");
       setCategoryId(null);
@@ -50,12 +73,19 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setAmountText("");
       setOccurredOn(todayIso());
       setNote("");
+      setIsRecurring(false);
+      setRecurrenceText("30");
+      setSplitOn(false);
+      setParticipants([]);
     }
     setError("");
     setTimeout(() => amountRef.current?.focus(), 50);
   }, [open, editing, merchants.data, currencies.data]);
 
   const wallet = wallets.data?.find((w) => w.id === walletId) ?? null;
+  const digits = currencies.data?.find((c) => c.code === wallet?.currency_code)?.decimal_digits ?? 2;
+  const totalAmount = parseAmount(amountText || "0", digits);
+  const activeContacts = (contacts.data ?? []).filter((c) => !c.archived);
 
   useEffect(() => {
     if (!open) return;
@@ -65,10 +95,10 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     }
   }, [open, wallets.data, walletId]);
 
-  const filteredCategories = useMemo(() => {
-    return (categories.data ?? []).filter((c) => c.kind === kind);
-  }, [categories.data, kind]);
-
+  const filteredCategories = useMemo(
+    () => (categories.data ?? []).filter((c) => c.kind === kind),
+    [categories.data, kind],
+  );
   const topLevel = filteredCategories.filter((c) => c.parent_id === null);
   const childrenByParent = useMemo(() => {
     const m = new Map<number, Category[]>();
@@ -91,12 +121,48 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     return all.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
   }, [merchants.data, merchantInput]);
 
+  const equalSplit = () => {
+    if (totalAmount <= 0 || !participants.length) return;
+    const n = participants.length + 1;
+    const each = Math.floor(totalAmount / n);
+    const remainder = totalAmount - each * n;
+    setMyShareText(formatAmountInput(each + remainder, digits));
+    setParticipants(participants.map((p) => ({ ...p, share_text: formatAmountInput(each, digits) })));
+  };
+
+  const [myShareText, setMyShareText] = useState("");
+  useEffect(() => {
+    if (splitOn && totalAmount > 0 && participants.length > 0 && !myShareText) {
+      equalSplit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitOn, totalAmount, participants.length]);
+
+  const myShare = parseAmount(myShareText || "0", digits);
+  const participantsSum = participants.reduce((s, p) => s + parseAmount(p.share_text || "0", digits), 0);
+  const shareDiff = totalAmount - myShare - participantsSum;
+
+  function onMerchantPick(m: Merchant) {
+    setMerchantInput(m.name);
+    setMerchantId(m.id);
+    if (m.default_category_id && !categoryId) {
+      setCategoryId(m.default_category_id);
+    }
+  }
+
+  function addParticipant(contact_id: number) {
+    if (participants.some((p) => p.contact_id === contact_id)) return;
+    setParticipants([...participants, { contact_id, share_text: "" }]);
+  }
+  function removeParticipant(contact_id: number) {
+    setParticipants(participants.filter((p) => p.contact_id !== contact_id));
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       if (!wallet) throw new Error("请选择 Wallet");
-      const digits = currencies.data?.find((c) => c.code === wallet.currency_code)?.decimal_digits ?? 2;
-      const amount = parseAmount(amountText, digits);
-      if (amount <= 0) throw new Error("金额需大于 0");
+      if (totalAmount <= 0) throw new Error("金额需大于 0");
+
       let mid = merchantId;
       const matched = merchants.data?.find((m) => m.name === merchantInput.trim());
       if (merchantInput.trim() && !matched) {
@@ -108,47 +174,64 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       } else {
         mid = null;
       }
-      const payload = {
-        wallet_id: wallet.id,
-        category_id: categoryId,
-        merchant_id: mid,
-        amount,
-        currency_code: wallet.currency_code,
-        kind,
-        occurred_on: occurredOn,
-        note,
-      };
-      if (editing) {
-        await api.patch(`/transactions/${editing.id}`, payload);
+
+      if (splitOn && !editing) {
+        if (participants.length === 0) throw new Error("请至少选择 1 个分摊参与人");
+        if (shareDiff !== 0) throw new Error(`分摊金额合计差 ${formatAmount(shareDiff, wallet.currency_code, currencies.data)}`);
+        const payload = {
+          wallet_id: wallet.id,
+          category_id: categoryId,
+          merchant_id: mid,
+          amount: totalAmount,
+          currency_code: wallet.currency_code,
+          occurred_on: occurredOn,
+          note,
+          is_recurring: isRecurring,
+          recurrence_period_days: isRecurring ? Number(recurrenceText) || 30 : null,
+          my_share: myShare,
+          participants: participants.map((p) => ({ contact_id: p.contact_id, share: parseAmount(p.share_text || "0", digits) })),
+        };
+        await api.post("/loans/split", payload);
       } else {
-        await api.post("/transactions", payload);
+        const payload = {
+          wallet_id: wallet.id,
+          category_id: categoryId,
+          merchant_id: mid,
+          amount: totalAmount,
+          currency_code: wallet.currency_code,
+          kind,
+          occurred_on: occurredOn,
+          note,
+          is_recurring: isRecurring,
+          recurrence_period_days: isRecurring ? Number(recurrenceText) || 30 : null,
+        };
+        if (editing) {
+          await api.patch(`/transactions/${editing.id}`, payload);
+        } else {
+          await api.post("/transactions", payload);
+        }
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
       onClose();
     },
     onError: (e: unknown) => {
-      const msg = e instanceof Error ? e.message : "保存失败";
+      let msg = e instanceof Error ? e.message : "保存失败";
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      if (r?.data?.detail) msg = r.data.detail;
       setError(msg);
     },
   });
-
-  function onMerchantPick(m: Merchant) {
-    setMerchantInput(m.name);
-    setMerchantId(m.id);
-    if (m.default_category_id && !categoryId) {
-      setCategoryId(m.default_category_id);
-    }
-  }
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-semibold">{editing ? "编辑交易" : "添加交易"}</div>
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
@@ -162,7 +245,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             >支出</button>
             <button
               type="button"
-              onClick={() => setKind("income")}
+              onClick={() => { setKind("income"); setSplitOn(false); }}
               className={`flex-1 rounded-md py-2 text-sm font-medium ${kind === "income" ? "bg-emerald-600 text-white" : "bg-ink-100 text-ink-600"}`}
             >收入</button>
           </div>
@@ -204,11 +287,8 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
                   type="button"
                   onClick={() => {
                     const kids = childrenByParent.get(p.id);
-                    if (kids && kids.length) {
-                      setCategoryId(kids[0].id);
-                    } else {
-                      setCategoryId(p.id);
-                    }
+                    if (kids && kids.length) setCategoryId(kids[0].id);
+                    else setCategoryId(p.id);
                   }}
                   className={`rounded-full border px-2.5 py-1 text-xs ${expandedParent === p.id ? "border-ink-800 bg-ink-100 text-ink-900" : "border-ink-200 bg-white text-ink-600"}`}
                 >
@@ -265,6 +345,102 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </label>
           </div>
 
+          <div className="flex flex-wrap items-center gap-3 rounded-md bg-ink-50 p-2 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} /> 周期账单
+            </label>
+            {isRecurring && (
+              <>
+                <span className="text-xs text-ink-500">每</span>
+                <input
+                  inputMode="numeric"
+                  className="input w-16 text-sm"
+                  value={recurrenceText}
+                  onChange={(e) => setRecurrenceText(e.target.value.replace(/\D/g, ""))}
+                />
+                <span className="text-xs text-ink-500">天</span>
+              </>
+            )}
+          </div>
+
+          {kind === "expense" && !editing && (
+            <div className="rounded-md bg-ink-50 p-2">
+              <label className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={splitOn} onChange={(e) => setSplitOn(e.target.checked)} /> 分摊订单（AA）
+              </label>
+              {splitOn && (
+                <div className="mt-2 space-y-2">
+                  <div className="text-xs text-ink-500">参与人（除了你自己）</div>
+                  <div className="flex flex-wrap gap-1">
+                    {activeContacts.map((c) => {
+                      const on = participants.some((p) => p.contact_id === c.id);
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => on ? removeParticipant(c.id) : addParticipant(c.id)}
+                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${on ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 bg-white text-ink-600"}`}
+                        >
+                          <span className="inline-block h-2 w-2 rounded-full" style={{ background: c.color || "#abacb4" }} />
+                          {c.name}
+                        </button>
+                      );
+                    })}
+                    {activeContacts.length === 0 && (
+                      <span className="text-xs text-ink-400">没有联系人。先去 联系人 页加。</span>
+                    )}
+                  </div>
+
+                  {participants.length > 0 && (
+                    <>
+                      <div className="flex justify-end">
+                        <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline">均摊</button>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <div className="w-20 shrink-0 text-ink-500">我</div>
+                          <input
+                            inputMode="decimal"
+                            className="input"
+                            value={myShareText}
+                            onChange={(e) => setMyShareText(e.target.value)}
+                            placeholder="0"
+                          />
+                        </div>
+                        {participants.map((p) => {
+                          const c = activeContacts.find((x) => x.id === p.contact_id);
+                          return (
+                            <div key={p.contact_id} className="flex items-center gap-2 text-sm">
+                              <div className="flex w-20 shrink-0 items-center gap-1 text-ink-500">
+                                <span className="inline-block h-2 w-2 rounded-full" style={{ background: c?.color || "#abacb4" }} />
+                                <span className="truncate">{c?.name}</span>
+                              </div>
+                              <input
+                                inputMode="decimal"
+                                className="input"
+                                value={p.share_text}
+                                onChange={(e) => setParticipants(participants.map((x) => x.contact_id === p.contact_id ? { ...x, share_text: e.target.value } : x))}
+                                placeholder="0"
+                              />
+                              <button type="button" onClick={() => removeParticipant(p.contact_id)} className="text-ink-400"><X size={14} /></button>
+                            </div>
+                          );
+                        })}
+                        <div className={`text-right text-xs ${shareDiff === 0 ? "text-ink-500" : "text-rose-600"}`}>
+                          {shareDiff === 0
+                            ? "✓ 合计正好"
+                            : `差 ${formatAmount(shareDiff, wallet?.currency_code ?? "", currencies.data)}`}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {editing && <AttachmentsSection transactionId={editing.id} />}
+
           {error && <div className="text-sm text-red-600">{error}</div>}
 
           <div className="flex justify-end gap-2 pt-1">
@@ -277,4 +453,102 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       </div>
     </div>
   );
+}
+
+function formatAmountInput(amount: number, digits: number): string {
+  return (amount / Math.pow(10, digits)).toString();
+}
+
+function AttachmentsSection({ transactionId }: { transactionId: number }) {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const list = useQuery({
+    queryKey: ["attachments", transactionId],
+    queryFn: async () => (await api.get<Attachment[]>(`/transactions/${transactionId}/attachments`)).data,
+  });
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      await api.post(`/transactions/${transactionId}/attachments`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attachments", transactionId] }),
+  });
+
+  const del = useMutation({
+    mutationFn: async (id: number) => api.delete(`/attachments/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attachments", transactionId] }),
+  });
+
+  return (
+    <div className="rounded-md bg-ink-50 p-2">
+      <div className="mb-1 flex items-center justify-between text-sm">
+        <span className="flex items-center gap-1 text-ink-600"><Paperclip size={14} /> 附件 / 小票</span>
+        <button onClick={() => fileRef.current?.click()} className="btn-ghost px-2 py-0.5 text-xs">
+          <Plus size={12} /> 上传
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) upload.mutate(f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {(list.data ?? []).map((a) => (
+          <div key={a.id} className="group relative">
+            {a.mime_type.startsWith("image/") ? (
+              <AttachmentImage attachmentId={a.id} alt={a.original_name} />
+            ) : (
+              <button
+                onClick={() => downloadAttachment(a)}
+                className="flex h-20 w-full items-center justify-center rounded-md bg-white text-xs text-ink-500"
+              >{a.original_name.split(".").pop()?.toUpperCase()}</button>
+            )}
+            <button
+              onClick={() => { if (confirm("删除该附件？")) del.mutate(a.id); }}
+              className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover:opacity-100"
+            ><Trash2 size={10} /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AttachmentImage({ attachmentId, alt }: { attachmentId: number; alt: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    let blobUrl: string | null = null;
+    api.get(`/attachments/${attachmentId}?thumb=true`, { responseType: "blob" }).then((r) => {
+      if (!active) return;
+      blobUrl = URL.createObjectURL(r.data);
+      setUrl(blobUrl);
+    }).catch(() => {});
+    return () => {
+      active = false;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [attachmentId]);
+  if (!url) return <div className="h-20 w-full animate-pulse rounded-md bg-ink-100" />;
+  return <img src={url} alt={alt} className="h-20 w-full rounded-md object-cover" />;
+}
+
+async function downloadAttachment(a: Attachment) {
+  const r = await api.get(`/attachments/${a.id}`, { responseType: "blob" });
+  const u = URL.createObjectURL(r.data);
+  const link = document.createElement("a");
+  link.href = u;
+  link.download = a.original_name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(u), 1000);
 }

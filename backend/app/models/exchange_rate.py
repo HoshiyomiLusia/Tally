@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, Float, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Date, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -15,3 +15,4 @@ class ExchangeRate(Base):
     base: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
     quote: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
     rate: Mapped[float] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(16), default="manual")
