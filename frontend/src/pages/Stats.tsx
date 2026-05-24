@@ -244,35 +244,19 @@ export default function Stats() {
           </div>
         </div>
         <div>
-          <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类（含与上月对比）</h2>
+          <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类</h2>
           <div className="card divide-y divide-ink-100 p-0">
             {compareForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
-            {compareForCurrency.map((c) => {
-              const delta = c.delta;
-              const max = Math.max(c.current, c.previous, 1);
-              return (
-                <div key={`${c.category_id}-${c.currency_code}`} className="px-4 py-2.5">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span>{c.emoji}</span>
-                      <span className="font-medium">{c.category_name}</span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="font-semibold">{formatAmount(c.current, c.currency_code, currencies.data)}</span>
-                      <DeltaBadge delta={delta} currency={c.currency_code} currencies={currencies.data} />
-                    </div>
-                  </div>
-                  <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
-                    <div className="absolute h-full bg-rose-500/60" style={{ width: `${(c.current / max) * 100}%` }} />
-                  </div>
-                  {c.previous > 0 && (
-                    <div className="mt-1 flex items-center gap-1 text-[10px] text-ink-400">
-                      上月：{formatAmount(c.previous, c.currency_code, currencies.data)}
-                    </div>
-                  )}
+            {compareForCurrency.map((c, i) => (
+              <div key={`${c.category_id}-${c.currency_code}`} className="flex items-center justify-between px-4 py-2 text-sm">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="shrink-0 text-ink-400">#{i + 1}</span>
+                  <span>{c.emoji}</span>
+                  <span className="font-medium">{c.category_name}</span>
                 </div>
-              );
-            })}
+                <div className="shrink-0 text-rose-600">{formatAmount(c.current, c.currency_code, currencies.data)}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -325,17 +309,6 @@ function KPI({
         </div>
       )}
     </div>
-  );
-}
-
-function DeltaBadge({ delta, currency, currencies }: { delta: number; currency: string; currencies?: Currency[] }) {
-  if (delta === 0) return null;
-  const Up = delta > 0;
-  return (
-    <span className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] ${Up ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-      {Up ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
-      {formatAmount(Math.abs(delta), currency, currencies)}
-    </span>
   );
 }
 
