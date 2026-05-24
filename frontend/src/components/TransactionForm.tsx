@@ -42,7 +42,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [note, setNote] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
-  const [recurrenceText, setRecurrenceText] = useState("30");
+  const [recurrenceText, setRecurrenceText] = useState("");
   const [splitOn, setSplitOn] = useState(false);
   const [participants, setParticipants] = useState<ParticipantState[]>([]);
   const [error, setError] = useState("");
@@ -59,7 +59,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setOccurredOn(editing.occurred_on);
       setNote(editing.note);
       setIsRecurring(editing.is_recurring);
-      setRecurrenceText(editing.recurrence_period_days?.toString() ?? "30");
+      setRecurrenceText(editing.recurrence_period_days?.toString() ?? "");
       const cur = currencies.data?.find((c) => c.code === editing.currency_code);
       const digits = cur?.decimal_digits ?? 2;
       setAmountText((editing.amount / Math.pow(10, digits)).toString());
@@ -74,7 +74,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setOccurredOn(todayIso());
       setNote("");
       setIsRecurring(false);
-      setRecurrenceText("30");
+      setRecurrenceText("");
       setSplitOn(false);
       setParticipants([]);
     }
@@ -202,7 +202,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           occurred_on: occurredOn,
           note,
           is_recurring: isRecurring,
-          recurrence_period_days: isRecurring ? Number(recurrenceText) || 30 : null,
+          recurrence_period_days: isRecurring && recurrenceText ? Number(recurrenceText) : null,
           my_share: myShare,
           participants: participants.map((p) => ({ contact_id: p.contact_id, share: parseAmount(p.share_text || "0", digits) })),
         };
@@ -218,7 +218,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           occurred_on: occurredOn,
           note,
           is_recurring: isRecurring,
-          recurrence_period_days: isRecurring ? Number(recurrenceText) || 30 : null,
+          recurrence_period_days: isRecurring && recurrenceText ? Number(recurrenceText) : null,
         };
         if (editing) {
           await api.patch(`/transactions/${editing.id}`, payload);
@@ -400,21 +400,24 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </label>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 rounded-md bg-ink-50 p-2 text-sm">
+          <div className="rounded-md bg-ink-50 p-2 text-sm">
             <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} /> 周期账单
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+              标记为周期账单
             </label>
             {isRecurring && (
-              <>
-                <span className="text-xs text-ink-500">每</span>
+              <div className="mt-1.5 flex items-center gap-2 pl-5">
+                <span className="text-xs text-ink-500">到期提醒周期</span>
                 <input
                   inputMode="numeric"
                   className="input w-16 text-sm"
                   value={recurrenceText}
                   onChange={(e) => setRecurrenceText(e.target.value.replace(/\D/g, ""))}
+                  placeholder="留空"
                 />
                 <span className="text-xs text-ink-500">天</span>
-              </>
+                <span className="text-[10px] text-ink-400">留空 = 只标记不提醒</span>
+              </div>
             )}
           </div>
 

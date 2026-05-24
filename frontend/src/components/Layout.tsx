@@ -1,6 +1,6 @@
 import {
-  BarChart3, HandCoins, LayoutDashboard, ListChecks, Moon, PieChart,
-  Settings as SettingsIcon, Sun, Wallet,
+  BarChart3, CalendarClock, HandCoins, LayoutDashboard, ListChecks, Moon,
+  PieChart, Settings as SettingsIcon, Sun, Wallet,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -11,6 +11,7 @@ const nav = [
   { to: "/transactions", label: "账单", icon: ListChecks },
   { to: "/wallets", label: "Wallet", icon: Wallet },
   { to: "/loans", label: "借贷", icon: HandCoins },
+  { to: "/recurring", label: "周期账单", icon: CalendarClock },
   { to: "/budgets", label: "预算", icon: PieChart },
   { to: "/stats", label: "统计", icon: BarChart3 },
   { to: "/settings", label: "设置", icon: SettingsIcon },
