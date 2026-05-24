@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from fastapi_users.db import SQLAlchemyBaseUserTable
 
 revision: str = "0001_initial"
 down_revision: Union[str, None] = None
@@ -21,11 +20,10 @@ def upgrade() -> None:
     op.create_table(
         "user",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("email", sa.String(length=320), unique=True, nullable=False, index=True),
-        sa.Column("hashed_password", sa.String(length=1024), nullable=False),
+        sa.Column("username", sa.String(length=32), unique=True, nullable=False, index=True),
+        sa.Column("hashed_password", sa.String(length=128), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
-        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("0")),
-        sa.Column("is_verified", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
     )
 
     op.create_table(

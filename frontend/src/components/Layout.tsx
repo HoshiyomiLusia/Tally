@@ -35,7 +35,7 @@ export default function Layout() {
           ))}
         </nav>
         <div className="mt-4 border-t border-ink-100 pt-3 text-xs">
-          <div className="truncate px-2 text-ink-500" title={user?.email}>{user?.email}</div>
+          <div className="truncate px-2 text-ink-500" title={user?.username}>{user?.username}</div>
           <button onClick={logout} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-ink-500 hover:bg-ink-50">
             <LogOut size={14} /> 登出
           </button>

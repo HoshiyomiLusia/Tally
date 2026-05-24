@@ -8,11 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .core.auth import auth_backend, fastapi_users
 from .core.config import settings
 from .core.db import SessionLocal
-from .routers import account, categories, currencies, dashboard, exchange_rates, merchants, transactions, wallets
-from .schemas.user import UserCreate, UserRead, UserUpdate
+from .routers import account, auth, categories, currencies, dashboard, exchange_rates, merchants, transactions, wallets
 from .services.seed import seed_currencies
 
 
@@ -43,9 +41,8 @@ app.add_middleware(
 )
 
 api = FastAPI()
-api.include_router(fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"])
-api.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"])
-api.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"])
+api.include_router(auth.router)
+api.include_router(auth.users_router)
 api.include_router(currencies.router)
 api.include_router(wallets.router)
 api.include_router(categories.router)

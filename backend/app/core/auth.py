@@ -1,49 +1,50 @@
-from collections.abc import AsyncGenerator
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
-from fastapi import Depends, Request
-from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
-from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
-from fastapi_users.db import SQLAlchemyUserDatabase
+import bcrypt
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .db import get_session
 from ..models.user import User
 
-
-async def get_user_db(session: AsyncSession = Depends(get_session)) -> AsyncGenerator[SQLAlchemyUserDatabase, None]:
-    yield SQLAlchemyUserDatabase(session, User)
-
-
-class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
-    reset_password_token_secret = settings.secret_key
-    verification_token_secret = settings.secret_key
-
-    async def on_after_register(self, user: User, request: Optional[Request] = None) -> None:
-        from ..services.seed import seed_user_defaults
-        async for session in get_session():
-            await seed_user_defaults(session, user.id)
-            break
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+ALGO = "HS256"
 
 
-async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)) -> AsyncGenerator[UserManager, None]:
-    yield UserManager(user_db)
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
-bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        return False
 
 
-def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.secret_key, lifetime_seconds=settings.jwt_lifetime_seconds)
+def create_access_token(user_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(seconds=settings.jwt_lifetime_seconds)
+    payload = {"sub": str(user_id), "exp": expire}
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGO)
 
 
-auth_backend = AuthenticationBackend(
-    name="jwt",
-    transport=bearer_transport,
-    get_strategy=get_jwt_strategy,
-)
-
-fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
-
-current_user = fastapi_users.current_user(active=True)
+async def current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    err = HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGO])
+        user_id = int(payload.get("sub") or 0)
+    except (jwt.PyJWTError, ValueError):
+        raise err
+    if not user_id:
+        raise err
+    user = await session.get(User, user_id)
+    if not user or not user.is_active:
+        raise err
+    return user

@@ -4,14 +4,15 @@ import { api, TOKEN_KEY } from "./api";
 
 interface AuthUser {
   id: number;
-  email: string;
+  username: string;
+  is_active: boolean;
 }
 
 interface AuthCtx {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -42,20 +43,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchMe();
   }, [fetchMe]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     const form = new URLSearchParams();
-    form.set("username", email);
+    form.set("username", username);
     form.set("password", password);
-    const r = await api.post("/auth/jwt/login", form, {
+    const r = await api.post("/auth/login", form, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
     await fetchMe();
   }, [fetchMe]);
 
-  const register = useCallback(async (email: string, password: string) => {
-    await api.post("/auth/register", { email, password });
-    await login(email, password);
+  const register = useCallback(async (username: string, password: string) => {
+    await api.post("/auth/register", { username, password });
+    await login(username, password);
   }, [login]);
 
   const logout = useCallback(() => {

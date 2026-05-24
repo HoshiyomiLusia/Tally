@@ -6,7 +6,7 @@ import { useAuth } from "../lib/auth";
 export default function Login() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,7 @@ export default function Login() {
     setError("");
     setBusy(true);
     try {
-      await login(email, password);
+      await login(username.trim(), password);
       navigate("/", { replace: true });
     } catch (err: unknown) {
       setError(extractError(err) ?? "登录失败");
@@ -35,12 +35,27 @@ export default function Login() {
           <div className="mt-1 text-sm text-ink-500">登录到你的账本</div>
         </div>
         <label className="block">
-          <span className="text-sm text-ink-600">邮箱</span>
-          <input className="input mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+          <span className="text-sm text-ink-600">用户名</span>
+          <input
+            className="input mt-1"
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            autoFocus
+          />
         </label>
         <label className="block">
           <span className="text-sm text-ink-600">密码</span>
-          <input className="input mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <input
+            className="input mt-1"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
         </label>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <button className="btn-primary w-full" disabled={busy}>{busy ? "登录中…" : "登录"}</button>

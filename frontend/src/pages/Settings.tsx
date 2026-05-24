@@ -68,7 +68,7 @@ export default function Settings() {
 
       <div className="card mb-3">
         <div className="text-sm text-ink-500">已登录</div>
-        <div className="font-medium">{user?.email}</div>
+        <div className="font-medium">{user?.username}</div>
       </div>
 
       <div className="card">
