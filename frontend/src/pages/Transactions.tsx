@@ -212,9 +212,33 @@ export default function Transactions() {
 
       <div className="space-y-3">
         {grouped.length === 0 && <div className="card text-sm text-ink-500">没有符合条件的交易</div>}
-        {grouped.map(([date, list]) => (
+        {grouped.map(([date, list]) => {
+          // 按币种汇总当日收/支 (转账/借贷不进总额)
+          const totals = new Map<string, { income: number; expense: number }>();
+          for (const t of list) {
+            if (t.kind !== "income" && t.kind !== "expense") continue;
+            const row = totals.get(t.currency_code) ?? { income: 0, expense: 0 };
+            if (t.kind === "income") row.income += t.amount;
+            else row.expense += t.amount;
+            totals.set(t.currency_code, row);
+          }
+          return (
           <div key={date} className="card p-0">
-            <div className="border-b border-ink-100 px-4 py-2 text-xs text-ink-500">{date}</div>
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-100 px-4 py-2 text-xs">
+              <span className="text-ink-500">{date}</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                {Array.from(totals.entries()).map(([code, row]) => (
+                  <span key={code} className="flex items-center gap-1.5">
+                    {row.expense > 0 && (
+                      <span className="text-rose-600">支 -{formatAmount(row.expense, code, currencies.data)}</span>
+                    )}
+                    {row.income > 0 && (
+                      <span className="text-emerald-600">收 +{formatAmount(row.income, code, currencies.data)}</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
             <div className="divide-y divide-ink-100">
               {list.map((t) => {
                 const c = catName(t.category_id);
@@ -272,7 +296,8 @@ export default function Transactions() {
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
@@ -68,6 +69,44 @@ async def update_wallet(
     balances = await wallet_balances(session, user.id)
     loans = await all_wallet_loan_summary(session, user.id)
     return _to_read(w, balances.get(w.id, w.initial_balance), *loans.get(w.id, (0, 0)))
+
+
+class MoveLoansResponse(BaseModel):
+    moved: int
+
+
+@router.post("/{source_id}/move-loans-to/{target_id}", response_model=MoveLoansResponse)
+async def move_loans(
+    source_id: int,
+    target_id: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """把 source 钱包上的所有借贷类交易 (loan_out / loan_repayment) 改挂到 target.
+    用于把零散的借贷归到一个主钱包统一对账, 不影响 system_balance, 只改
+    physical_balance 的归属."""
+    if source_id == target_id:
+        raise HTTPException(400, "source and target must differ")
+    src = await session.get(Wallet, source_id)
+    dst = await session.get(Wallet, target_id)
+    if not src or src.user_id != user.id:
+        raise HTTPException(404, "source wallet not found")
+    if not dst or dst.user_id != user.id:
+        raise HTTPException(404, "target wallet not found")
+    if src.currency_code != dst.currency_code:
+        raise HTTPException(400, "currency must match")
+    result = await session.execute(
+        sql_update(Transaction)
+        .where(
+            Transaction.user_id == user.id,
+            Transaction.wallet_id == source_id,
+            Transaction.kind.in_(("loan_out", "loan_repayment")),
+        )
+        .values(wallet_id=target_id)
+    )
+    moved = result.rowcount or 0
+    await session.commit()
+    return MoveLoansResponse(moved=moved)
 
 
 @router.delete("/{wallet_id}", status_code=status.HTTP_204_NO_CONTENT)

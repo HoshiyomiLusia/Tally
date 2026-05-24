@@ -114,6 +114,7 @@ export default function Wallets() {
                             wallet={w}
                             currencyCode={code}
                             currencies={currencies.data ?? []}
+                            siblings={list.filter((x) => x.id !== w.id)}
                             onReconcile={() => setReconcileFor(w)}
                             onEdit={() => { setEditing(w); setOpen(true); }}
                             onDelete={() => { if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id); }}
@@ -328,6 +329,7 @@ function WalletCardItem({
   wallet,
   currencyCode,
   currencies,
+  siblings,
   onReconcile,
   onEdit,
   onDelete,
@@ -335,15 +337,36 @@ function WalletCardItem({
   wallet: Wallet;
   currencyCode: string;
   currencies: Currency[];
+  siblings: Wallet[];
   onReconcile: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const qc = useQueryClient();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
   const isNegative = physical < 0;
   const hasLoanDiff = wallet.loan_out_on_wallet !== 0 || wallet.loan_repayment_on_wallet !== 0;
+
+  const moveLoans = useMutation({
+    mutationFn: async (targetId: number) =>
+      (await api.post<{ moved: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["wallets"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      alert(`已挪走 ${r.moved} 笔借贷交易`);
+      setPickerOpen(false);
+    },
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "合并失败");
+    },
+  });
+
   return (
     <div className="group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
       <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
@@ -357,9 +380,14 @@ function WalletCardItem({
           {formatAmount(physical, currencyCode, currencies)}
         </div>
         {hasLoanDiff && (
-          <div className="text-xs text-ink-500">
-            实际 {formatAmount(wallet.balance, currencyCode, currencies)}
-            <span className="text-ink-400"> · 含借贷调整</span>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-ink-500">
+            <span>实际 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借贷调整</span>
+            {siblings.length > 0 && (
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="rounded border border-ink-300 px-1.5 py-0.5 text-[10px] text-ink-600 hover:border-emerald-500 hover:text-emerald-600 dark:border-ink-600 dark:text-ink-300"
+              >合到其他钱包</button>
+            )}
           </div>
         )}
         <div className="mt-1 flex gap-0.5">
@@ -368,6 +396,38 @@ function WalletCardItem({
           <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
         </div>
       </div>
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 dark:bg-ink-800">
+            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷挪到哪？</div>
+            <div className="mb-3 text-xs text-ink-500">
+              所有 loan_out / loan_repayment 交易会改挂到目标钱包. 不影响 system_balance,
+              只会让两边的物理余额重新分布.
+            </div>
+            <div className="space-y-1.5">
+              {siblings.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    if (confirm(`确认把 ${wallet.name} 的借贷全部挪到 ${t.name}？`)) {
+                      moveLoans.mutate(t.id);
+                    }
+                  }}
+                  disabled={moveLoans.isPending}
+                  className="flex w-full items-center justify-between rounded-lg border border-ink-200 px-3 py-2 text-left text-sm hover:border-emerald-500 dark:border-ink-700 dark:hover:border-emerald-400"
+                >
+                  <span>{t.name}</span>
+                  <span className="text-xs text-ink-500">{t.currency_code}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => setPickerOpen(false)} className="btn-ghost text-xs">取消</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
