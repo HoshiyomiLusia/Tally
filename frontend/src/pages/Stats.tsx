@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
 import { api, type Currency } from "../lib/api";
@@ -19,7 +18,6 @@ interface CurrencySummary {
 }
 interface SummaryResp { month: string; per_currency: CurrencySummary[]; }
 
-interface MonthlyPoint { month: string; currency_code: string; income: number; expense: number; }
 interface DailyPoint { on_date: string; currency_code: string; amount: number; }
 interface CatCompare {
   category_id: number | null; category_name: string; emoji: string;
@@ -43,7 +41,6 @@ export default function Stats() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<FxRate[]>("/exchange-rates")).data });
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
-  const monthly = useQuery({ queryKey: ["stats-monthly"], queryFn: async () => (await api.get<MonthlyPoint[]>("/stats/monthly-trend?months=12")).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
   const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => (await api.get<DailyPoint[]>("/stats/daily?kind=expense")).data });
   const topMerch = useQuery({ queryKey: ["stats-top-merchants", month], queryFn: async () => (await api.get<TopMerchant[]>(`/stats/top-merchants?month=${month}`)).data });
@@ -58,9 +55,9 @@ export default function Stats() {
   const allCurrencies = useMemo(() => {
     const set = new Set<string>();
     (summary.data?.per_currency ?? []).forEach((s) => set.add(s.currency_code));
-    (monthly.data ?? []).forEach((p) => set.add(p.currency_code));
+    (topMerch.data ?? []).forEach((m) => set.add(m.currency_code));
     return Array.from(set).sort();
-  }, [summary.data, monthly.data]);
+  }, [summary.data, topMerch.data]);
 
   // "" = 全部 (合并); 其他值 = 单币种
   const [activeCurrency, setActiveCurrency] = useState<string>("");
@@ -118,22 +115,6 @@ export default function Stats() {
     } as CurrencySummary;
   }, [summary.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
-  // 月趋势
-  const monthlyForCurrency = useMemo(() => {
-    const src = monthly.data ?? [];
-    if (!isAll) return src.filter((p) => p.currency_code === activeCurrency).map((p) => ({ ...p, net: p.income - p.expense }));
-    const m = new Map<string, { month: string; income: number; expense: number }>();
-    for (const p of src) {
-      const row = m.get(p.month) ?? { month: p.month, income: 0, expense: 0 };
-      row.income += fxTo(p.income, p.currency_code, baseCurrency);
-      row.expense += fxTo(p.expense, p.currency_code, baseCurrency);
-      m.set(p.month, row);
-    }
-    return Array.from(m.values())
-      .sort((a, b) => (a.month < b.month ? -1 : 1))
-      .map((p) => ({ ...p, currency_code: baseCurrency, net: p.income - p.expense }));
-  }, [monthly.data, activeCurrency, isAll, baseCurrency, fxTo]);
-
   // 分类对比
   const compareForCurrency = useMemo(() => {
     const src = compare.data ?? [];
@@ -188,7 +169,7 @@ export default function Stats() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">统计</h1>
-          <p className="text-sm text-ink-500">KPI · 月趋势 · 分类对比 · 热力 · Top 商家 / 交易</p>
+          <p className="text-sm text-ink-500">KPI · Top 商家 · 分类对比 · 热力 · Top 单笔</p>
         </div>
         <MonthPicker value={month} onChange={setMonth} />
       </div>
@@ -232,23 +213,18 @@ export default function Stats() {
       )}
 
       <section className="mb-5">
-        <h2 className="mb-2 text-sm font-medium text-ink-600">12 个月趋势（收入 / 支出 / 净）</h2>
-        <div className="card">
-          {monthlyForCurrency.length === 0 ? (
-            <div className="py-6 text-center text-sm text-ink-500">没有数据</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={monthlyForCurrency} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
-                <XAxis dataKey="month" fontSize={10} />
-                <YAxis fontSize={10} />
-                <Tooltip formatter={(v: number) => formatAmount(v, displayCode, currencies.data)} />
-                <Line type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} name="收入" />
-                <Line type="monotone" dataKey="expense" stroke="#e11d48" strokeWidth={2} dot={{ r: 3 }} name="支出" />
-                <Line type="monotone" dataKey="net" stroke="#3b82f6" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} name="净" />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+        <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 商家</h2>
+        <div className="card divide-y divide-ink-100 p-0">
+          {topMerchForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
+          {topMerchForCurrency.map((m, i) => (
+            <div key={m.merchant_id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <div>
+                <div className="font-medium">#{i + 1} {m.merchant_name}</div>
+                <div className="text-xs text-ink-500">{m.count} 笔</div>
+              </div>
+              <div className="text-rose-600">{formatAmount(m.total, m.currency_code, currencies.data)}</div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -292,36 +268,19 @@ export default function Stats() {
         </div>
       </section>
 
-      <section className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div>
-          <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 商家</h2>
-          <div className="card divide-y divide-ink-100 p-0">
-            {topMerchForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
-            {topMerchForCurrency.map((m, i) => (
-              <div key={m.merchant_id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <div>
-                  <div className="font-medium">#{i + 1} {m.merchant_name}</div>
-                  <div className="text-xs text-ink-500">{m.count} 笔</div>
-                </div>
-                <div className="text-rose-600">{formatAmount(m.total, m.currency_code, currencies.data)}</div>
+      <section className="mb-5">
+        <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 单笔</h2>
+        <div className="card divide-y divide-ink-100 p-0">
+          {topTxForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
+          {topTxForCurrency.map((t, i) => (
+            <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <div>
+                <div className="font-medium">#{i + 1} {t.category_name}</div>
+                <div className="text-xs text-ink-500">{t.occurred_on}{t.note ? ` · ${t.note}` : ""}</div>
               </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 单笔</h2>
-          <div className="card divide-y divide-ink-100 p-0">
-            {topTxForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
-            {topTxForCurrency.map((t, i) => (
-              <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <div>
-                  <div className="font-medium">#{i + 1} {t.category_name}</div>
-                  <div className="text-xs text-ink-500">{t.occurred_on}{t.note ? ` · ${t.note}` : ""}</div>
-                </div>
-                <div className="text-rose-600">{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
-              </div>
-            ))}
-          </div>
+              <div className="text-rose-600">{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+            </div>
+          ))}
         </div>
       </section>
     </div>
