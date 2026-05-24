@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .core.auth import auth_backend, fastapi_users
 from .core.config import settings
 from .core.db import SessionLocal
-from .routers import categories, currencies, dashboard, exchange_rates, merchants, transactions, wallets
+from .routers import account, categories, currencies, dashboard, exchange_rates, merchants, transactions, wallets
 from .schemas.user import UserCreate, UserRead, UserUpdate
 from .services.seed import seed_currencies
 
@@ -53,6 +53,7 @@ api.include_router(merchants.router)
 api.include_router(transactions.router)
 api.include_router(exchange_rates.router)
 api.include_router(dashboard.router)
+api.include_router(account.router)
 
 
 @api.get("/health")
