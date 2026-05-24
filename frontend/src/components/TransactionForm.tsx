@@ -280,7 +280,17 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
         </div>
         <div className="space-y-3">
-          <div className="flex gap-1.5">
+          <label className="block">
+            <span className="text-xs text-ink-500">日期</span>
+            <input
+              className="input mt-0.5"
+              type="date"
+              value={occurredOn}
+              onChange={(e) => setOccurredOn(e.target.value)}
+            />
+          </label>
+
+          <div className="flex gap-1.5 border-t border-ink-100 pt-3 dark:border-ink-700">
             <button
               type="button"
               onClick={() => setKind("expense")}
@@ -439,16 +449,10 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-xs text-ink-500">日期</span>
-              <input className="input mt-0.5" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className="text-xs text-ink-500">备注</span>
-              <input className="input mt-0.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
-            </label>
-          </div>
+          <label className="block">
+            <span className="text-xs text-ink-500">备注</span>
+            <input className="input mt-0.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+          </label>
 
           <div className="rounded-md bg-ink-50 p-2 text-sm">
             <label className="flex items-center gap-1.5">
