@@ -341,7 +341,9 @@ function WalletCardItem({
 }) {
   const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
-  const isNegative = wallet.balance < 0;
+  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
+  const isNegative = physical < 0;
+  const hasLoanDiff = wallet.loan_out_on_wallet !== 0 || wallet.loan_repayment_on_wallet !== 0;
   return (
     <div className="group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
       <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
@@ -352,8 +354,14 @@ function WalletCardItem({
         <div className="text-sm font-medium">{wallet.name}</div>
         <div className="text-xs text-ink-500">{TYPE_LABELS[wallet.type]}</div>
         <div className={`mt-1 text-lg font-semibold ${isNegative ? "text-rose-600" : ""}`}>
-          {formatAmount(wallet.balance, currencyCode, currencies)}
+          {formatAmount(physical, currencyCode, currencies)}
         </div>
+        {hasLoanDiff && (
+          <div className="text-xs text-ink-500">
+            实际 {formatAmount(wallet.balance, currencyCode, currencies)}
+            <span className="text-ink-400"> · 含借贷调整</span>
+          </div>
+        )}
         <div className="mt-1 flex gap-0.5">
           <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
           <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>

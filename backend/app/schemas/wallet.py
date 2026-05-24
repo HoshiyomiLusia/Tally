@@ -38,3 +38,5 @@ class WalletRead(BaseModel):
     sort_order: int
     created_at: datetime
     balance: int = 0
+    loan_out_on_wallet: int = 0
+    loan_repayment_on_wallet: int = 0

@@ -45,6 +45,29 @@ async def loan_balances(session: AsyncSession, user_id: int) -> dict[tuple[int, 
     return {(cid, code): int(s or 0) for cid, code, s in rows if s}
 
 
+async def all_wallet_loan_summary(session: AsyncSession, user_id: int) -> dict[int, tuple[int, int]]:
+    """Per-wallet (loan_out_total, loan_repayment_total) for ALL wallets at once.
+    Avoids the N+1 of calling wallet_loan_summary in a loop."""
+    rows = (
+        await session.execute(
+            select(Transaction.wallet_id, Transaction.kind, func.sum(Transaction.amount))
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.kind.in_(("loan_out", "loan_repayment")),
+            )
+            .group_by(Transaction.wallet_id, Transaction.kind)
+        )
+    ).all()
+    out: dict[int, list[int]] = {}
+    for wid, kind, total in rows:
+        bucket = out.setdefault(wid, [0, 0])
+        if kind == "loan_out":
+            bucket[0] = int(total or 0)
+        else:
+            bucket[1] = int(total or 0)
+    return {wid: (b[0], b[1]) for wid, b in out.items()}
+
+
 async def wallet_loan_summary(session: AsyncSession, user_id: int, wallet_id: int) -> tuple[int, int]:
     """For per-wallet reconciliation in Model A.
 

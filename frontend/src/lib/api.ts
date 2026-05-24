@@ -46,6 +46,8 @@ export interface Wallet {
   sort_order: number;
   created_at: string;
   balance: number;
+  loan_out_on_wallet: number;
+  loan_repayment_on_wallet: number;
 }
 
 export type CategoryKind = "expense" | "income";
