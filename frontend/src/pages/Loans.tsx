@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownLeft, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, Pencil, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import ContactForm from "../components/ContactForm";
-import { api, type Currency, type LoanAccount, type Transaction, type Wallet } from "../lib/api";
+import { api, type Contact, type Currency, type LoanAccount, type Transaction, type Wallet } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
 export default function Loans() {
+  const qc = useQueryClient();
+  const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts")).data });
   const accounts = useQuery({ queryKey: ["loan-accounts"], queryFn: async () => (await api.get<LoanAccount[]>("/loans/accounts")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data });
@@ -14,25 +16,44 @@ export default function Loans() {
   const [repayFor, setRepayFor] = useState<LoanAccount | null>(null);
   const [writeOffFor, setWriteOffFor] = useState<LoanAccount | null>(null);
   const [historyFor, setHistoryFor] = useState<LoanAccount | null>(null);
-  const [newContact, setNewContact] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [contactFormOpen, setContactFormOpen] = useState(false);
 
-  const list = accounts.data ?? [];
   const totals = useMemo(() => {
     const m = new Map<string, number>();
-    for (const a of list) {
-      m.set(a.currency_code, (m.get(a.currency_code) ?? 0) + a.balance);
+    for (const a of accounts.data ?? []) m.set(a.currency_code, (m.get(a.currency_code) ?? 0) + a.balance);
+    return Array.from(m.entries()).filter(([, v]) => v !== 0);
+  }, [accounts.data]);
+
+  // Group loan accounts by contact_id
+  const acctsByContact = useMemo(() => {
+    const m = new Map<number, LoanAccount[]>();
+    for (const a of accounts.data ?? []) {
+      const arr = m.get(a.contact_id) ?? [];
+      arr.push(a);
+      m.set(a.contact_id, arr);
     }
-    return Array.from(m.entries());
-  }, [list]);
+    return m;
+  }, [accounts.data]);
+
+  const delContact = useMutation({
+    mutationFn: async (id: number) => api.delete(`/contacts/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+    },
+  });
+
+  const contactList = (contacts.data ?? []).filter((c) => !c.archived);
 
   return (
     <div className="px-4 py-5 md:px-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">贷款账户</h1>
-          <p className="text-sm text-ink-500">分摊订单产生的应收应付 · 负数 = 别人欠我 · 正数 = 我欠别人</p>
+          <h1 className="text-xl font-semibold tracking-tight">借贷</h1>
+          <p className="text-sm text-ink-500">每个联系人 = 一张借贷账户 · 负数 = 别人欠我 · 正数 = 我欠别人</p>
         </div>
-        <button onClick={() => setNewContact(true)} className="btn-ghost">
+        <button onClick={() => { setEditingContact(null); setContactFormOpen(true); }} className="btn-primary">
           <UserPlus size={14} /> 新建联系人
         </button>
       </div>
@@ -50,38 +71,76 @@ export default function Loans() {
         </div>
       )}
 
-      <div className="card divide-y divide-ink-100 p-0">
-        {list.length === 0 && <div className="px-4 py-6 text-center text-sm text-ink-500">还没有借贷记录</div>}
-        {list.map((a) => (
-          <div key={`${a.contact_id}-${a.currency_code}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-            <div className="min-w-0 flex-1">
-              <div className="font-medium">{a.contact_name} <span className="text-xs text-ink-400">{a.currency_code}</span></div>
-              <div className="text-xs text-ink-500">
-                借出 {formatAmount(a.loan_out_total, a.currency_code, currencies.data)} · 已还 {formatAmount(a.loan_repayment_total, a.currency_code, currencies.data)}
+      <div className="space-y-2">
+        {contactList.length === 0 && (
+          <div className="card text-sm text-ink-500">
+            还没有联系人。点右上"新建联系人"开始。
+          </div>
+        )}
+        {contactList.map((c) => {
+          const accts = acctsByContact.get(c.id) ?? [];
+          return (
+            <div key={c.id} className="card">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded-full" style={{ background: c.color || "#abacb4" }} />
+                  <div>
+                    <div className="font-medium">{c.name}</div>
+                    {c.note && <div className="text-xs text-ink-500">{c.note}</div>}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-0.5">
+                  <button onClick={() => { setEditingContact(c); setContactFormOpen(true); }} className="btn-ghost p-1.5"><Pencil size={14} /></button>
+                  <button
+                    onClick={() => {
+                      const msg = accts.length > 0
+                        ? `${c.name} 还有 ${accts.length} 个币种的借贷记录，删除联系人后这些记录的"联系人"会变空。继续？`
+                        : `删除联系人"${c.name}"？`;
+                      if (confirm(msg)) delContact.mutate(c.id);
+                    }}
+                    className="btn-danger p-1.5"
+                  ><Trash2 size={14} /></button>
+                </div>
               </div>
-            </div>
-            <div className={`shrink-0 text-right text-base font-semibold ${a.balance < 0 ? "text-rose-600" : a.balance > 0 ? "text-emerald-600" : "text-ink-500"}`}>
-              {formatAmount(a.balance, a.currency_code, currencies.data)}
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <button onClick={() => setHistoryFor(a)} className="btn-ghost text-xs">明细</button>
-              <button onClick={() => setRepayFor(a)} className="btn-ghost text-xs" title="收到还款">
-                <ArrowDownLeft size={12} /> 还款
-              </button>
-              {a.balance < 0 && (
-                <button onClick={() => setWriteOffFor(a)} className="btn-danger text-xs" title="坏账核销">
-                  <AlertTriangle size={12} /> 核销
-                </button>
+
+              {accts.length === 0 ? (
+                <div className="text-xs text-ink-400">暂无借贷往来</div>
+              ) : (
+                <div className="divide-y divide-ink-100 dark:divide-ink-700">
+                  {accts.map((a) => (
+                    <div key={`${a.contact_id}-${a.currency_code}`} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-ink-500">
+                          {a.currency_code} · 借出 {formatAmount(a.loan_out_total, a.currency_code, currencies.data)} · 已还 {formatAmount(a.loan_repayment_total, a.currency_code, currencies.data)}
+                        </div>
+                      </div>
+                      <div className={`shrink-0 text-base font-semibold ${a.balance < 0 ? "text-rose-600" : a.balance > 0 ? "text-emerald-600" : "text-ink-500"}`}>
+                        {formatAmount(a.balance, a.currency_code, currencies.data)}
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button onClick={() => setHistoryFor(a)} className="btn-ghost text-xs">明细</button>
+                        <button onClick={() => setRepayFor(a)} className="btn-ghost text-xs" title="收到还款">
+                          <ArrowDownLeft size={12} /> 还款
+                        </button>
+                        {a.balance < 0 && (
+                          <button onClick={() => setWriteOffFor(a)} className="btn-danger text-xs" title="坏账核销">
+                            <AlertTriangle size={12} /> 核销
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <RepaymentModal acct={repayFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setRepayFor(null)} />
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
       <HistoryModal acct={historyFor} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
-      <ContactForm open={newContact} onClose={() => setNewContact(false)} editing={null} />
+      <ContactForm open={contactFormOpen} onClose={() => setContactFormOpen(false)} editing={editingContact} />
     </div>
   );
 }
