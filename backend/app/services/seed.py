@@ -51,14 +51,25 @@ async def seed_user_defaults(session: AsyncSession, user_id: int) -> None:
     existing_merchants = {
         m.name for m in (await session.execute(select(Merchant).where(Merchant.user_id == user_id))).scalars().all()
     }
-    for name, default_cat, region in MERCHANTS:
+    existing_merchant_objs = {
+        m.name: m
+        for m in (await session.execute(select(Merchant).where(Merchant.user_id == user_id))).scalars().all()
+    }
+    for entry in MERCHANTS:
+        name, default_cat, region = entry[0], entry[1], entry[2]
+        aliases = entry[3] if len(entry) > 3 else ""
         if name in existing_merchants:
+            # Backfill aliases on existing merchant if currently empty
+            ex = existing_merchant_objs.get(name)
+            if ex is not None and not ex.aliases and aliases:
+                ex.aliases = aliases
             continue
         session.add(Merchant(
             user_id=user_id,
             name=name,
             default_category_id=cat_id_by_name.get(default_cat),
             region=region,
+            aliases=aliases,
         ))
 
     await session.commit()

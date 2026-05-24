@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
@@ -18,7 +18,8 @@ async def list_merchants(
 ):
     stmt = select(Merchant).where(Merchant.user_id == user.id)
     if q:
-        stmt = stmt.where(Merchant.name.ilike(f"%{q}%"))
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Merchant.name.ilike(like), Merchant.aliases.ilike(like)))
     stmt = stmt.order_by(Merchant.usage_count.desc(), Merchant.name)
     return (await session.execute(stmt)).scalars().all()
 

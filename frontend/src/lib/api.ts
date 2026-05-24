@@ -66,6 +66,7 @@ export interface Merchant {
   default_category_id: number | null;
   region: string;
   usage_count: number;
+  aliases: string;
 }
 
 export interface Contact {

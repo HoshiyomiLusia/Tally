@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
@@ -13,3 +13,4 @@ class Merchant(Base):
     default_category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     region: Mapped[str] = mapped_column(String(16), default="")
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    aliases: Mapped[str] = mapped_column(Text, default="")

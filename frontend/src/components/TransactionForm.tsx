@@ -124,7 +124,11 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     }
     if (!merchantInput) return pool.slice(0, 12);
     const q = merchantInput.toLowerCase();
-    return pool.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 12);
+    return pool.filter((m) => {
+      if (m.name.toLowerCase().includes(q)) return true;
+      if (m.aliases && m.aliases.toLowerCase().includes(q)) return true;
+      return false;
+    }).slice(0, 12);
   }, [merchants.data, merchantInput, categoryId]);
 
   const walletsByCurrency = useMemo(() => {
