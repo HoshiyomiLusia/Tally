@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
 import TransactionForm from "../components/TransactionForm";
@@ -240,35 +241,33 @@ export default function Dashboard() {
       )}
 
       {breakdownByCurrency.length > 0 && (
-        <section className="mb-5">
+        <section className="mb-5 space-y-3">
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类支出</h2>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {breakdownByCurrency.map(([code, items]) => {
-              const top = items.slice(0, 8);
-              const max = Math.max(1, ...top.map((it) => it.amount));
-              return (
-                <div key={code} className="card">
-                  <div className="mb-2 text-sm text-ink-600">{code}</div>
-                  <div className="space-y-1.5">
-                    {top.map((it, i) => (
-                      <div key={it.category_id ?? -i}>
-                        <div className="mb-0.5 flex items-center justify-between gap-2 text-sm">
-                          <span className="flex items-center gap-1.5 truncate">
-                            <span>{it.emoji}</span>
-                            <span className="truncate">{it.category_name}</span>
-                          </span>
-                          <span className="shrink-0 font-medium text-rose-600">{formatAmount(it.amount, code, currencies.data)}</span>
-                        </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-700/40">
-                          <div className="h-full bg-rose-500/70" style={{ width: `${(it.amount / max) * 100}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {breakdownByCurrency.map(([code, items]) => {
+            const top = items.slice(0, 10);
+            const data = top.map((it) => ({
+              name: `${it.emoji ?? ""} ${it.category_name}`.trim(),
+              amount: it.amount,
+            }));
+            return (
+              <div key={code} className="card">
+                <div className="mb-2 text-sm text-ink-600">{code}</div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ececef" vertical={false} />
+                    <XAxis dataKey="name" fontSize={11} angle={-20} textAnchor="end" interval={0} height={50} />
+                    <YAxis fontSize={10} />
+                    <Tooltip formatter={(v: number) => formatAmount(v, code, currencies.data)} />
+                    <Bar dataKey="amount" fill="#e11d48" radius={[4, 4, 0, 0]}>
+                      {data.map((_, i) => (
+                        <Cell key={i} fill={i === 0 ? "#be123c" : "#e11d48"} fillOpacity={1 - i * 0.06} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            );
+          })}
         </section>
       )}
 
