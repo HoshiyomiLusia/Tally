@@ -32,12 +32,14 @@ EXPENSE_TREE = [
         ("数码电器", "💻"),
         ("家居家具", "🛋️"),
     ]),
-    ("订阅", "📅", [
+    ("固定账单", "📅", [
         ("会员订阅", "🎬"),
-        ("AI 服务", "🤖"),
         ("房租", "🏠"),
         ("水电煤网", "💡"),
         ("其他订阅", "🔁"),
+    ]),
+    ("服务", "🛎️", [
+        ("API", "🔌"),
     ]),
     ("娱乐", "🎮", [
         ("游戏充值", "🕹️"),
@@ -352,7 +354,7 @@ MERCHANTS = [
     ("Costco", "生鲜食材", "GLOBAL", "开市客,コストコ"),
     # 科技 / 数码
     ("Apple", "数码电器", "GLOBAL", "苹果,アップル"),
-    ("Google Play", "AI 服务", "GLOBAL", "谷歌,Google"),
+    ("Google Play", "会员订阅", "GLOBAL", "谷歌,Google"),
     ("Amazon", "数码电器", "GLOBAL", "亚马逊,アマゾン"),
     ("eBay", "超市日用", "GLOBAL", "易贝"),
     ("AliExpress", "超市日用", "GLOBAL", "速卖通,アリエクスプレス"),
@@ -373,14 +375,14 @@ MERCHANTS = [
     ("Crunchyroll", "会员订阅", "GLOBAL", "クランチロール"),
     ("Twitch", "会员订阅", "GLOBAL", "ツイッチ"),
     # AI / 开发
-    ("ChatGPT", "AI 服务", "GLOBAL", "GPT,OpenAI,chat gpt"),
-    ("Claude", "AI 服务", "GLOBAL", "クロード,Anthropic"),
-    ("Gemini", "AI 服务", "GLOBAL", "Bard,Google Gemini"),
+    ("ChatGPT", "会员订阅", "GLOBAL", "GPT,OpenAI,chat gpt"),
+    ("Claude", "会员订阅", "GLOBAL", "クロード,Anthropic"),
+    ("Gemini", "会员订阅", "GLOBAL", "Bard,Google Gemini"),
     ("GitHub", "会员订阅", "GLOBAL", "Github,git"),
-    ("GitHub Copilot", "AI 服务", "GLOBAL", "Copilot"),
-    ("Cursor", "AI 服务", "GLOBAL", "cursor.sh"),
-    ("Midjourney", "AI 服务", "GLOBAL", "MJ"),
-    ("Perplexity", "AI 服务", "GLOBAL", "perplexity.ai"),
+    ("GitHub Copilot", "会员订阅", "GLOBAL", "Copilot"),
+    ("Cursor", "会员订阅", "GLOBAL", "cursor.sh"),
+    ("Midjourney", "会员订阅", "GLOBAL", "MJ"),
+    ("Perplexity", "会员订阅", "GLOBAL", "perplexity.ai"),
     ("Vercel", "会员订阅", "GLOBAL", "vercel.com"),
     ("Cloudflare", "会员订阅", "GLOBAL", "CF,cloudflare"),
     ("JetBrains", "会员订阅", "GLOBAL", "IntelliJ,PyCharm,WebStorm"),
