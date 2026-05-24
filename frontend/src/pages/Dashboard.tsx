@@ -1,11 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import TransactionForm from "../components/TransactionForm";
 import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Transaction } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
+
+interface CrossTotal {
+  base_currency: string;
+  total: number;
+  breakdown: { currency_code: string; balance: number; rate: number; converted: number }[];
+}
 
 const PIE_COLORS = ["#1e1f24", "#48494f", "#7f8089", "#abacb4", "#d3d3d8", "#ececef", "#33343a", "#5f6068"];
 
@@ -24,6 +30,13 @@ export default function Dashboard() {
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const upcoming = useQuery({ queryKey: ["recurring-upcoming"], queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?days=14")).data });
   const budgetProgress = useQuery({ queryKey: ["budgets-progress", month], queryFn: async () => (await api.get<BudgetProgress[]>(`/budgets/progress?on_date=${month}-15`)).data });
+
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
+  useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
+  const cross = useQuery({
+    queryKey: ["cross-currency-total", baseCurrency],
+    queryFn: async () => (await api.get<CrossTotal>(`/stats/cross-currency-total?base=${baseCurrency}`)).data,
+  });
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
@@ -61,6 +74,43 @@ export default function Dashboard() {
           <button onClick={() => setAddOpen(true)} className="btn-primary"><Plus size={14} /> 添加</button>
         </div>
       </div>
+
+      <section className="mb-5">
+        <div className="rounded-2xl bg-gradient-to-br from-ink-800 to-ink-900 p-5 text-white shadow-lg dark:from-ink-700 dark:to-ink-900">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs uppercase tracking-wider opacity-70">总资产（折算到）</span>
+            <select
+              value={baseCurrency}
+              onChange={(e) => setBaseCurrency(e.target.value)}
+              className="rounded bg-white/10 px-2 py-0.5 text-xs text-white outline-none"
+            >
+              {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code} className="text-ink-900">{c.code}</option>)}
+            </select>
+          </div>
+          <div className="text-3xl font-semibold tracking-tight">
+            {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0).map((b) => (
+              <div key={b.currency_code} className="rounded-lg bg-white/10 p-2 backdrop-blur">
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider opacity-70">
+                  <span>{b.currency_code}</span>
+                  {b.currency_code !== baseCurrency && <span>× {b.rate.toFixed(4)}</span>}
+                </div>
+                <div className={`mt-0.5 text-sm font-semibold ${b.balance < 0 ? "text-rose-300" : ""}`}>
+                  {formatAmount(b.balance, b.currency_code, currencies.data)}
+                </div>
+                {b.currency_code !== baseCurrency && (
+                  <div className="text-[10px] opacity-60">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
+                )}
+              </div>
+            ))}
+            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0).length === 0 && (
+              <div className="col-span-full text-xs opacity-60">还没有任何余额</div>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="mb-5">
         <h2 className="mb-2 text-sm font-medium text-ink-600">当月收支</h2>
@@ -109,7 +159,7 @@ export default function Dashboard() {
                     {list.map((w) => (
                       <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2">
                         <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
-                        <div className={`text-sm font-medium ${w.type === "credit_card" && w.balance < 0 ? "text-rose-600" : ""}`}>
+                        <div className={`text-sm font-medium ${w.balance < 0 ? "text-rose-600" : ""}`}>
                           {formatAmount(w.balance, code, currencies.data)}
                         </div>
                       </div>

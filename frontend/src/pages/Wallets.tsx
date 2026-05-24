@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Pencil, Plus, Scale, Trash2 } from "lucide-react";
+import { Pencil, Plus, Scale, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } from "lucide-react";
@@ -37,14 +37,13 @@ const TYPE_LABELS: Record<WalletType, string> = {
 
 export default function Wallets() {
   const qc = useQueryClient();
-  const [showArchived, setShowArchived] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Wallet | null>(null);
   const [reconcileFor, setReconcileFor] = useState<Wallet | null>(null);
 
   const wallets = useQuery({
-    queryKey: ["wallets", { archived: showArchived }],
-    queryFn: async () => (await api.get<Wallet[]>(`/wallets?include_archived=${showArchived}`)).data,
+    queryKey: ["wallets"],
+    queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data,
   });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
 
@@ -57,11 +56,6 @@ export default function Wallets() {
     }
     return Array.from(m.entries());
   }, [wallets.data]);
-
-  const archiveMut = useMutation({
-    mutationFn: async (w: Wallet) => api.patch(`/wallets/${w.id}`, { archived: !w.archived }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["wallets"] }),
-  });
 
   const deleteMut = useMutation({
     mutationFn: async (id: number) => api.delete(`/wallets/${id}`),
@@ -79,15 +73,9 @@ export default function Wallets() {
           <h1 className="text-xl font-semibold tracking-tight">Wallet</h1>
           <p className="text-sm text-ink-500">你的现金、银行卡、电子钱包都在这里</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-sm text-ink-600">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-            显示已归档
-          </label>
-          <button onClick={() => { setEditing(null); setOpen(true); }} className="btn-primary">
-            <Plus size={14} /> 新建 Wallet
-          </button>
-        </div>
+        <button onClick={() => { setEditing(null); setOpen(true); }} className="btn-primary">
+          <Plus size={14} /> 新建 Wallet
+        </button>
       </div>
 
       {grouped.length === 0 && (
@@ -96,7 +84,7 @@ export default function Wallets() {
 
       <div className="space-y-4">
         {grouped.map(([code, list]) => {
-          const total = list.filter((w) => !w.archived).reduce((s, w) => s + w.balance, 0);
+          const total = list.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
             const arr = byType.get(w.type) ?? [];
@@ -127,7 +115,6 @@ export default function Wallets() {
                             currencies={currencies.data ?? []}
                             onReconcile={() => setReconcileFor(w)}
                             onEdit={() => { setEditing(w); setOpen(true); }}
-                            onToggleArchive={() => archiveMut.mutate(w)}
                             onDelete={() => { if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id); }}
                           />
                         ))}
@@ -342,7 +329,6 @@ function WalletCardItem({
   currencies,
   onReconcile,
   onEdit,
-  onToggleArchive,
   onDelete,
 }: {
   wallet: Wallet;
@@ -350,37 +336,26 @@ function WalletCardItem({
   currencies: Currency[];
   onReconcile: () => void;
   onEdit: () => void;
-  onToggleArchive: () => void;
   onDelete: () => void;
 }) {
   const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const isNegative = wallet.balance < 0;
   return (
-    <div
-      className={`group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60 ${wallet.archived ? "opacity-50" : ""}`}
-    >
+    <div className="group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
       <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
       <div className="absolute right-2 top-2 opacity-30" style={{ color }}>
         <Icon size={36} />
       </div>
       <div className="relative">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium">{wallet.name}</span>
-          {wallet.archived && <span className="text-[10px] text-ink-400">已归档</span>}
-        </div>
-        <div className="text-xs text-ink-500">
-          {TYPE_LABELS[wallet.type]} · 初始 {formatAmount(wallet.initial_balance, currencyCode, currencies)}
-        </div>
-        <div className={`mt-1 text-lg font-semibold ${wallet.type === "credit_card" && isNegative ? "text-rose-600" : isNegative ? "text-rose-500" : ""}`}>
+        <div className="text-sm font-medium">{wallet.name}</div>
+        <div className="text-xs text-ink-500">{TYPE_LABELS[wallet.type]}</div>
+        <div className={`mt-1 text-lg font-semibold ${isNegative ? "text-rose-600" : ""}`}>
           {formatAmount(wallet.balance, currencyCode, currencies)}
         </div>
         <div className="mt-1 flex gap-0.5">
           <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
           <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>
-          <button onClick={onToggleArchive} className="btn-ghost px-2 py-1 text-xs" title={wallet.archived ? "取消归档" : "归档"}>
-            {wallet.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
-          </button>
           <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
         </div>
       </div>

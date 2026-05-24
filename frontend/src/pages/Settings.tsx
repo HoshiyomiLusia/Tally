@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Download, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, Plus, RefreshCw, Store, Tags, Trash2, Upload, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -108,6 +108,26 @@ export default function Settings() {
       <div className="card mb-3">
         <div className="text-sm text-ink-500">已登录</div>
         <div className="font-medium">{user?.username}</div>
+      </div>
+
+      <div className="card mb-3 p-0">
+        <div className="px-4 pt-3 pb-2 text-xs font-medium uppercase tracking-wider text-ink-500">管理</div>
+        {[
+          { to: "/categories", label: "分类", desc: "二级分类树 + emoji", icon: Tags },
+          { to: "/merchants",  label: "商家", desc: "常用商家 + 默认分类", icon: Store },
+          { to: "/contacts",   label: "联系人", desc: "分摊订单与借贷往来", icon: Users },
+        ].map((m) => (
+          <Link key={m.to} to={m.to} className="flex items-center justify-between gap-2 border-t border-ink-100 px-4 py-3 hover:bg-ink-50">
+            <div className="flex items-center gap-3">
+              <m.icon size={16} className="text-ink-500" />
+              <div>
+                <div className="text-sm font-medium">{m.label}</div>
+                <div className="text-xs text-ink-500">{m.desc}</div>
+              </div>
+            </div>
+            <ChevronRight size={16} className="text-ink-400" />
+          </Link>
+        ))}
       </div>
 
       <div className="card mb-3">

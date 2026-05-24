@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Split, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Split, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import TransactionForm from "../components/TransactionForm";
 import { api, type Category, type Contact, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
@@ -11,6 +11,8 @@ const KIND_LABEL: Record<string, string> = {
   loan_out: "借出", loan_repayment: "还款",
 };
 
+const PAGE_SIZES = [25, 50, 100, 200];
+
 export default function Transactions() {
   const qc = useQueryClient();
   const [walletId, setWalletId] = useState<string>("");
@@ -20,8 +22,12 @@ export default function Transactions() {
   const [q, setQ] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
+
+  useEffect(() => { setPage(0); }, [walletId, categoryId, currency, kind, q, start, end, pageSize]);
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -32,9 +38,10 @@ export default function Transactions() {
     if (q) p.set("q", q);
     if (start) p.set("start", start);
     if (end) p.set("end", end);
-    p.set("limit", "200");
+    p.set("limit", String(pageSize));
+    p.set("offset", String(page * pageSize));
     return p.toString();
-  }, [walletId, categoryId, currency, kind, q, start, end]);
+  }, [walletId, categoryId, currency, kind, q, start, end, pageSize, page]);
 
   const txs = useQuery({
     queryKey: ["transactions", params],
@@ -80,11 +87,13 @@ export default function Transactions() {
     },
   });
 
+  const hasMore = (txs.data?.length ?? 0) === pageSize;
+
   return (
     <div className="px-4 py-5 md:px-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">交易</h1>
+          <h1 className="text-xl font-semibold tracking-tight">账单</h1>
           <p className="text-sm text-ink-500">所有记账记录（含分摊、借贷）</p>
         </div>
         <button onClick={() => { setEditing(null); setOpen(true); }} className="btn-primary">
@@ -114,8 +123,6 @@ export default function Transactions() {
             <option value="income">收入</option>
             <option value="loan_out">借出</option>
             <option value="loan_repayment">还款</option>
-            <option value="transfer_out">转出</option>
-            <option value="transfer_in">转入</option>
           </select>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -185,6 +192,24 @@ export default function Transactions() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-2 text-sm">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-ink-500">每页</span>
+          <select className="input w-20" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+            {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-ink-500">第 {page + 1} 页</span>
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className="btn-ghost px-2 py-1 disabled:opacity-30">
+            <ChevronLeft size={14} />
+          </button>
+          <button onClick={() => setPage(page + 1)} disabled={!hasMore} className="btn-ghost px-2 py-1 disabled:opacity-30">
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
 
       <TransactionForm open={open} onClose={() => { setOpen(false); setEditing(null); }} editing={editing} />

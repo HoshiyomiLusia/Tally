@@ -118,17 +118,23 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     const all = merchants.data ?? [];
     let pool = all;
     if (categoryId) {
-      const cat = filteredCategories.find((c) => c.id === categoryId);
-      const parentId = cat?.parent_id ?? categoryId;
-      const siblings = filteredCategories.filter((c) => c.id === parentId || c.parent_id === parentId).map((c) => c.id);
-      const relevant = new Set<number>([categoryId, ...siblings]);
-      const matched = all.filter((m) => m.default_category_id != null && relevant.has(m.default_category_id));
+      const matched = all.filter((m) => m.default_category_id === categoryId);
       if (matched.length > 0) pool = matched;
     }
-    if (!merchantInput) return pool.slice(0, 8);
+    if (!merchantInput) return pool.slice(0, 12);
     const q = merchantInput.toLowerCase();
-    return pool.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [merchants.data, merchantInput, categoryId, filteredCategories]);
+    return pool.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 12);
+  }, [merchants.data, merchantInput, categoryId]);
+
+  const walletsByCurrency = useMemo(() => {
+    const m = new Map<string, Wallet[]>();
+    for (const w of (wallets.data ?? []).filter((x) => !x.archived)) {
+      const arr = m.get(w.currency_code) ?? [];
+      arr.push(w);
+      m.set(w.currency_code, arr);
+    }
+    return m;
+  }, [wallets.data]);
 
   const equalSplit = () => {
     if (totalAmount <= 0 || !participants.length) return;
@@ -300,16 +306,23 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
           <div>
             <div className="mb-1 text-xs text-ink-500">Wallet</div>
-            <div className="flex flex-wrap gap-1">
-              {(wallets.data ?? []).filter((w) => !w.archived).map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => setWalletId(w.id)}
-                  className={`rounded-full border px-2.5 py-1 text-xs ${walletId === w.id ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 bg-white text-ink-600"}`}
-                >
-                  {w.name} <span className="opacity-60">{w.currency_code}</span>
-                </button>
+            <div className="space-y-1.5">
+              {Array.from(walletsByCurrency.entries()).map(([code, list]) => (
+                <div key={code}>
+                  <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-500">{code}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {list.map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        onClick={() => setWalletId(w.id)}
+                        className={`rounded-full border px-2.5 py-1 text-xs ${walletId === w.id ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 bg-white text-ink-600"}`}
+                      >
+                        {w.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
