@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import MonthPicker from "../components/MonthPicker";
 import { api, type Currency } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
 
@@ -91,7 +92,7 @@ export default function Recurring() {
           <h1 className="text-xl font-semibold tracking-tight">周期账单</h1>
           <p className="text-sm text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
         </div>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
+        <MonthPicker value={month} onChange={setMonth} />
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-1 text-xs">

@@ -3,6 +3,7 @@ import { CalendarClock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
+import MonthPicker from "../components/MonthPicker";
 import TransactionForm from "../components/TransactionForm";
 import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
@@ -72,7 +73,7 @@ export default function Dashboard() {
           <p className="text-sm text-ink-500">当月汇总 · Wallet 余额 · 周期提醒 · 预算进度</p>
         </div>
         <div className="flex items-center gap-2">
-          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
+          <MonthPicker value={month} onChange={setMonth} />
           <button onClick={() => setAddOpen(true)} className="btn-primary"><Plus size={14} /> 添加</button>
         </div>
       </div>

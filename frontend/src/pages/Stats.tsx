@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import MonthPicker from "../components/MonthPicker";
 import { api, type Currency } from "../lib/api";
 import { formatAmount } from "../lib/format";
 
@@ -189,7 +190,7 @@ export default function Stats() {
           <h1 className="text-xl font-semibold tracking-tight">统计</h1>
           <p className="text-sm text-ink-500">KPI · 月趋势 · 分类对比 · 热力 · Top 商家 / 交易</p>
         </div>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
+        <MonthPicker value={month} onChange={setMonth} />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-1">
