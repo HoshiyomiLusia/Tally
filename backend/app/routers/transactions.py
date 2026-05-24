@@ -52,13 +52,7 @@ async def _check_wallet(session: AsyncSession, user: User, wallet_id: int) -> Wa
     return w
 
 
-@router.get("", response_model=list[TransactionRead])
-async def list_transactions(
-    f: TransactionFilter = Depends(),
-    user: User = Depends(current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    stmt = select(Transaction).where(Transaction.user_id == user.id)
+async def _apply_filters(stmt, f: TransactionFilter, user: User, session: AsyncSession):
     if f.start:
         stmt = stmt.where(Transaction.occurred_on >= f.start)
     if f.end:
@@ -83,8 +77,35 @@ async def list_transactions(
         stmt = stmt.where(Transaction.is_recurring == f.is_recurring)
     if f.q:
         stmt = stmt.where(Transaction.note.ilike(f"%{f.q}%"))
+    return stmt
+
+
+@router.get("", response_model=list[TransactionRead])
+async def list_transactions(
+    f: TransactionFilter = Depends(),
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(Transaction).where(Transaction.user_id == user.id)
+    stmt = await _apply_filters(stmt, f, user, session)
     stmt = stmt.order_by(Transaction.occurred_on.desc(), Transaction.id.desc()).limit(f.limit).offset(f.offset)
     return (await session.execute(stmt)).scalars().all()
+
+
+class CountResponse(BaseModel):
+    total: int
+
+
+@router.get("/count", response_model=CountResponse)
+async def count_transactions(
+    f: TransactionFilter = Depends(),
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(func.count(Transaction.id)).where(Transaction.user_id == user.id)
+    stmt = await _apply_filters(stmt, f, user, session)
+    total = (await session.execute(stmt)).scalar() or 0
+    return CountResponse(total=int(total))
 
 
 @router.post("", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)

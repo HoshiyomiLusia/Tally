@@ -69,6 +69,17 @@ export default function Transactions() {
     queryKey: ["transactions", params],
     queryFn: async () => (await api.get<Transaction[]>(`/transactions?${params}`)).data,
   });
+  // count 接口只关心 filter, 不关心 limit/offset, 单独构造 key 复用缓存
+  const countParams = useMemo(() => {
+    const p = new URLSearchParams(params);
+    p.delete("limit");
+    p.delete("offset");
+    return p.toString();
+  }, [params]);
+  const totalCount = useQuery({
+    queryKey: ["transactions", "count", countParams],
+    queryFn: async () => (await api.get<{ total: number }>(`/transactions/count?${countParams}`)).data.total,
+  });
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
@@ -130,7 +141,9 @@ export default function Transactions() {
     },
   });
 
-  const hasMore = (txs.data?.length ?? 0) === pageSize;
+  const total = totalCount.data ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const hasMore = page + 1 < totalPages;
 
   return (
     <div className="px-4 py-5 pb-28 md:px-6">
@@ -263,11 +276,12 @@ export default function Transactions() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <span className="text-xs text-ink-500">每页</span>
           <select className="input w-20" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
             {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          <span className="text-xs text-ink-500">共 {total} 条 · {totalPages} 页</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -277,7 +291,7 @@ export default function Transactions() {
           >
             <ChevronLeft size={14} /> 上一页
           </button>
-          <span className="rounded bg-ink-100 px-2 py-1 text-xs font-medium text-ink-700 dark:bg-ink-700 dark:text-ink-200">第 {page + 1} 页</span>
+          <PageJump page={page} totalPages={totalPages} onJump={setPage} />
           <button
             onClick={() => setPage(page + 1)}
             disabled={!hasMore}
@@ -346,6 +360,34 @@ export default function Transactions() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PageJump({ page, totalPages, onJump }: { page: number; totalPages: number; onJump: (p: number) => void }) {
+  const [text, setText] = useState(String(page + 1));
+  useEffect(() => { setText(String(page + 1)); }, [page]);
+
+  const commit = () => {
+    const n = parseInt(text, 10);
+    if (Number.isNaN(n)) { setText(String(page + 1)); return; }
+    const clamped = Math.max(1, Math.min(totalPages, n));
+    onJump(clamped - 1);
+    setText(String(clamped));
+  };
+
+  return (
+    <div className="flex items-center gap-1 rounded bg-ink-100 px-2 py-1 text-xs text-ink-700 dark:bg-ink-700 dark:text-ink-200">
+      <span>第</span>
+      <input
+        inputMode="numeric"
+        value={text}
+        onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ""))}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { commit(); (e.target as HTMLInputElement).blur(); } }}
+        className="w-10 rounded bg-white px-1 text-center font-medium tabular-nums dark:bg-ink-800"
+      />
+      <span>/ {totalPages} 页</span>
     </div>
   );
 }
