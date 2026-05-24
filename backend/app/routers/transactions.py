@@ -1,5 +1,8 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete as sql_delete, select
+from pydantic import BaseModel
+from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
@@ -8,6 +11,20 @@ from ..models import Category, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+class FrequentItem(BaseModel):
+    wallet_id: int
+    wallet_name: str
+    category_id: int | None
+    category_name: str
+    category_emoji: str
+    merchant_id: int
+    merchant_name: str
+    amount: int
+    currency_code: str
+    count: int
+    last_on: date
 
 
 async def _check_wallet(session: AsyncSession, user: User, wallet_id: int) -> Wallet:
@@ -74,6 +91,65 @@ async def create_transaction(
     await session.commit()
     await session.refresh(t)
     return t
+
+
+@router.get("/frequent", response_model=list[FrequentItem])
+async def frequent(
+    min_count: int = 3,
+    limit: int = 12,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            select(
+                Transaction.wallet_id,
+                Transaction.category_id,
+                Transaction.merchant_id,
+                Transaction.amount,
+                Transaction.currency_code,
+                func.count(Transaction.id),
+                func.max(Transaction.occurred_on),
+            )
+            .where(
+                Transaction.user_id == user.id,
+                Transaction.kind == "expense",
+                Transaction.merchant_id.is_not(None),
+            )
+            .group_by(
+                Transaction.wallet_id,
+                Transaction.category_id,
+                Transaction.merchant_id,
+                Transaction.amount,
+                Transaction.currency_code,
+            )
+            .having(func.count(Transaction.id) >= min_count)
+            .order_by(func.count(Transaction.id).desc(), func.max(Transaction.occurred_on).desc())
+            .limit(limit)
+        )
+    ).all()
+    if not rows:
+        return []
+
+    wallets = {w.id: w for w in (await session.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()}
+    cats = {c.id: c for c in (await session.execute(select(Category).where(Category.user_id == user.id))).scalars().all()}
+    merchants = {m.id: m for m in (await session.execute(select(Merchant).where(Merchant.user_id == user.id))).scalars().all()}
+
+    out: list[FrequentItem] = []
+    for wid, cid, mid, amount, code, cnt, last_on in rows:
+        w = wallets.get(wid)
+        m = merchants.get(mid)
+        c = cats.get(cid) if cid else None
+        if not w or not m:
+            continue
+        out.append(FrequentItem(
+            wallet_id=wid, wallet_name=w.name,
+            category_id=cid, category_name=c.name if c else "未分类", category_emoji=c.emoji if c else "",
+            merchant_id=mid, merchant_name=m.name,
+            amount=int(amount), currency_code=code,
+            count=int(cnt), last_on=last_on,
+        ))
+    return out
 
 
 @router.get("/{tid}", response_model=TransactionRead)

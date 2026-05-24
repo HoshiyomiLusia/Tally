@@ -1,10 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Split, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import TransactionForm from "../components/TransactionForm";
 import { api, type Category, type Contact, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
-import { formatAmount } from "../lib/format";
+import { formatAmount, todayIso } from "../lib/format";
+
+interface FrequentItem {
+  wallet_id: number;
+  wallet_name: string;
+  category_id: number | null;
+  category_name: string;
+  category_emoji: string;
+  merchant_id: number;
+  merchant_name: string;
+  amount: number;
+  currency_code: string;
+  count: number;
+  last_on: string;
+}
 
 const KIND_LABEL: Record<string, string> = {
   expense: "支出", income: "收入", transfer_out: "转出", transfer_in: "转入",
@@ -55,6 +69,27 @@ export default function Transactions() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts?include_archived=true")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+  const frequent = useQuery({ queryKey: ["frequent"], queryFn: async () => (await api.get<FrequentItem[]>("/transactions/frequent?min_count=3&limit=12")).data });
+
+  const quickAdd = useMutation({
+    mutationFn: async (f: FrequentItem) => api.post("/transactions", {
+      wallet_id: f.wallet_id,
+      category_id: f.category_id,
+      merchant_id: f.merchant_id,
+      amount: f.amount,
+      currency_code: f.currency_code,
+      kind: "expense",
+      occurred_on: todayIso(),
+      note: "",
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["wallets"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["frequent"] });
+      qc.invalidateQueries({ queryKey: ["merchants"] });
+    },
+  });
 
   const catName = (id: number | null) => categories.data?.find((c) => c.id === id);
   const walletName = (id: number) => wallets.data?.find((w) => w.id === id)?.name ?? "?";
@@ -103,6 +138,38 @@ export default function Transactions() {
           <Plus size={14} /> 添加
         </button>
       </div>
+
+      {(frequent.data ?? []).length > 0 && (
+        <div className="mb-3">
+          <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
+            <Zap size={11} /> 快速添加（点一下用今天日期重复这笔）
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {(frequent.data ?? []).map((f) => (
+              <button
+                key={`${f.merchant_id}-${f.amount}-${f.currency_code}-${f.wallet_id}-${f.category_id ?? 0}`}
+                onClick={() => {
+                  if (confirm(`快速添加：${f.merchant_name} ${formatAmount(f.amount, f.currency_code, currencies.data)}（${f.wallet_name}，${f.category_name}）？`)) {
+                    quickAdd.mutate(f);
+                  }
+                }}
+                disabled={quickAdd.isPending}
+                className="shrink-0 rounded-xl border border-ink-200 bg-white px-3 py-2 text-left text-sm shadow-sm hover:border-emerald-500 hover:shadow-md dark:border-ink-700 dark:bg-ink-800/60 dark:hover:border-emerald-400"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>{f.category_emoji}</span>
+                  <span className="font-medium">{f.merchant_name}</span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-rose-600">{formatAmount(f.amount, f.currency_code, currencies.data)}</span>
+                  <span className="text-ink-400">· {f.wallet_name}</span>
+                  <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card mb-3 space-y-2">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

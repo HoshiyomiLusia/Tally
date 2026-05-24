@@ -258,6 +258,8 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       qc.invalidateQueries({ queryKey: ["wallets"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      qc.invalidateQueries({ queryKey: ["merchants"] });
+      qc.invalidateQueries({ queryKey: ["frequent"] });
       onClose();
     },
     onError: (e: unknown) => {
