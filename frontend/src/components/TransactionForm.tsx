@@ -43,6 +43,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [note, setNote] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceText, setRecurrenceText] = useState("");
+  const [composingMerchant, setComposingMerchant] = useState(false);
   const [splitOn, setSplitOn] = useState(false);
   const [participants, setParticipants] = useState<ParticipantState[]>([]);
   const [error, setError] = useState("");
@@ -386,9 +387,18 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
               className="input"
               value={merchantInput}
               placeholder="输入或选择"
-              onChange={(e) => { setMerchantInput(e.target.value); setMerchantId(null); }}
+              onCompositionStart={() => setComposingMerchant(true)}
+              onCompositionEnd={(e) => {
+                setComposingMerchant(false);
+                setMerchantInput((e.target as HTMLInputElement).value);
+                setMerchantId(null);
+              }}
+              onChange={(e) => {
+                setMerchantInput(e.target.value);
+                if (!composingMerchant) setMerchantId(null);
+              }}
             />
-            {merchantSuggestions.length > 0 && merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
+            {!composingMerchant && merchantSuggestions.length > 0 && merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {merchantSuggestions.map((m) => (
                   <button
