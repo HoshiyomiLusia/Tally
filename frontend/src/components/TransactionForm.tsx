@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -43,7 +43,6 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [note, setNote] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceText, setRecurrenceText] = useState("");
-  const [composingMerchant, setComposingMerchant] = useState(false);
   const [splitOn, setSplitOn] = useState(false);
   const [participants, setParticipants] = useState<ParticipantState[]>([]);
   const [error, setError] = useState("");
@@ -115,6 +114,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const selectedCat = filteredCategories.find((c) => c.id === categoryId) ?? null;
   const expandedParent = selectedCat?.parent_id ?? (selectedCat && childrenByParent.get(selectedCat.id) ? selectedCat.id : null);
 
+  const deferredMerchantInput = useDeferredValue(merchantInput);
   const merchantSuggestions = useMemo(() => {
     const all = merchants.data ?? [];
     let pool = all;
@@ -122,14 +122,29 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       const matched = all.filter((m) => m.default_category_id === categoryId);
       if (matched.length > 0) pool = matched;
     }
-    if (!merchantInput) return pool.slice(0, 12);
-    const q = merchantInput.toLowerCase();
+    if (!deferredMerchantInput) return pool.slice(0, 12);
+    const q = deferredMerchantInput.toLowerCase();
     return pool.filter((m) => {
       if (m.name.toLowerCase().includes(q)) return true;
       if (m.aliases && m.aliases.toLowerCase().includes(q)) return true;
       return false;
     }).slice(0, 12);
-  }, [merchants.data, merchantInput, categoryId]);
+  }, [merchants.data, deferredMerchantInput, categoryId]);
+
+  const createCustomMerchant = useMutation({
+    mutationFn: async (name: string) => {
+      const r = await api.post<Merchant>("/merchants", {
+        name,
+        default_category_id: categoryId,
+      });
+      return r.data;
+    },
+    onSuccess: (m) => {
+      qc.invalidateQueries({ queryKey: ["merchants"] });
+      setMerchantInput(m.name);
+      setMerchantId(m.id);
+    },
+  });
 
   const walletsByCurrency = useMemo(() => {
     const m = new Map<string, Wallet[]>();
@@ -309,7 +324,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </div>
           </div>
 
-          <div>
+          <div className="border-t border-ink-100 pt-3 dark:border-ink-700">
             <div className="mb-1 text-xs text-ink-500">Wallet</div>
             <div className="space-y-1.5">
               {Array.from(walletsByCurrency.entries()).map(([code, list]) => (
@@ -340,7 +355,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </div>
           </div>
 
-          <div>
+          <div className="border-t border-ink-100 pt-3 dark:border-ink-700">
             <div className="mb-1 text-xs text-ink-500">分类 <span className="text-ink-400">（点大类就够了，需要更细再点小类）</span></div>
             <div className="flex flex-wrap gap-1.5">
               {topLevel.map((p) => {
@@ -390,19 +405,11 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             <input
               className="input"
               value={merchantInput}
-              placeholder="输入或选择"
-              onCompositionStart={() => setComposingMerchant(true)}
-              onCompositionEnd={(e) => {
-                setComposingMerchant(false);
-                setMerchantInput((e.target as HTMLInputElement).value);
-                setMerchantId(null);
-              }}
-              onChange={(e) => {
-                setMerchantInput(e.target.value);
-                if (!composingMerchant) setMerchantId(null);
-              }}
+              placeholder="输入或选择 (支持中/日/英别名匹配)"
+              autoComplete="off"
+              onChange={(e) => { setMerchantInput(e.target.value); setMerchantId(null); }}
             />
-            {!composingMerchant && merchantSuggestions.length > 0 && merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
+            {merchantInput !== merchants.data?.find((m) => m.id === merchantId)?.name && (
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {merchantSuggestions.map((m) => (
                   <button
@@ -412,6 +419,14 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
                     className="min-h-[32px] rounded-full bg-ink-50 px-3 py-1 text-sm text-ink-600 hover:bg-ink-100 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-xs dark:bg-ink-700/50 dark:text-ink-200"
                   >{m.name}</button>
                 ))}
+                {merchantInput.trim() && !merchants.data?.some((m) => m.name.toLowerCase() === merchantInput.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    disabled={createCustomMerchant.isPending}
+                    onClick={() => createCustomMerchant.mutate(merchantInput.trim())}
+                    className="min-h-[32px] rounded-full border border-dashed border-emerald-500 px-3 py-1 text-sm font-medium text-emerald-600 hover:bg-emerald-50 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-xs dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                  >+ 添加 "{merchantInput.trim()}"</button>
+                )}
               </div>
             )}
           </div>
