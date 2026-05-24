@@ -130,6 +130,14 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const selectedCat = filteredCategories.find((c) => c.id === categoryId) ?? null;
   const expandedParent = selectedCat?.parent_id ?? (selectedCat && childrenByParent.get(selectedCat.id) ? selectedCat.id : null);
 
+  const catUsage = useQuery({
+    queryKey: ["merchants-usage", categoryId],
+    queryFn: async () => (await api.get<{ merchant_id: number; count: number }[]>(
+      `/merchants/usage-by-category?category_id=${categoryId}`,
+    )).data,
+    enabled: open && categoryId != null,
+  });
+
   const deferredMerchantInput = useDeferredValue(merchantInput);
   const merchantSuggestions = useMemo(() => {
     const all = merchants.data ?? [];
@@ -144,15 +152,30 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
         return false;
       }).slice(0, 12);
     }
-    let pool = all;
-    if (categoryId) {
-      const kids = childrenByParent.get(categoryId) ?? [];
-      const accept = new Set<number>([categoryId, ...kids.map((c) => c.id)]);
-      const matched = all.filter((m) => m.default_category_id != null && accept.has(m.default_category_id));
-      if (matched.length > 0) pool = matched;
-    }
-    return pool.slice(0, 12);
-  }, [merchants.data, deferredMerchantInput, categoryId, childrenByParent]);
+    if (!categoryId) return all.slice(0, 12);
+
+    // 包含规则: 在当前分类用过 OR default_category 匹配 (含子类). 排序优先级:
+    // 在该分类的使用次数 desc > default 匹配 > 全局 usage_count desc.
+    // 这样在出租车下用过 5 次 Uber 的话, Uber 会浮到 GO Taxi 上面.
+    const kids = childrenByParent.get(categoryId) ?? [];
+    const accept = new Set<number>([categoryId, ...kids.map((c) => c.id)]);
+    const usageMap = new Map<number, number>();
+    for (const u of catUsage.data ?? []) usageMap.set(u.merchant_id, u.count);
+
+    const scored = all.map((m) => ({
+      m,
+      used: usageMap.get(m.id) ?? 0,
+      defMatch: m.default_category_id != null && accept.has(m.default_category_id),
+    }));
+    const included = scored.filter((x) => x.used > 0 || x.defMatch);
+    if (included.length === 0) return all.slice(0, 12);
+    included.sort((a, b) =>
+      (b.used - a.used) ||
+      (Number(b.defMatch) - Number(a.defMatch)) ||
+      (b.m.usage_count - a.m.usage_count),
+    );
+    return included.slice(0, 12).map((x) => x.m);
+  }, [merchants.data, deferredMerchantInput, categoryId, childrenByParent, catUsage.data]);
 
   const createCustomMerchant = useMutation({
     mutationFn: async (name: string) => {

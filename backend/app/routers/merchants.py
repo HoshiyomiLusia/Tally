@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import or_, select
+from pydantic import BaseModel
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Merchant, User
+from ..models import Category, Merchant, Transaction, User
 from ..schemas.merchant import MerchantCreate, MerchantRead, MerchantUpdate
 
 router = APIRouter(prefix="/merchants", tags=["merchants"])
@@ -22,6 +23,40 @@ async def list_merchants(
         stmt = stmt.where(or_(Merchant.name.ilike(like), Merchant.aliases.ilike(like)))
     stmt = stmt.order_by(Merchant.usage_count.desc(), Merchant.name)
     return (await session.execute(stmt)).scalars().all()
+
+
+class CatUsage(BaseModel):
+    merchant_id: int
+    count: int
+
+
+@router.get("/usage-by-category", response_model=list[CatUsage])
+async def usage_by_category(
+    category_id: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """每个商家在指定分类下用过几次. 父类时把子类的也算上.
+    前端用来给商家建议做排序: 你在出租车下用过 5 次 Uber, Uber 就该置顶,
+    哪怕 Uber 的 default_category 是别的."""
+    child_ids = (
+        await session.execute(
+            select(Category.id).where(Category.user_id == user.id, Category.parent_id == category_id)
+        )
+    ).scalars().all()
+    cat_ids = [category_id, *child_ids]
+    rows = (
+        await session.execute(
+            select(Transaction.merchant_id, func.count(Transaction.id))
+            .where(
+                Transaction.user_id == user.id,
+                Transaction.merchant_id.is_not(None),
+                Transaction.category_id.in_(cat_ids),
+            )
+            .group_by(Transaction.merchant_id)
+        )
+    ).all()
+    return [CatUsage(merchant_id=int(mid), count=int(cnt)) for mid, cnt in rows]
 
 
 @router.post("", response_model=MerchantRead, status_code=status.HTTP_201_CREATED)
