@@ -4,10 +4,6 @@ Self-hosted multi-currency personal finance tracker. Runs locally in Docker.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-| Stats | Wallets | Mobile |
-|---|---|---|
-| ![Stats](docs/screenshots/stats.png) | ![Wallets](docs/screenshots/wallets.png) | ![Mobile](docs/screenshots/mobile.png) |
-
 ## Run
 
 ```bash
