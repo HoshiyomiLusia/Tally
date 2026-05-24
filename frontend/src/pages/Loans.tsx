@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownLeft, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import ContactForm from "../components/ContactForm";
 import { api, type Currency, type LoanAccount, type Transaction, type Wallet } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
@@ -13,6 +14,7 @@ export default function Loans() {
   const [repayFor, setRepayFor] = useState<LoanAccount | null>(null);
   const [writeOffFor, setWriteOffFor] = useState<LoanAccount | null>(null);
   const [historyFor, setHistoryFor] = useState<LoanAccount | null>(null);
+  const [newContact, setNewContact] = useState(false);
 
   const list = accounts.data ?? [];
   const totals = useMemo(() => {
@@ -25,9 +27,14 @@ export default function Loans() {
 
   return (
     <div className="px-4 py-5 md:px-6">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight">贷款账户</h1>
-        <p className="text-sm text-ink-500">分摊订单产生的应收应付 · 负数 = 别人欠我 · 正数 = 我欠别人</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">贷款账户</h1>
+          <p className="text-sm text-ink-500">分摊订单产生的应收应付 · 负数 = 别人欠我 · 正数 = 我欠别人</p>
+        </div>
+        <button onClick={() => setNewContact(true)} className="btn-ghost">
+          <UserPlus size={14} /> 新建联系人
+        </button>
       </div>
 
       {totals.length > 0 && (
@@ -74,6 +81,7 @@ export default function Loans() {
       <RepaymentModal acct={repayFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setRepayFor(null)} />
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
       <HistoryModal acct={historyFor} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
+      <ContactForm open={newContact} onClose={() => setNewContact(false)} editing={null} />
     </div>
   );
 }

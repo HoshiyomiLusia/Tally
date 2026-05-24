@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Store, Tags, Trash2, Upload, Users } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Store, Tags, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -118,7 +118,6 @@ export default function Settings() {
         {[
           { to: "/categories", label: "分类", desc: "二级分类树 + emoji", icon: Tags },
           { to: "/merchants",  label: "商家", desc: "常用商家 + 默认分类", icon: Store },
-          { to: "/contacts",   label: "联系人", desc: "分摊订单与借贷往来", icon: Users },
         ].map((m) => (
           <Link key={m.to} to={m.to} className="flex items-center justify-between gap-2 border-t border-ink-100 px-4 py-3 hover:bg-ink-50">
             <div className="flex items-center gap-3">
