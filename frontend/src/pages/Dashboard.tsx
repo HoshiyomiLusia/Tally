@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import TransactionForm from "../components/TransactionForm";
-import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Transaction } from "../lib/api";
+import { api, type BudgetProgress, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
 import { formatAmount, monthLabel } from "../lib/format";
 
 interface CrossTotal {
@@ -28,6 +28,7 @@ export default function Dashboard() {
   });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
+  const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({ queryKey: ["recurring-upcoming"], queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?days=14")).data });
   const budgetProgress = useQuery({ queryKey: ["budgets-progress", month], queryFn: async () => (await api.get<BudgetProgress[]>(`/budgets/progress?on_date=${month}-15`)).data });
 
@@ -40,6 +41,7 @@ export default function Dashboard() {
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
+  const merchantName = (id: number | null) => id == null ? "" : merchants.data?.find((m) => m.id === id)?.name ?? "";
 
   const groupedWallets = useMemo(() => {
     const m = new Map<string, { wallet_id: number; wallet_name: string; currency_code: string; balance: number; type: string; archived: boolean }[]>();
@@ -268,21 +270,26 @@ export default function Dashboard() {
           {(dash.data?.recent_transactions ?? []).length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">还没有交易记录</div>
           )}
-          {(dash.data?.recent_transactions ?? []).map((t) => (
-            <div key={t.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">分摊</span>}
-                  {t.is_recurring && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">周期</span>}
-                  <span className="truncate">{t.note || "(无备注)"}</span>
+          {(dash.data?.recent_transactions ?? []).map((t) => {
+            const mname = merchantName(t.merchant_id);
+            const sub = [mname, t.note].filter(Boolean).join(" · ");
+            return (
+              <div key={t.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">分摊</span>}
+                    {t.is_recurring && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">周期</span>}
+                    <span className="truncate">{catEmoji(t.category_id)} {catName(t.category_id)}</span>
+                    {sub && <span className="truncate text-xs text-ink-500">· {sub}</span>}
+                  </div>
+                  <div className="text-xs text-ink-500">{t.occurred_on}</div>
                 </div>
-                <div className="text-xs text-ink-500">{t.occurred_on}</div>
+                <div className={`shrink-0 font-medium ${t.kind === "income" ? "text-emerald-600" : t.kind === "loan_out" ? "text-amber-600" : t.kind === "loan_repayment" ? "text-sky-600" : "text-rose-600"}`}>
+                  {t.kind === "income" || t.kind === "loan_repayment" ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
+                </div>
               </div>
-              <div className={`shrink-0 font-medium ${t.kind === "income" ? "text-emerald-600" : t.kind === "loan_out" ? "text-amber-600" : t.kind === "loan_repayment" ? "text-sky-600" : "text-rose-600"}`}>
-                {t.kind === "income" || t.kind === "loan_repayment" ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
