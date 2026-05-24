@@ -55,8 +55,28 @@ function thisMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
+const SORT_LABEL: Record<SortKey, string> = {
+  date_desc: "日期 ↓",
+  date_asc: "日期 ↑",
+  amount_desc: "金额 ↓",
+  amount_asc: "金额 ↑",
+};
+
+function sortItems(items: Item[], sort: SortKey): Item[] {
+  const copy = [...items];
+  copy.sort((a, b) => {
+    if (sort === "date_desc") return a.occurred_on < b.occurred_on ? 1 : -1;
+    if (sort === "date_asc") return a.occurred_on < b.occurred_on ? -1 : 1;
+    if (sort === "amount_desc") return b.amount - a.amount;
+    return a.amount - b.amount;
+  });
+  return copy;
+}
+
 export default function Recurring() {
   const [month, setMonth] = useState(thisMonth());
+  const [sort, setSort] = useState<SortKey>("date_asc");
   const data = useQuery({
     queryKey: ["recurring-by-month", month],
     queryFn: async () => (await api.get<MonthlyResp>(`/recurring/by-month?month=${month}`)).data,
@@ -72,6 +92,17 @@ export default function Recurring() {
           <p className="text-sm text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
         </div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-1 text-xs">
+        <span className="text-ink-500">排序</span>
+        {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+          <button
+            key={k}
+            onClick={() => setSort(k)}
+            className={`rounded-full border px-2.5 py-0.5 ${sort === k ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+          >{SORT_LABEL[k]}</button>
+        ))}
       </div>
 
       <section className="mb-5">
@@ -93,7 +124,7 @@ export default function Recurring() {
           {(!m || m.monthly_items.length === 0) && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">本月还没有月度账单</div>
           )}
-          {m?.monthly_items.map((it) => renderRow(it, currencies.data))}
+          {m && sortItems(m.monthly_items, sort).map((it) => renderRow(it, currencies.data))}
         </div>
       </section>
 
@@ -116,7 +147,7 @@ export default function Recurring() {
           {(!m || m.yearly_items.length === 0) && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">本年还没有年度账单</div>
           )}
-          {m?.yearly_items.map((it) => renderRow(it, currencies.data))}
+          {m && sortItems(m.yearly_items, sort).map((it) => renderRow(it, currencies.data))}
         </div>
       </section>
     </div>
