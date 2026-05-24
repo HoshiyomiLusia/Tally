@@ -10,6 +10,8 @@ class WalletBalanceItem(BaseModel):
     balance: int
     type: str
     archived: bool
+    loan_out_on_wallet: int = 0
+    loan_repayment_on_wallet: int = 0
 
 
 class CurrencyTotals(BaseModel):

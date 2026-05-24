@@ -11,11 +11,35 @@ interface Item {
   category_id: number | null;
   category_name: string;
   category_emoji: string;
+  merchant_id: number | null;
+  merchant_name: string;
+  note: string;
   wallet_id: number;
   wallet_name: string;
   currency_code: string;
   amount: number;
   frequency: "monthly" | "yearly" | "other";
+}
+
+function renderRow(it: Item, currencies?: Currency[]) {
+  // 主标题用商家名 (或备注), 副标 = 分类. 没商家也没备注就只显示分类
+  const primary = it.merchant_name || it.note || it.category_name;
+  const showCategorySub = primary !== it.category_name && !!it.category_name;
+  return (
+    <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span>{it.category_emoji}</span>
+          <span className="truncate font-medium">{primary}</span>
+          {showCategorySub && <span className="truncate text-xs text-ink-500">· {it.category_name}</span>}
+        </div>
+        <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}{it.merchant_name && it.note ? ` · ${it.note}` : ""}</div>
+      </div>
+      <div className="shrink-0 font-semibold text-rose-600">
+        {formatAmount(it.amount, it.currency_code, currencies)}
+      </div>
+    </div>
+  );
 }
 
 interface MonthlyResp {
@@ -69,21 +93,7 @@ export default function Recurring() {
           {(!m || m.monthly_items.length === 0) && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">本月还没有月度账单</div>
           )}
-          {m?.monthly_items.map((it) => (
-            <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span>{it.category_emoji}</span>
-                  <span className="font-medium">{it.name}</span>
-                  <span className="text-xs text-ink-500">· {it.category_name}</span>
-                </div>
-                <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}</div>
-              </div>
-              <div className="shrink-0 font-semibold text-rose-600">
-                {formatAmount(it.amount, it.currency_code, currencies.data)}
-              </div>
-            </div>
-          ))}
+          {m?.monthly_items.map((it) => renderRow(it, currencies.data))}
         </div>
       </section>
 
@@ -106,21 +116,7 @@ export default function Recurring() {
           {(!m || m.yearly_items.length === 0) && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">本年还没有年度账单</div>
           )}
-          {m?.yearly_items.map((it) => (
-            <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span>{it.category_emoji}</span>
-                  <span className="font-medium">{it.name}</span>
-                  <span className="text-xs text-ink-500">· {it.category_name}</span>
-                </div>
-                <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}</div>
-              </div>
-              <div className="shrink-0 font-semibold text-rose-600">
-                {formatAmount(it.amount, it.currency_code, currencies.data)}
-              </div>
-            </div>
-          ))}
+          {m?.yearly_items.map((it) => renderRow(it, currencies.data))}
         </div>
       </section>
     </div>

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Category, Transaction, User, Wallet
+from ..models import Category, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionRead
 
 router = APIRouter(prefix="/recurring", tags=["recurring"])
@@ -131,6 +131,9 @@ class MonthlyRecurringItem(BaseModel):
     category_id: int | None
     category_name: str
     category_emoji: str
+    merchant_id: int | None = None
+    merchant_name: str = ""
+    note: str = ""
     wallet_id: int
     wallet_name: str
     currency_code: str
@@ -173,6 +176,7 @@ async def by_month(
 
     wallets = {w.id: w for w in (await session.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()}
     cats = {c.id: c for c in (await session.execute(select(Category).where(Category.user_id == user.id))).scalars().all()}
+    merchants_map = {m.id: m for m in (await session.execute(select(Merchant).where(Merchant.user_id == user.id))).scalars().all()}
 
     monthly: list[MonthlyRecurringItem] = []
     yearly: list[MonthlyRecurringItem] = []
@@ -182,15 +186,19 @@ async def by_month(
     for t in rows:
         wallet = wallets.get(t.wallet_id)
         cat = cats.get(t.category_id) if t.category_id else None
+        merchant = merchants_map.get(t.merchant_id) if t.merchant_id else None
         is_yearly = t.recurrence_period_days == 365
         is_monthly_freq = t.recurrence_period_days == 30 or t.recurrence_period_days is None or not is_yearly
         item = MonthlyRecurringItem(
             transaction_id=t.id,
             occurred_on=t.occurred_on,
-            name=(t.note or (cat.name if cat else None) or "未命名"),
+            name=(merchant.name if merchant else None) or t.note or (cat.name if cat else None) or "未命名",
             category_id=t.category_id,
             category_name=cat.name if cat else "未分类",
             category_emoji=cat.emoji if cat else "",
+            merchant_id=t.merchant_id,
+            merchant_name=merchant.name if merchant else "",
+            note=t.note or "",
             wallet_id=t.wallet_id,
             wallet_name=wallet.name if wallet else "?",
             currency_code=t.currency_code,

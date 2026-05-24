@@ -44,12 +44,17 @@ export default function Budgets() {
           const warn = p.percent > 0.8 && !over;
           const barColor = over ? "bg-rose-500" : warn ? "bg-amber-500" : "bg-emerald-500";
           const note = list.data?.find((b) => b.id === p.budget_id)?.note ?? "";
+          const isTotal = p.category_id == null;
           return (
             <div key={p.budget_id} className="card">
               <div className="mb-1 flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{p.category_name} <span className="text-xs text-ink-400">{p.currency_code} · {p.period === "monthly" ? "月" : "年"}</span></div>
-                  {note && <div className="truncate text-xs text-ink-500">{note}</div>}
+                  {note ? (
+                    <div className="truncate text-xs text-ink-500">{note}</div>
+                  ) : isTotal ? (
+                    <div className="truncate text-xs text-ink-400 italic">无备注（点编辑添加，方便区分多个总预算）</div>
+                  ) : null}
                 </div>
                 <div className="shrink-0 text-sm">
                   <span className={over ? "text-rose-600" : warn ? "text-amber-600" : "text-ink-700"}>

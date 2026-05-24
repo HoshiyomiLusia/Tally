@@ -160,6 +160,8 @@ export interface DashboardData {
     balance: number;
     type: WalletType;
     archived: boolean;
+    loan_out_on_wallet: number;
+    loan_repayment_on_wallet: number;
   }[];
   month_totals: {
     currency_code: string;

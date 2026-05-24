@@ -44,7 +44,7 @@ export default function Dashboard() {
   const merchantName = (id: number | null) => id == null ? "" : merchants.data?.find((m) => m.id === id)?.name ?? "";
 
   const groupedWallets = useMemo(() => {
-    const m = new Map<string, { wallet_id: number; wallet_name: string; currency_code: string; balance: number; type: string; archived: boolean }[]>();
+    const m = new Map<string, { wallet_id: number; wallet_name: string; currency_code: string; balance: number; type: string; archived: boolean; loan_out_on_wallet: number; loan_repayment_on_wallet: number }[]>();
     for (const w of dash.data?.wallet_balances ?? []) {
       if (w.archived) continue;
       const arr = m.get(w.currency_code) ?? [];
@@ -158,14 +158,21 @@ export default function Dashboard() {
                     <div className="text-sm font-semibold">{formatAmount(total, code, currencies.data)}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {list.map((w) => (
-                      <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2">
-                        <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
-                        <div className={`text-sm font-medium ${w.balance < 0 ? "text-rose-600" : ""}`}>
-                          {formatAmount(w.balance, code, currencies.data)}
+                    {list.map((w) => {
+                      const physical = w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet;
+                      const hasLoanDiff = w.loan_out_on_wallet !== 0 || w.loan_repayment_on_wallet !== 0;
+                      return (
+                        <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2">
+                          <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
+                          <div className={`text-sm font-medium ${physical < 0 ? "text-rose-600" : ""}`}>
+                            {formatAmount(physical, code, currencies.data)}
+                          </div>
+                          {hasLoanDiff && (
+                            <div className="text-[10px] text-ink-400">实际 {formatAmount(w.balance, code, currencies.data)}</div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
