@@ -71,17 +71,18 @@ EXPENSE_TREE = [
     ]),
 ]
 
+# Income categories live at the top level — when the user is in 收入 mode the
+# kind itself implies "income", so wrapping them under another "收入" parent
+# is a redundant click. Each entry below becomes its own top-level category.
 INCOME_TREE = [
-    ("收入", "💰", [
-        ("工资", "💼"),
-        ("生活费", "🏠"),
-        ("报销", "🧾"),
-        ("退款", "↩️"),
-        ("投资收益", "📈"),
-        ("账户间转账", "🔁"),
-        ("换汇", "💱"),
-        ("其他收入", "✨"),
-    ]),
+    ("工资", "💼", []),
+    ("生活费", "🏠", []),
+    ("报销", "🧾", []),
+    ("退款", "↩️", []),
+    ("投资收益", "📈", []),
+    ("账户间转账", "🔁", []),
+    ("换汇", "💱", []),
+    ("其他收入", "✨", []),
 ]
 
 MERCHANTS = [

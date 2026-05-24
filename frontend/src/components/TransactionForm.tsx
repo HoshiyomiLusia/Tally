@@ -45,9 +45,11 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
   const [recurrenceText, setRecurrenceText] = useState("");
   const [splitOn, setSplitOn] = useState(false);
   const [participants, setParticipants] = useState<ParticipantState[]>([]);
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
+  const stagedFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -82,6 +84,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setSplitOn(false);
       setParticipants([]);
     }
+    setStagedFiles([]);
     setError("");
     setTimeout(() => amountRef.current?.focus(), 50);
   }, [open, editing, merchants.data, currencies.data]);
@@ -216,6 +219,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
         mid = null;
       }
 
+      let attachTo: number | null = null;
       if (splitOn && !editing) {
         if (participants.length === 0) throw new Error("请至少选择 1 个分摊参与人");
         if (shareDiff !== 0) throw new Error(`分摊金额合计差 ${formatAmount(shareDiff, wallet.currency_code, currencies.data)}`);
@@ -232,7 +236,8 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           my_share: myShare,
           participants: participants.map((p) => ({ contact_id: p.contact_id, share: parseAmount(p.share_text || "0", digits) })),
         };
-        await api.post("/loans/split", payload);
+        const r = await api.post<Transaction[]>("/loans/split", payload);
+        attachTo = r.data[0]?.id ?? null;
       } else {
         const payload = {
           wallet_id: wallet.id,
@@ -249,7 +254,18 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
         if (editing) {
           await api.patch(`/transactions/${editing.id}`, payload);
         } else {
-          await api.post("/transactions", payload);
+          const r = await api.post<Transaction>("/transactions", payload);
+          attachTo = r.data.id;
+        }
+      }
+
+      if (attachTo != null && stagedFiles.length > 0) {
+        for (const f of stagedFiles) {
+          const form = new FormData();
+          form.append("file", f);
+          await api.post(`/transactions/${attachTo}/attachments`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
         }
       }
     },
@@ -560,7 +576,16 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </div>
           )}
 
-          {editing && <AttachmentsSection transactionId={editing.id} />}
+          {editing ? (
+            <AttachmentsSection transactionId={editing.id} />
+          ) : (
+            <StagedAttachments
+              files={stagedFiles}
+              fileRef={stagedFileRef}
+              onAdd={(fs) => setStagedFiles([...stagedFiles, ...fs])}
+              onRemove={(idx) => setStagedFiles(stagedFiles.filter((_, i) => i !== idx))}
+            />
+          )}
 
           {error && <div className="text-sm text-red-600">{error}</div>}
 
@@ -583,6 +608,75 @@ function formatAmountInput(amount: number, digits: number): string {
 function stripTrailingZero(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return String(parseFloat(n.toFixed(8)));
+}
+
+function StagedAttachments({
+  files,
+  fileRef,
+  onAdd,
+  onRemove,
+}: {
+  files: File[];
+  fileRef: React.RefObject<HTMLInputElement>;
+  onAdd: (fs: File[]) => void;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div className="rounded-md bg-ink-50 p-2">
+      <div className="mb-1 flex items-center justify-between text-sm">
+        <span className="flex items-center gap-1 text-ink-600"><Paperclip size={14} /> 附件 / 小票</span>
+        <button onClick={() => fileRef.current?.click()} className="btn-ghost px-2 py-0.5 text-xs">
+          <Plus size={12} /> 添加
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,application/pdf"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const fs = Array.from(e.target.files ?? []);
+            if (fs.length) onAdd(fs);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {files.length === 0 ? (
+        <div className="text-xs text-ink-400">保存后一并上传</div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {files.map((f, idx) => (
+            <StagedThumb key={idx} file={f} onRemove={() => onRemove(idx)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StagedThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file.type.startsWith("image/")) return;
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  return (
+    <div className="group relative">
+      {url ? (
+        <img src={url} alt={file.name} className="h-20 w-full rounded-md object-cover" />
+      ) : (
+        <div className="flex h-20 w-full items-center justify-center rounded-md bg-white text-xs text-ink-500">
+          {file.name.split(".").pop()?.toUpperCase() || "FILE"}
+        </div>
+      )}
+      <button
+        onClick={onRemove}
+        className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover:opacity-100"
+      ><Trash2 size={10} /></button>
+    </div>
+  );
 }
 
 function AttachmentsSection({ transactionId }: { transactionId: number }) {
