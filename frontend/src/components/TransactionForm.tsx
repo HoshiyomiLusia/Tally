@@ -310,17 +310,25 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
               {Array.from(walletsByCurrency.entries()).map(([code, list]) => (
                 <div key={code}>
                   <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-500">{code}</div>
-                  <div className="flex flex-wrap gap-1">
-                    {list.map((w) => (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => setWalletId(w.id)}
-                        className={`rounded-full border px-2.5 py-1 text-xs ${walletId === w.id ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 bg-white text-ink-600"}`}
-                      >
-                        {w.name}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {list.map((w) => {
+                      const on = walletId === w.id;
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => setWalletId(w.id)}
+                          className={
+                            on
+                              ? "chip chip-selected"
+                              : "chip chip-idle"
+                          }
+                        >
+                          {on && <span className="mr-0.5">✓</span>}
+                          {w.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -329,7 +337,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
           <div>
             <div className="mb-1 text-xs text-ink-500">分类 <span className="text-ink-400">（点大类就够了，需要更细再点小类）</span></div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {topLevel.map((p) => {
                 const isSelected = categoryId === p.id;
                 const isExpanded = expandedParent === p.id;
@@ -340,29 +348,34 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
                     onClick={() => setCategoryId(p.id)}
                     className={
                       isSelected
-                        ? "rounded-full border border-ink-800 bg-ink-800 px-2.5 py-1 text-xs text-white"
+                        ? "chip chip-selected"
                         : isExpanded
-                          ? "rounded-full border border-ink-800 bg-ink-100 px-2.5 py-1 text-xs text-ink-900"
-                          : "rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-600"
+                          ? "chip chip-active-parent"
+                          : "chip chip-idle"
                     }
                   >
+                    {isSelected && <span className="mr-0.5">✓</span>}
                     {p.emoji} {p.name}
                   </button>
                 );
               })}
             </div>
             {expandedParent != null && childrenByParent.get(expandedParent) && (
-              <div className="mt-1.5 flex flex-wrap gap-1 border-t border-ink-100 pt-1.5">
-                {(childrenByParent.get(expandedParent) ?? []).map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setCategoryId(c.id)}
-                    className={`rounded-full px-2.5 py-1 text-xs ${categoryId === c.id ? "bg-ink-800 text-white" : "bg-ink-50 text-ink-700 hover:bg-ink-100"}`}
-                  >
-                    {c.emoji} {c.name}
-                  </button>
-                ))}
+              <div className="mt-2 flex flex-wrap gap-1.5 border-t border-ink-100 pt-2 dark:border-ink-700">
+                {(childrenByParent.get(expandedParent) ?? []).map((c) => {
+                  const on = categoryId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCategoryId(c.id)}
+                      className={on ? "chip chip-selected" : "chip chip-sub-idle"}
+                    >
+                      {on && <span className="mr-0.5">✓</span>}
+                      {c.emoji} {c.name}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

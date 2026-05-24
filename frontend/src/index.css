@@ -44,6 +44,30 @@ body, #root {
     @apply rounded-xl border border-ink-100 bg-white p-4 shadow-sm
            dark:border-ink-800 dark:bg-ink-800/60 dark:shadow-none;
   }
+  .chip {
+    @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all;
+  }
+  .chip-idle {
+    @apply border-ink-200 bg-white text-ink-600
+           hover:border-ink-400 hover:bg-ink-50
+           dark:border-ink-700 dark:bg-ink-800 dark:text-ink-300
+           dark:hover:border-ink-500 dark:hover:bg-ink-700;
+  }
+  .chip-sub-idle {
+    @apply border-transparent bg-ink-50 text-ink-700 hover:bg-ink-100
+           dark:bg-ink-700/50 dark:text-ink-200 dark:hover:bg-ink-700;
+  }
+  .chip-active-parent {
+    @apply border-ink-700 bg-ink-100 text-ink-900 font-semibold
+           dark:border-ink-300 dark:bg-ink-700 dark:text-white;
+  }
+  .chip-selected {
+    @apply border-transparent bg-emerald-600 text-white font-semibold
+           shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/40
+           hover:bg-emerald-700
+           dark:bg-emerald-500 dark:shadow-emerald-500/40 dark:ring-emerald-400/50
+           dark:hover:bg-emerald-400;
+  }
 }
 
 /* --- Dark mode global tints for components not using @apply --- */
