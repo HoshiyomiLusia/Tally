@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Merchant, Transaction, User, Wallet
+from ..models import Category, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -31,7 +31,13 @@ async def list_transactions(
     if f.wallet_id:
         stmt = stmt.where(Transaction.wallet_id == f.wallet_id)
     if f.category_id:
-        stmt = stmt.where(Transaction.category_id == f.category_id)
+        child_ids = (
+            await session.execute(
+                select(Category.id).where(Category.user_id == user.id, Category.parent_id == f.category_id)
+            )
+        ).scalars().all()
+        cat_ids = [f.category_id, *child_ids]
+        stmt = stmt.where(Transaction.category_id.in_(cat_ids))
     if f.currency_code:
         stmt = stmt.where(Transaction.currency_code == f.currency_code)
     if f.kind:

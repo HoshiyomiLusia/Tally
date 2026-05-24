@@ -16,7 +16,8 @@ const PAGE_SIZES = [25, 50, 100, 200];
 export default function Transactions() {
   const qc = useQueryClient();
   const [walletId, setWalletId] = useState<string>("");
-  const [categoryId, setCategoryId] = useState<string>("");
+  const [parentCatId, setParentCatId] = useState<string>("");
+  const [childCatId, setChildCatId] = useState<string>("");
   const [currency, setCurrency] = useState<string>("");
   const [kind, setKind] = useState<string>("");
   const [q, setQ] = useState("");
@@ -27,12 +28,14 @@ export default function Transactions() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
 
-  useEffect(() => { setPage(0); }, [walletId, categoryId, currency, kind, q, start, end, pageSize]);
+  useEffect(() => { setPage(0); }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
+  useEffect(() => { setChildCatId(""); }, [parentCatId]);
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (walletId) p.set("wallet_id", walletId);
-    if (categoryId) p.set("category_id", categoryId);
+    const effectiveCat = childCatId || parentCatId;
+    if (effectiveCat) p.set("category_id", effectiveCat);
     if (currency) p.set("currency_code", currency);
     if (kind) p.set("kind", kind);
     if (q) p.set("q", q);
@@ -41,7 +44,7 @@ export default function Transactions() {
     p.set("limit", String(pageSize));
     p.set("offset", String(page * pageSize));
     return p.toString();
-  }, [walletId, categoryId, currency, kind, q, start, end, pageSize, page]);
+  }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize, page]);
 
   const txs = useQuery({
     queryKey: ["transactions", params],
@@ -107,12 +110,6 @@ export default function Transactions() {
             <option value="">所有 Wallet</option>
             {(wallets.data ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
-          <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">所有分类</option>
-            {(categories.data ?? []).map((c) => (
-              <option key={c.id} value={c.id}>{c.parent_id ? "  ↳ " : ""}{c.emoji} {c.name}</option>
-            ))}
-          </select>
           <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
             <option value="">所有币种</option>
             {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
@@ -124,11 +121,28 @@ export default function Transactions() {
             <option value="loan_out">借出</option>
             <option value="loan_repayment">还款</option>
           </select>
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="备注关键词" />
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <select className="input" value={parentCatId} onChange={(e) => setParentCatId(e.target.value)}>
+            <option value="">所有大类</option>
+            {(categories.data ?? []).filter((c) => c.parent_id === null).map((c) => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value={childCatId}
+            onChange={(e) => setChildCatId(e.target.value)}
+            disabled={!parentCatId}
+          >
+            <option value="">{parentCatId ? "全部子分类" : "先选大类"}</option>
+            {(categories.data ?? []).filter((c) => parentCatId && c.parent_id === Number(parentCatId)).map((c) => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </select>
           <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} placeholder="开始" />
           <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} placeholder="结束" />
-          <input className="input sm:col-span-2" value={q} onChange={(e) => setQ(e.target.value)} placeholder="备注关键词" />
         </div>
       </div>
 
