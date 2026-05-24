@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useState } from "react";
 
 import { api, type Currency } from "../lib/api";
-import { formatAmount } from "../lib/format";
+import { formatAmount, monthLabel } from "../lib/format";
 
-interface RecurringGroup {
-  group_id: string | null;
-  representative_id: number;
+interface Item {
+  transaction_id: number;
+  occurred_on: string;
   name: string;
   category_id: number | null;
   category_name: string;
@@ -14,111 +14,115 @@ interface RecurringGroup {
   wallet_id: number;
   wallet_name: string;
   currency_code: string;
-  period_days: number | null;
-  count: number;
-  total_amount: number;
-  avg_amount: number;
-  last_amount: number;
-  last_on: string;
-  next_due: string | null;
+  amount: number;
+  frequency: "monthly" | "yearly" | "other";
 }
 
-function daysFromNow(iso: string | null): number | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.floor((d.getTime() - today.getTime()) / 86400000);
+interface MonthlyResp {
+  month: string;
+  monthly_items: Item[];
+  yearly_items: Item[];
+  monthly_totals: Record<string, number>;
+  yearly_totals: Record<string, number>;
+}
+
+function thisMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export default function Recurring() {
-  const groups = useQuery({ queryKey: ["recurring-groups"], queryFn: async () => (await api.get<RecurringGroup[]>("/recurring/groups")).data });
+  const [month, setMonth] = useState(thisMonth());
+  const data = useQuery({
+    queryKey: ["recurring-by-month", month],
+    queryFn: async () => (await api.get<MonthlyResp>(`/recurring/by-month?month=${month}`)).data,
+  });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
 
-  const list = groups.data ?? [];
-
-  const totals = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const g of list) {
-      if (g.period_days) {
-        const monthly = Math.round(g.avg_amount * 30 / g.period_days);
-        m.set(g.currency_code, (m.get(g.currency_code) ?? 0) + monthly);
-      }
-    }
-    return Array.from(m.entries());
-  }, [list]);
-
+  const m = data.data;
   return (
     <div className="px-4 py-5 md:px-6">
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight">周期账单</h1>
-        <p className="text-sm text-ink-500">所有被标记为周期的支出 · 没填周期的只是标记不提醒</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">周期账单</h1>
+          <p className="text-sm text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
+        </div>
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="input w-40" />
       </div>
 
-      {totals.length > 0 && (
-        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {totals.map(([code, monthly]) => (
-            <div key={code} className="card">
-              <div className="text-xs text-ink-500">预估月度支出 · {code}</div>
-              <div className="mt-1 text-lg font-semibold">{formatAmount(monthly, code, currencies.data)}</div>
-              <div className="text-[10px] text-ink-400">按各项均值与周期折算到 30 天</div>
+      <section className="mb-5">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-medium text-ink-600">{monthLabel(month)} · 月度账单</h2>
+          <span className="text-xs text-ink-500">{m ? `${m.monthly_items.length} 笔` : ""}</span>
+        </div>
+        {m && Object.keys(m.monthly_totals).length > 0 && (
+          <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {Object.entries(m.monthly_totals).map(([code, total]) => (
+              <div key={code} className="card">
+                <div className="text-xs text-ink-500">{code} 本月月度合计</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(total, code, currencies.data)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="card divide-y divide-ink-100 p-0">
+          {(!m || m.monthly_items.length === 0) && (
+            <div className="px-4 py-6 text-center text-sm text-ink-500">本月还没有月度账单</div>
+          )}
+          {m?.monthly_items.map((it) => (
+            <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span>{it.category_emoji}</span>
+                  <span className="font-medium">{it.name}</span>
+                  <span className="text-xs text-ink-500">· {it.category_name}</span>
+                </div>
+                <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}</div>
+              </div>
+              <div className="shrink-0 font-semibold text-rose-600">
+                {formatAmount(it.amount, it.currency_code, currencies.data)}
+              </div>
             </div>
           ))}
         </div>
-      )}
+      </section>
 
-      <div className="card divide-y divide-ink-100 p-0">
-        {list.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-ink-500">
-            还没有标记为周期的账单。<br />
-            添加交易时勾选"标记为周期账单"即可出现在这里。
+      <section className="mb-5">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-medium text-ink-600">{month.slice(0, 4)} 年 · 年度账单</h2>
+          <span className="text-xs text-ink-500">{m ? `${m.yearly_items.length} 笔` : ""}</span>
+        </div>
+        {m && Object.keys(m.yearly_totals).length > 0 && (
+          <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {Object.entries(m.yearly_totals).map(([code, total]) => (
+              <div key={code} className="card">
+                <div className="text-xs text-ink-500">{code} 本年年度合计</div>
+                <div className="mt-1 text-lg font-semibold">{formatAmount(total, code, currencies.data)}</div>
+              </div>
+            ))}
           </div>
         )}
-        {list.map((g) => {
-          const dueIn = daysFromNow(g.next_due);
-          const overdue = dueIn !== null && dueIn < 0;
-          const soon = dueIn !== null && dueIn >= 0 && dueIn <= 7;
-          return (
-            <div key={`${g.group_id ?? g.representative_id}`} className="px-4 py-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span>{g.category_emoji}</span>
-                    <span className="font-medium">{g.name}</span>
-                    <span className="text-xs text-ink-500">· {g.category_name}</span>
-                  </div>
-                  <div className="text-xs text-ink-500">
-                    {g.wallet_name} · 共 {g.count} 笔 · 均 {formatAmount(g.avg_amount, g.currency_code, currencies.data)}
-                  </div>
+        <div className="card divide-y divide-ink-100 p-0">
+          {(!m || m.yearly_items.length === 0) && (
+            <div className="px-4 py-6 text-center text-sm text-ink-500">本年还没有年度账单</div>
+          )}
+          {m?.yearly_items.map((it) => (
+            <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span>{it.category_emoji}</span>
+                  <span className="font-medium">{it.name}</span>
+                  <span className="text-xs text-ink-500">· {it.category_name}</span>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-semibold">{formatAmount(g.last_amount, g.currency_code, currencies.data)}</div>
-                  <div className="text-[10px] text-ink-400">上次 {g.last_on}</div>
-                </div>
+                <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}</div>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
-                {g.period_days ? (
-                  <>
-                    <span className="text-ink-500">周期 {g.period_days} 天</span>
-                    {g.next_due ? (
-                      <span className={overdue ? "text-rose-600" : soon ? "text-amber-600" : "text-ink-500"}>
-                        下次约 {g.next_due}
-                        {dueIn !== null && (
-                          <span className="ml-1">
-                            ({overdue ? `逾期 ${-dueIn} 天` : dueIn === 0 ? "今天" : `${dueIn} 天后`})
-                          </span>
-                        )}
-                      </span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-ink-400">仅标记 · 无周期提醒</span>
-                )}
+              <div className="shrink-0 font-semibold text-rose-600">
+                {formatAmount(it.amount, it.currency_code, currencies.data)}
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

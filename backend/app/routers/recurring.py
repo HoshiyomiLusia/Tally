@@ -122,3 +122,95 @@ async def list_groups(
         ))
     out.sort(key=lambda g: (g.next_due is None, g.next_due or today, g.name))
     return out
+
+
+class MonthlyRecurringItem(BaseModel):
+    transaction_id: int
+    occurred_on: date
+    name: str
+    category_id: int | None
+    category_name: str
+    category_emoji: str
+    wallet_id: int
+    wallet_name: str
+    currency_code: str
+    amount: int
+    frequency: str  # "monthly" | "yearly" | "other"
+
+
+class MonthlyRecurringResponse(BaseModel):
+    month: str
+    monthly_items: list[MonthlyRecurringItem]
+    yearly_items: list[MonthlyRecurringItem]
+    monthly_totals: dict[str, int]
+    yearly_totals: dict[str, int]
+
+
+@router.get("/by-month", response_model=MonthlyRecurringResponse)
+async def by_month(
+    month: str | None = None,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    today = date.today()
+    anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
+    m_start = anchor.replace(day=1)
+    m_end = date(anchor.year + 1, 1, 1) if anchor.month == 12 else date(anchor.year, anchor.month + 1, 1)
+    y_start = date(anchor.year, 1, 1)
+    y_end = date(anchor.year + 1, 1, 1)
+
+    rows = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.user_id == user.id,
+                Transaction.is_recurring == True,  # noqa: E712
+                Transaction.kind == "expense",
+                Transaction.occurred_on >= y_start,
+                Transaction.occurred_on < y_end,
+            )
+        )
+    ).scalars().all()
+
+    wallets = {w.id: w for w in (await session.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()}
+    cats = {c.id: c for c in (await session.execute(select(Category).where(Category.user_id == user.id))).scalars().all()}
+
+    monthly: list[MonthlyRecurringItem] = []
+    yearly: list[MonthlyRecurringItem] = []
+    m_tot: dict[str, int] = {}
+    y_tot: dict[str, int] = {}
+
+    for t in rows:
+        wallet = wallets.get(t.wallet_id)
+        cat = cats.get(t.category_id) if t.category_id else None
+        is_yearly = t.recurrence_period_days == 365
+        is_monthly_freq = t.recurrence_period_days == 30 or t.recurrence_period_days is None or not is_yearly
+        item = MonthlyRecurringItem(
+            transaction_id=t.id,
+            occurred_on=t.occurred_on,
+            name=(t.note or (cat.name if cat else None) or "未命名"),
+            category_id=t.category_id,
+            category_name=cat.name if cat else "未分类",
+            category_emoji=cat.emoji if cat else "",
+            wallet_id=t.wallet_id,
+            wallet_name=wallet.name if wallet else "?",
+            currency_code=t.currency_code,
+            amount=t.amount,
+            frequency="yearly" if is_yearly else ("monthly" if t.recurrence_period_days == 30 else "other"),
+        )
+        if is_yearly:
+            yearly.append(item)
+            y_tot[t.currency_code] = y_tot.get(t.currency_code, 0) + t.amount
+        elif m_start <= t.occurred_on < m_end:
+            monthly.append(item)
+            m_tot[t.currency_code] = m_tot.get(t.currency_code, 0) + t.amount
+
+    monthly.sort(key=lambda x: x.occurred_on)
+    yearly.sort(key=lambda x: x.occurred_on)
+
+    return MonthlyRecurringResponse(
+        month=m_start.strftime("%Y-%m"),
+        monthly_items=monthly,
+        yearly_items=yearly,
+        monthly_totals=m_tot,
+        yearly_totals=y_tot,
+    )

@@ -402,21 +402,30 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
 
           <div className="rounded-md bg-ink-50 p-2 text-sm">
             <label className="flex items-center gap-1.5">
-              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => {
+                  setIsRecurring(e.target.checked);
+                  if (e.target.checked && !recurrenceText) setRecurrenceText("30");
+                  if (!e.target.checked) setRecurrenceText("");
+                }}
+              />
               标记为周期账单
             </label>
             {isRecurring && (
-              <div className="mt-1.5 flex items-center gap-2 pl-5">
-                <span className="text-xs text-ink-500">到期提醒周期</span>
-                <input
-                  inputMode="numeric"
-                  className="input w-16 text-sm"
-                  value={recurrenceText}
-                  onChange={(e) => setRecurrenceText(e.target.value.replace(/\D/g, ""))}
-                  placeholder="留空"
-                />
-                <span className="text-xs text-ink-500">天</span>
-                <span className="text-[10px] text-ink-400">留空 = 只标记不提醒</span>
+              <div className="mt-1.5 flex items-center gap-1 pl-5">
+                <span className="mr-1 text-xs text-ink-500">频率</span>
+                <button
+                  type="button"
+                  onClick={() => setRecurrenceText("30")}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${recurrenceText === "30" ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+                >月度</button>
+                <button
+                  type="button"
+                  onClick={() => setRecurrenceText("365")}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${recurrenceText === "365" ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+                >年度</button>
               </div>
             )}
           </div>
