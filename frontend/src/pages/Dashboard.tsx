@@ -192,17 +192,21 @@ export default function Dashboard() {
           <div className="card divide-y divide-ink-100 p-0">
             {(upcoming.data ?? []).map((t) => {
               const nextDue = addDaysIso(t.occurred_on, t.recurrence_period_days || 0);
+              const mname = merchantName(t.merchant_id);
+              const cname = catName(t.category_id);
+              const primary = mname || t.note || cname;
+              const showCat = primary !== cname;
               return (
                 <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span>{catEmoji(t.category_id)}</span>
-                      <span className="font-medium">{catName(t.category_id)}</span>
-                      {t.note && <span className="text-xs text-ink-500">· {t.note}</span>}
+                      <span className="truncate font-medium">{primary}</span>
+                      {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
                     </div>
-                    <div className="text-xs text-ink-500">上次 {t.occurred_on} · 下次约 {nextDue}</div>
+                    <div className="text-xs text-ink-500">上次 {t.occurred_on} · 下次约 {nextDue}{mname && t.note ? ` · ${t.note}` : ""}</div>
                   </div>
-                  <div className="text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+                  <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
                 </div>
               );
             })}
