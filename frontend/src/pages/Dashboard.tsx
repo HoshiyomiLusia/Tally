@@ -35,10 +35,12 @@ export default function Dashboard() {
 
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
+  const [catCurrency, setCatCurrency] = useState<string>("");  // "" = 全部 (折算到 baseCurrency)
   const cross = useQuery({
     queryKey: ["cross-currency-total", baseCurrency],
     queryFn: async () => (await api.get<CrossTotal>(`/stats/cross-currency-total?base=${baseCurrency}`)).data,
   });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
@@ -64,6 +66,56 @@ export default function Dashboard() {
     }
     return Array.from(m.entries());
   }, [dash.data]);
+
+  // 跨币种折算 helper (跟 Stats 页同套逻辑)
+  const digitsMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of currencies.data ?? []) m.set(c.code, c.decimal_digits);
+    return m;
+  }, [currencies.data]);
+  const rateMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rates.data ?? []) {
+      const k = `${r.base}->${r.quote}`;
+      if (!m.has(k)) m.set(k, r.rate);
+    }
+    return m;
+  }, [rates.data]);
+  const fxTo = (amount: number, from: string, to: string): number => {
+    if (from === to) return amount;
+    const fd = digitsMap.get(from) ?? 2;
+    const td = digitsMap.get(to) ?? 2;
+    let rate = rateMap.get(`${from}->${to}`);
+    if (rate == null) {
+      const rev = rateMap.get(`${to}->${from}`);
+      if (rev == null || rev === 0) return 0;
+      rate = 1 / rev;
+    }
+    return Math.round(amount * rate * Math.pow(10, td - fd));
+  };
+
+  // 分类支出可选币种列表 (出现过的所有币种)
+  const breakdownCurrencies = useMemo(() => breakdownByCurrency.map(([code]) => code), [breakdownByCurrency]);
+  const isCatAll = catCurrency === "" && breakdownCurrencies.length > 0;
+  const displayCode = isCatAll ? baseCurrency : (catCurrency || baseCurrency);
+
+  // 全部模式: 跨币种合并到 baseCurrency, 按 category_id 聚合
+  // 单币种模式: 直接拿该币种的列表, 已按 amount desc 排
+  const breakdownDisplay = useMemo(() => {
+    if (!isCatAll) {
+      const code = catCurrency;
+      const items = (dash.data?.category_breakdown ?? []).filter((it) => it.currency_code === code);
+      return items.slice(0, 10);
+    }
+    const m = new Map<number | string, { category_id: number | null; category_name: string; emoji: string; amount: number; currency_code: string }>();
+    for (const it of dash.data?.category_breakdown ?? []) {
+      const key = it.category_id ?? `null-${it.category_name}`;
+      const row = m.get(key) ?? { ...it, currency_code: baseCurrency, amount: 0 };
+      row.amount += fxTo(it.amount, it.currency_code, baseCurrency);
+      m.set(key, row);
+    }
+    return Array.from(m.values()).sort((a, b) => b.amount - a.amount).slice(0, 10);
+  }, [dash.data, isCatAll, catCurrency, baseCurrency, fxTo]);
 
   return (
     <div className="px-4 py-5 md:px-6">
@@ -245,33 +297,54 @@ export default function Dashboard() {
       )}
 
       {breakdownByCurrency.length > 0 && (
-        <section className="mb-5 space-y-3">
-          <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类支出</h2>
-          {breakdownByCurrency.map(([code, items]) => {
-            const top = items.slice(0, 10);
-            const data = top.map((it) => ({
-              name: `${it.emoji ?? ""} ${it.category_name}`.trim(),
-              amount: it.amount,
-            }));
-            return (
-              <div key={code} className="card">
-                <div className="mb-2 text-sm text-ink-600">{code}</div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ececef" vertical={false} />
-                    <XAxis dataKey="name" fontSize={11} angle={-20} textAnchor="end" interval={0} height={50} />
-                    <YAxis fontSize={10} />
-                    <Tooltip formatter={(v: number) => formatAmount(v, code, currencies.data)} />
-                    <Bar dataKey="amount" fill="#e11d48" radius={[4, 4, 0, 0]}>
-                      {data.map((_, i) => (
-                        <Cell key={i} fill={i === 0 ? "#be123c" : "#e11d48"} fillOpacity={1 - i * 0.06} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            );
-          })}
+        <section className="mb-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-ink-600">本月分类支出</h2>
+            <div className="flex flex-wrap items-center gap-1 text-xs">
+              <button
+                onClick={() => setCatCurrency("")}
+                className={`rounded-full border px-2.5 py-0.5 ${isCatAll ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+              >全部 · 折算到 {baseCurrency}</button>
+              {breakdownCurrencies.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCatCurrency(c)}
+                  className={`rounded-full border px-2.5 py-0.5 ${catCurrency === c ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+                >{c}</button>
+              ))}
+              {isCatAll && (
+                <select
+                  value={baseCurrency}
+                  onChange={(e) => setBaseCurrency(e.target.value)}
+                  className="ml-1 rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:bg-ink-800"
+                  title="折算基准币种"
+                >
+                  {breakdownCurrencies.map((c) => <option key={c} value={c}>基准 {c}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+          <div className="card">
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart
+                data={breakdownDisplay.map((it) => ({
+                  name: `${it.emoji ?? ""} ${it.category_name}`.trim(),
+                  amount: it.amount,
+                }))}
+                margin={{ top: 10, right: 10, left: 0, bottom: 30 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#ececef" vertical={false} />
+                <XAxis dataKey="name" fontSize={11} angle={-20} textAnchor="end" interval={0} height={50} />
+                <YAxis fontSize={10} />
+                <Tooltip formatter={(v: number) => formatAmount(v, displayCode, currencies.data)} />
+                <Bar dataKey="amount" fill="#e11d48" radius={[4, 4, 0, 0]}>
+                  {breakdownDisplay.map((_, i) => (
+                    <Cell key={i} fill="#e11d48" fillOpacity={1 - i * 0.06} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </section>
       )}
 
