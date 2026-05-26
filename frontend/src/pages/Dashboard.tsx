@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import MonthPicker from "../components/MonthPicker";
 import TransactionForm from "../components/TransactionForm";
 import { api, type Budget, type BudgetProgress, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { formatAmount, monthLabel } from "../lib/format";
 
 interface CrossTotal {
@@ -33,7 +34,14 @@ export default function Dashboard() {
   const budgetProgress = useQuery({ queryKey: ["budgets-progress", month], queryFn: async () => (await api.get<BudgetProgress[]>(`/budgets/progress?on_date=${month}-15`)).data });
   const budgets = useQuery({ queryKey: ["budgets"], queryFn: async () => (await api.get<Budget[]>("/budgets")).data });
 
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
+  const { user } = useAuth();
+  // 优先级: 用户设置的主要币种 > localStorage 缓存 > JPY 默认
+  const [baseCurrency, setBaseCurrency] = useState<string>(
+    () => localStorage.getItem("tally.baseCurrency") || "JPY",
+  );
+  useEffect(() => {
+    if (user?.primary_currency_code) setBaseCurrency(user.primary_currency_code);
+  }, [user?.primary_currency_code]);
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
   const cross = useQuery({
     queryKey: ["cross-currency-total", baseCurrency],

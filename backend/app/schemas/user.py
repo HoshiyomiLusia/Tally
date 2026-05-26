@@ -19,3 +19,8 @@ class UserResponse(BaseModel):
     id: int
     username: str
     is_active: bool
+    primary_currency_code: str | None = None
+
+
+class UserUpdateRequest(BaseModel):
+    primary_currency_code: str | None = None

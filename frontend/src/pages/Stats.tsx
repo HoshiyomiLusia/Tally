@@ -5,6 +5,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 
 import MonthPicker from "../components/MonthPicker";
 import { api, type Currency } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
 
 interface CurrencySummary {
@@ -35,7 +36,11 @@ interface FxRate { id: number; on_date: string; base: string; quote: string; rat
 
 export default function Stats() {
   const [month, setMonth] = useState(thisMonth());
+  const { user } = useAuth();
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
+  useEffect(() => {
+    if (user?.primary_currency_code) setBaseCurrency(user.primary_currency_code);
+  }, [user?.primary_currency_code]);
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
 
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });

@@ -17,9 +17,13 @@ interface Rate {
 }
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh: refreshUser } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const savePrimaryCurrency = useMutation({
+    mutationFn: async (code: string) => api.patch("/users/me", { primary_currency_code: code }),
+    onSuccess: () => { refreshUser(); },
+  });
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
@@ -111,6 +115,24 @@ export default function Settings() {
           <div className="font-medium">{user?.username}</div>
         </div>
         <button onClick={logout} className="btn-ghost"><LogOut size={14} /> 登出</button>
+      </div>
+
+      <div className="card mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">主要使用币种</div>
+          <div className="text-xs text-ink-500">仪表盘 / 统计页跨币种汇总默认折算到这个币种</div>
+        </div>
+        <select
+          value={user?.primary_currency_code ?? ""}
+          onChange={(e) => savePrimaryCurrency.mutate(e.target.value)}
+          disabled={savePrimaryCurrency.isPending}
+          className="input w-auto"
+        >
+          <option value="">(未设置, 默认 JPY)</option>
+          {(currencies.data ?? []).map((c) => (
+            <option key={c.code} value={c.code}>{c.code} · {c.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="card mb-3 p-0">

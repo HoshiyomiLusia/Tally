@@ -6,6 +6,7 @@ interface AuthUser {
   id: number;
   username: string;
   is_active: boolean;
+  primary_currency_code: string | null;
 }
 
 interface AuthCtx {
@@ -14,6 +15,7 @@ interface AuthCtx {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  refresh: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -64,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout }), [user, loading, login, register, logout]);
+  const value = useMemo(() => ({ user, loading, login, register, logout, refresh: fetchMe }), [user, loading, login, register, logout, fetchMe]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
