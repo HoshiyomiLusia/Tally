@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
 import TransactionForm from "../components/TransactionForm";
@@ -35,7 +35,6 @@ export default function Dashboard() {
 
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
-  const [catCurrency, setCatCurrency] = useState<string>("");  // "" = 全部 (折算到 baseCurrency)
   const cross = useQuery({
     queryKey: ["cross-currency-total", baseCurrency],
     queryFn: async () => (await api.get<CrossTotal>(`/stats/cross-currency-total?base=${baseCurrency}`)).data,
@@ -94,28 +93,36 @@ export default function Dashboard() {
     return Math.round(amount * rate * Math.pow(10, td - fd));
   };
 
-  // 分类支出可选币种列表 (出现过的所有币种)
   const breakdownCurrencies = useMemo(() => breakdownByCurrency.map(([code]) => code), [breakdownByCurrency]);
-  const isCatAll = catCurrency === "" && breakdownCurrencies.length > 0;
-  const displayCode = isCatAll ? baseCurrency : (catCurrency || baseCurrency);
 
-  // 全部模式: 跨币种合并到 baseCurrency, 按 category_id 聚合
-  // 单币种模式: 直接拿该币种的列表, 已按 amount desc 排
-  const breakdownDisplay = useMemo(() => {
-    if (!isCatAll) {
-      const code = catCurrency;
-      const items = (dash.data?.category_breakdown ?? []).filter((it) => it.currency_code === code);
-      return items.slice(0, 10);
-    }
-    const m = new Map<number | string, { category_id: number | null; category_name: string; emoji: string; amount: number; currency_code: string }>();
+  // 按 category 聚合, 每个 cat 一根柱子, 按币种分段叠加 (全部折算到 baseCurrency)
+  // 数据形状: [{ name: "餐饮", total: 65000, JPY: 58000, CNY: 7000 }, ...]
+  const breakdownStacked = useMemo(() => {
+    const m = new Map<number | string, { name: string; total: number } & Record<string, number | string>>();
     for (const it of dash.data?.category_breakdown ?? []) {
       const key = it.category_id ?? `null-${it.category_name}`;
-      const row = m.get(key) ?? { ...it, currency_code: baseCurrency, amount: 0 };
-      row.amount += fxTo(it.amount, it.currency_code, baseCurrency);
-      m.set(key, row);
+      const conv = fxTo(it.amount, it.currency_code, baseCurrency);
+      const row = m.get(key);
+      if (row) {
+        row[it.currency_code] = ((row[it.currency_code] as number | undefined) ?? 0) + conv;
+        row.total += conv;
+      } else {
+        m.set(key, {
+          name: `${it.emoji ?? ""} ${it.category_name}`.trim(),
+          total: conv,
+          [it.currency_code]: conv,
+        });
+      }
     }
-    return Array.from(m.values()).sort((a, b) => b.amount - a.amount).slice(0, 10);
-  }, [dash.data, isCatAll, catCurrency, baseCurrency, fxTo]);
+    return Array.from(m.values()).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [dash.data, baseCurrency, fxTo]);
+
+  // 币种 -> 颜色 (按出现顺序固定分配, 保证刷新后还是同一种色)
+  const CURRENCY_COLORS = ["#e11d48", "#f59e0b", "#3b82f6", "#10b981", "#a855f7", "#0ea5e9", "#ec4899"];
+  const currencyColor = (code: string): string => {
+    const idx = breakdownCurrencies.indexOf(code);
+    return CURRENCY_COLORS[idx >= 0 ? idx % CURRENCY_COLORS.length : 0];
+  };
 
   return (
     <div className="px-4 py-5 md:px-6">
@@ -300,48 +307,46 @@ export default function Dashboard() {
         <section className="mb-5">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium text-ink-600">本月分类支出</h2>
-            <div className="flex flex-wrap items-center gap-1 text-xs">
-              <button
-                onClick={() => setCatCurrency("")}
-                className={`rounded-full border px-2.5 py-0.5 ${isCatAll ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-              >全部 · 折算到 {baseCurrency}</button>
-              {breakdownCurrencies.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setCatCurrency(c)}
-                  className={`rounded-full border px-2.5 py-0.5 ${catCurrency === c ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-                >{c}</button>
-              ))}
-              {isCatAll && (
-                <select
-                  value={baseCurrency}
-                  onChange={(e) => setBaseCurrency(e.target.value)}
-                  className="ml-1 rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:bg-ink-800"
-                  title="折算基准币种"
-                >
-                  {breakdownCurrencies.map((c) => <option key={c} value={c}>基准 {c}</option>)}
-                </select>
-              )}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-ink-500">折算到</span>
+              <select
+                value={baseCurrency}
+                onChange={(e) => setBaseCurrency(e.target.value)}
+                className="rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:bg-ink-800"
+              >
+                {breakdownCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <span className="ml-2 flex flex-wrap items-center gap-2">
+                {breakdownCurrencies.map((c) => (
+                  <span key={c} className="flex items-center gap-1 text-ink-500">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: currencyColor(c) }} />
+                    {c}
+                  </span>
+                ))}
+              </span>
             </div>
           </div>
           <div className="card">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart
-                data={breakdownDisplay.map((it) => ({
-                  name: `${it.emoji ?? ""} ${it.category_name}`.trim(),
-                  amount: it.amount,
-                }))}
-                margin={{ top: 10, right: 10, left: 0, bottom: 30 }}
-              >
+              <BarChart data={breakdownStacked} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ececef" vertical={false} />
                 <XAxis dataKey="name" fontSize={11} angle={-20} textAnchor="end" interval={0} height={50} />
                 <YAxis fontSize={10} />
-                <Tooltip formatter={(v: number) => formatAmount(v, displayCode, currencies.data)} />
-                <Bar dataKey="amount" fill="#e11d48" radius={[4, 4, 0, 0]}>
-                  {breakdownDisplay.map((_, i) => (
-                    <Cell key={i} fill="#e11d48" fillOpacity={1 - i * 0.06} />
-                  ))}
-                </Bar>
+                <Tooltip
+                  formatter={(v: number, code: string) => [formatAmount(v, baseCurrency, currencies.data), code]}
+                />
+                {breakdownCurrencies.map((code, i) => {
+                  const isLast = i === breakdownCurrencies.length - 1;
+                  return (
+                    <Bar
+                      key={code}
+                      dataKey={code}
+                      stackId="a"
+                      fill={currencyColor(code)}
+                      radius={isLast ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                    />
+                  );
+                })}
               </BarChart>
             </ResponsiveContainer>
           </div>
