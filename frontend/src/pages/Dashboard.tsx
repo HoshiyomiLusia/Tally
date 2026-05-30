@@ -218,7 +218,8 @@ export default function Dashboard() {
         {groupedWallets.length ? (
           <div className="space-y-2">
             {groupedWallets.map(([code, list]) => {
-              const total = list.reduce((s, w) => s + w.balance, 0);
+              // 物理余额口径: 跟卡片大数字一致, 借出未还的不计入
+              const total = list.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
               return (
                 <div key={code} className="card">
                   <div className="mb-2 flex items-center justify-between">
