@@ -84,7 +84,8 @@ export default function Wallets() {
 
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
-          const total = list.reduce((s, w) => s + w.balance, 0);
+          // 物理余额口径: 跟卡片大数字一致, 借出未还的不计入汇总
+          const total = list.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
             const arr = byType.get(w.type) ?? [];

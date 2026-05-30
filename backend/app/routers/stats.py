@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
-from ..services.balances import wallet_balances
+from ..services.balances import all_wallet_loan_summary, wallet_balances
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -393,14 +393,19 @@ async def cross_currency_total(
     session: AsyncSession = Depends(get_session),
 ):
     balances = await wallet_balances(session, user.id)
+    loans = await all_wallet_loan_summary(session, user.id)
     wallets = (await session.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.archived == False))).scalars().all()  # noqa: E712
 
     digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
     base_d = digits.get(base, 2)
 
+    # 物理余额 = 系统余额 - 借出 + 还款; 总资产按物理口径汇总 (借出未还的钱不计入)
     by_currency: dict[str, int] = {}
     for w in wallets:
-        by_currency[w.currency_code] = by_currency.get(w.currency_code, 0) + balances.get(w.id, w.initial_balance)
+        sys_bal = balances.get(w.id, w.initial_balance)
+        lo, li = loans.get(w.id, (0, 0))
+        physical = sys_bal - lo + li
+        by_currency[w.currency_code] = by_currency.get(w.currency_code, 0) + physical
 
     rate_rows = (
         await session.execute(
