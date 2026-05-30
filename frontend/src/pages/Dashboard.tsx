@@ -11,8 +11,9 @@ import { formatAmount, monthLabel } from "../lib/format";
 
 interface CrossTotal {
   base_currency: string;
-  total: number;
-  breakdown: { currency_code: string; balance: number; rate: number; converted: number }[];
+  total: number;        // 物理总资产
+  total_real: number;   // 真实总资产 (含借出未还的债权)
+  breakdown: { currency_code: string; balance: number; balance_real: number; rate: number; converted: number; converted_real: number }[];
 }
 
 
@@ -157,11 +158,24 @@ export default function Dashboard() {
               {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
           </div>
-          <div className="text-3xl font-semibold tracking-tight">
-            {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-1">
+            <div>
+              <div className="text-[11px] opacity-60">物理总资产 · 手头实有</div>
+              <div className="text-3xl font-semibold tracking-tight">
+                {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+              </div>
+            </div>
+            {cross.data && cross.data.total_real !== cross.data.total && (
+              <div>
+                <div className="text-[11px] opacity-60">真实总资产 · 含借出债权</div>
+                <div className="text-2xl font-semibold tracking-tight opacity-70">
+                  {formatAmount(cross.data.total_real, baseCurrency, currencies.data)}
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0).map((b) => (
+            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0 || b.balance_real !== 0).map((b) => (
               <div key={b.currency_code} className="overview-chip rounded-lg p-2">
                 <div className="flex items-center justify-between text-[10px] uppercase tracking-wider opacity-60">
                   <span>{b.currency_code}</span>
@@ -170,6 +184,9 @@ export default function Dashboard() {
                 <div className={`mt-0.5 text-sm font-semibold ${b.balance < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
                   {formatAmount(b.balance, b.currency_code, currencies.data)}
                 </div>
+                {b.balance_real !== b.balance && (
+                  <div className="text-[10px] opacity-60">含债权 {formatAmount(b.balance_real, b.currency_code, currencies.data)}</div>
+                )}
                 {b.currency_code !== baseCurrency && (
                   <div className="text-[10px] opacity-60">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
                 )}

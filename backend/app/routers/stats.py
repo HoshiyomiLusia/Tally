@@ -62,7 +62,8 @@ class TopTx(BaseModel):
 
 class CrossCurrencyTotal(BaseModel):
     base_currency: str
-    total: int
+    total: int           # 物理总资产 (手头实有)
+    total_real: int = 0  # 真实总资产 (含借出未还的债权)
     breakdown: list[dict]
 
 
@@ -399,13 +400,16 @@ async def cross_currency_total(
     digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
     base_d = digits.get(base, 2)
 
-    # 物理余额 = 系统余额 - 借出 + 还款; 总资产按物理口径汇总 (借出未还的钱不计入)
+    # 物理余额 = 系统余额 - 借出 + 还款.
+    # by_currency = 物理 (手头实有); by_currency_real = 系统 (含借出未还的债权)
     by_currency: dict[str, int] = {}
+    by_currency_real: dict[str, int] = {}
     for w in wallets:
         sys_bal = balances.get(w.id, w.initial_balance)
         lo, li = loans.get(w.id, (0, 0))
         physical = sys_bal - lo + li
         by_currency[w.currency_code] = by_currency.get(w.currency_code, 0) + physical
+        by_currency_real[w.currency_code] = by_currency_real.get(w.currency_code, 0) + sys_bal
 
     rate_rows = (
         await session.execute(
@@ -421,15 +425,24 @@ async def cross_currency_total(
             rates[(q, b)] = 1.0 / r if r else 0.0
 
     total = 0
+    total_real = 0
     breakdown = []
     for code, amt in by_currency.items():
+        amt_real = by_currency_real.get(code, 0)
         code_d = digits.get(code, 2)
         if code == base:
-            conv = amt
             rate = 1.0
+            conv = amt
+            conv_real = amt_real
         else:
             rate = rates.get((code, base)) or 0.0
-            conv = int(amt * rate * (10 ** (base_d - code_d)))
+            factor = rate * (10 ** (base_d - code_d))
+            conv = int(amt * factor)
+            conv_real = int(amt_real * factor)
         total += conv
-        breakdown.append({"currency_code": code, "balance": amt, "rate": rate, "converted": conv})
-    return CrossCurrencyTotal(base_currency=base, total=total, breakdown=breakdown)
+        total_real += conv_real
+        breakdown.append({
+            "currency_code": code, "balance": amt, "balance_real": amt_real,
+            "rate": rate, "converted": conv, "converted_real": conv_real,
+        })
+    return CrossCurrencyTotal(base_currency=base, total=total, total_real=total_real, breakdown=breakdown)
