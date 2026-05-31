@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import MonthPicker from "../components/MonthPicker";
 import { api, type Currency } from "../lib/api";
-import { formatAmount, monthLabel } from "../lib/format";
+import { formatAmount } from "../lib/format";
 
 interface Item {
   transaction_id: number;
@@ -22,38 +21,12 @@ interface Item {
   frequency: "monthly" | "yearly" | "other";
 }
 
-function renderRow(it: Item, currencies?: Currency[]) {
-  // 主标题用商家名 (或备注), 副标 = 分类. 没商家也没备注就只显示分类
-  const primary = it.merchant_name || it.note || it.category_name;
-  const showCategorySub = primary !== it.category_name && !!it.category_name;
-  return (
-    <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span>{it.category_emoji}</span>
-          <span className="truncate font-medium">{primary}</span>
-          {showCategorySub && <span className="truncate text-xs text-ink-500">· {it.category_name}</span>}
-        </div>
-        <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}{it.merchant_name && it.note ? ` · ${it.note}` : ""}</div>
-      </div>
-      <div className="shrink-0 font-semibold text-rose-600">
-        {formatAmount(it.amount, it.currency_code, currencies)}
-      </div>
-    </div>
-  );
-}
-
 interface MonthlyResp {
   month: string;
   monthly_items: Item[];
   yearly_items: Item[];
   monthly_totals: Record<string, number>;
   yearly_totals: Record<string, number>;
-}
-
-function thisMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
@@ -75,8 +48,27 @@ function sortItems(items: Item[], sort: SortKey): Item[] {
   return copy;
 }
 
-export default function Recurring() {
-  const [month, setMonth] = useState(thisMonth());
+function renderRow(it: Item, currencies?: Currency[]) {
+  const primary = it.merchant_name || it.note || it.category_name;
+  const showCategorySub = primary !== it.category_name && !!it.category_name;
+  return (
+    <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span>{it.category_emoji}</span>
+          <span className="truncate font-medium">{primary}</span>
+          {showCategorySub && <span className="truncate text-xs text-ink-500">· {it.category_name}</span>}
+        </div>
+        <div className="text-xs text-ink-500">{it.occurred_on} · {it.wallet_name}{it.merchant_name && it.note ? ` · ${it.note}` : ""}</div>
+      </div>
+      <div className="shrink-0 font-semibold text-rose-600">
+        {formatAmount(it.amount, it.currency_code, currencies)}
+      </div>
+    </div>
+  );
+}
+
+export default function RecurringPanel({ month }: { month: string }) {
   const [sort, setSort] = useState<SortKey>("date_asc");
   const data = useQuery({
     queryKey: ["recurring-by-month", month],
@@ -86,15 +78,7 @@ export default function Recurring() {
 
   const m = data.data;
   return (
-    <div className="px-4 py-5 md:px-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">周期账单</h1>
-          <p className="text-sm text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
-        </div>
-        <MonthPicker value={month} onChange={setMonth} />
-      </div>
-
+    <div>
       <div className="mb-3 flex flex-wrap items-center gap-1 text-xs">
         <span className="text-ink-500">排序</span>
         {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
@@ -106,9 +90,9 @@ export default function Recurring() {
         ))}
       </div>
 
-      <section className="mb-5">
+      <div className="mb-4">
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium text-ink-600">{monthLabel(month)} · 月度账单</h2>
+          <h3 className="text-sm font-medium text-ink-600">月度账单</h3>
           <span className="text-xs text-ink-500">{m ? `${m.monthly_items.length} 笔` : ""}</span>
         </div>
         {m && Object.keys(m.monthly_totals).length > 0 && (
@@ -127,11 +111,11 @@ export default function Recurring() {
           )}
           {m && sortItems(m.monthly_items, sort).map((it) => renderRow(it, currencies.data))}
         </div>
-      </section>
+      </div>
 
-      <section className="mb-5">
+      <div>
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium text-ink-600">{month.slice(0, 4)} 年 · 年度账单</h2>
+          <h3 className="text-sm font-medium text-ink-600">年度账单</h3>
           <span className="text-xs text-ink-500">{m ? `${m.yearly_items.length} 笔` : ""}</span>
         </div>
         {m && Object.keys(m.yearly_totals).length > 0 && (
@@ -150,7 +134,7 @@ export default function Recurring() {
           )}
           {m && sortItems(m.yearly_items, sort).map((it) => renderRow(it, currencies.data))}
         </div>
-      </section>
+      </div>
     </div>
   );
 }

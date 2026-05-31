@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
-import { api, type Currency } from "../lib/api";
+import RecurringPanel from "../components/RecurringPanel";
+import { api, type Category, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
 
@@ -47,6 +48,7 @@ export default function Stats() {
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<FxRate[]>("/exchange-rates")).data });
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
+  const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => (await api.get<DailyPoint[]>("/stats/daily?kind=expense")).data });
   const topMerch = useQuery({ queryKey: ["stats-top-merchants", month], queryFn: async () => (await api.get<TopMerchant[]>(`/stats/top-merchants?month=${month}`)).data });
 
@@ -113,10 +115,10 @@ export default function Stats() {
     } as CurrencySummary;
   }, [summary.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
-  // 分类对比
+  // 分类对比 (扁平, 按 category_id 聚合; 不切片, 留给分组用)
   const compareForCurrency = useMemo(() => {
     const src = compare.data ?? [];
-    if (!isAll) return src.filter((c) => c.currency_code === activeCurrency).slice(0, 15);
+    if (!isAll) return src.filter((c) => c.currency_code === activeCurrency);
     const m = new Map<number | string, CatCompare>();
     for (const c of src) {
       const key = c.category_id ?? `null-${c.category_name}`;
@@ -126,8 +128,39 @@ export default function Stats() {
       row.delta = row.current - row.previous;
       m.set(key, row);
     }
-    return Array.from(m.values()).sort((a, b) => b.current - a.current).slice(0, 15);
+    return Array.from(m.values()).sort((a, b) => b.current - a.current);
   }, [compare.data, activeCurrency, isAll, baseCurrency, fxTo]);
+
+  // 本月分类: 用 categories 树把子类归到父类下. 父类总额 = 自身直接消费 + 各子类之和.
+  const categoryGroups = useMemo(() => {
+    const catById = new Map<number, Category>();
+    for (const c of categories.data ?? []) catById.set(c.id, c);
+    type Child = { id: number | null; name: string; emoji: string; amount: number };
+    const groups = new Map<number | string, { id: number | null; name: string; emoji: string; own: number; children: Child[]; total: number }>();
+    const ensure = (id: number | null, name: string, emoji: string) => {
+      const key = id ?? `null-${name}`;
+      let g = groups.get(key);
+      if (!g) { g = { id, name, emoji, own: 0, children: [], total: 0 }; groups.set(key, g); }
+      return g;
+    };
+    for (const row of compareForCurrency) {
+      if (row.current <= 0) continue;
+      const cat = row.category_id != null ? catById.get(row.category_id) : undefined;
+      if (cat && cat.parent_id != null) {
+        const parent = catById.get(cat.parent_id);
+        const g = ensure(cat.parent_id, parent?.name ?? "?", parent?.emoji ?? "");
+        g.children.push({ id: row.category_id, name: row.category_name, emoji: row.emoji, amount: row.current });
+        g.total += row.current;
+      } else {
+        const g = ensure(row.category_id, row.category_name, row.emoji);
+        g.own += row.current;
+        g.total += row.current;
+      }
+    }
+    return Array.from(groups.values())
+      .map((g) => ({ ...g, children: g.children.sort((a, b) => b.amount - a.amount) }))
+      .sort((a, b) => b.total - a.total);
+  }, [compareForCurrency, categories.data]);
 
   // 本月 vs 上月每日累计支出 ("支出节奏")
   // x = 月内第几天 (1..31), y = 截至该天的累计支出
@@ -251,15 +284,26 @@ export default function Stats() {
         <div>
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类</h2>
           <div className="card divide-y divide-ink-100 p-0">
-            {compareForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
-            {compareForCurrency.map((c, i) => (
-              <div key={`${c.category_id}-${c.currency_code}`} className="flex items-center justify-between px-4 py-2 text-sm">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="shrink-0 text-ink-400">#{i + 1}</span>
-                  <span>{c.emoji}</span>
-                  <span className="font-medium">{c.category_name}</span>
+            {categoryGroups.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
+            {categoryGroups.map((g) => (
+              <div key={g.id ?? `null-${g.name}`} className="px-4 py-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span>{g.emoji}</span>
+                    <span className="font-medium">{g.name}</span>
+                  </div>
+                  <div className="shrink-0 font-semibold text-rose-600">{formatAmount(g.total, displayCode, currencies.data)}</div>
                 </div>
-                <div className="shrink-0 text-rose-600">{formatAmount(c.current, c.currency_code, currencies.data)}</div>
+                {g.children.length > 0 && (
+                  <div className="mt-1 space-y-0.5 pl-5">
+                    {g.children.map((c) => (
+                      <div key={c.id ?? `null-${c.name}`} className="flex items-center justify-between text-xs text-ink-500">
+                        <span className="truncate">{c.emoji} {c.name}</span>
+                        <span className="shrink-0">{formatAmount(c.amount, displayCode, currencies.data)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -283,6 +327,12 @@ export default function Stats() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+      </section>
+
+      <section className="mb-5">
+        <h2 className="mb-1 text-sm font-medium text-ink-600">周期账单</h2>
+        <p className="mb-2 text-xs text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
+        <RecurringPanel month={month} />
       </section>
     </div>
   );
