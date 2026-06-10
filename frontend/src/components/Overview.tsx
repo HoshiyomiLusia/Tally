@@ -40,7 +40,13 @@ export default function Overview() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
-  const upcoming = useQuery({ queryKey: ["recurring-upcoming"], queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?days=14")).data });
+  // "future" = 未来 14 天即将到期; "past" = 过去 7 天预计已扣款 (回头补记账)
+  const [recurMode, setRecurMode] = useState<"future" | "past">("future");
+  const recurQuery = recurMode === "future" ? "days=14&back=0" : "days=0&back=7";
+  const upcoming = useQuery({
+    queryKey: ["recurring-upcoming", recurMode],
+    queryFn: async () => (await api.get<Transaction[]>(`/recurring/upcoming?${recurQuery}`)).data,
+  });
 
   const { user } = useAuth();
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
@@ -52,6 +58,7 @@ export default function Overview() {
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
   const merchantName = (id: number | null) => id == null ? "" : merchants.data?.find((m) => m.id === id)?.name ?? "";
+  const walletName = (id: number) => dash.data?.wallet_balances.find((w) => w.wallet_id === id)?.wallet_name ?? "?";
 
   const groupedWallets = useMemo(() => {
     const m = new Map<string, DashboardData["wallet_balances"]>();
@@ -212,34 +219,51 @@ export default function Overview() {
         </div>
       </section>
 
-      {/* 即将到期的周期账单 */}
-      {(upcoming.data ?? []).length > 0 && (
-        <section>
-          <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 即将到期的周期账单</h2>
-          <div className="card divide-y divide-ink-100 p-0">
-            {(upcoming.data ?? []).map((t) => {
-              const nextDue = addDaysIso(t.occurred_on, t.recurrence_period_days || 0);
-              const mname = merchantName(t.merchant_id);
-              const cname = catName(t.category_id);
-              const primary = mname || t.note || cname;
-              const showCat = primary !== cname;
-              return (
-                <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span>{catEmoji(t.category_id)}</span>
-                      <span className="truncate font-medium">{primary}</span>
-                      {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
-                    </div>
-                    <div className="text-xs text-ink-500">上次 {t.occurred_on} · 下次约 {nextDue}{mname && t.note ? ` · ${t.note}` : ""}</div>
-                  </div>
-                  <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
-                </div>
-              );
-            })}
+      {/* 周期账单: 未来即将到期 / 过去已扣款 切换 */}
+      <section>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 周期账单</h2>
+          <div className="flex gap-1 text-xs">
+            <button
+              onClick={() => setRecurMode("future")}
+              className={`rounded-full border px-2.5 py-0.5 ${recurMode === "future" ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+            >未来 14 天</button>
+            <button
+              onClick={() => setRecurMode("past")}
+              className={`rounded-full border px-2.5 py-0.5 ${recurMode === "past" ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+            >近 7 天已扣款</button>
           </div>
-        </section>
-      )}
+        </div>
+        <div className="card divide-y divide-ink-100 p-0">
+          {(upcoming.data ?? []).length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-ink-500">
+              {recurMode === "future" ? "未来 14 天没有预计扣款" : "近 7 天没有预计扣款"}
+            </div>
+          )}
+          {(upcoming.data ?? []).map((t) => {
+            const due = addDaysIso(t.occurred_on, t.recurrence_period_days || 0);
+            const mname = merchantName(t.merchant_id);
+            const cname = catName(t.category_id);
+            const primary = mname || t.note || cname;
+            const showCat = primary !== cname;
+            return (
+              <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span>{catEmoji(t.category_id)}</span>
+                    <span className="truncate font-medium">{primary}</span>
+                    {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
+                  </div>
+                  <div className="text-xs text-ink-500">
+                    {recurMode === "future" ? "下次约 " : "预计扣款 "}{due} · 扣款账户 {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
+                  </div>
+                </div>
+                <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 }

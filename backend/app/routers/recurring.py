@@ -35,9 +35,12 @@ class RecurringGroup(BaseModel):
 @router.get("/upcoming", response_model=list[TransactionRead])
 async def upcoming(
     days: int = 14,
+    back: int = 0,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    """预计扣款窗口 [今天-back, 今天+days].
+    days>0 看未来即将到期; back>0 看过去 back 天内已预计扣款 (方便回头补记账)."""
     rows = (
         await session.execute(
             select(Transaction).where(
@@ -50,6 +53,7 @@ async def upcoming(
 
     today = date.today()
     horizon = today + timedelta(days=days)
+    floor = today - timedelta(days=back)
     seen: dict[tuple[str | None, int | None], Transaction] = {}
     for t in rows:
         key = (t.recurrence_group_id, t.id if t.recurrence_group_id is None else None)
@@ -57,15 +61,15 @@ async def upcoming(
         if existing is None or t.occurred_on > existing.occurred_on:
             seen[key] = t
 
-    upcoming_list: list[Transaction] = []
+    out: list[Transaction] = []
     for t in seen.values():
         if not t.recurrence_period_days:
             continue
         next_due = t.occurred_on + timedelta(days=t.recurrence_period_days)
-        if today <= next_due <= horizon:
-            upcoming_list.append(t)
-    upcoming_list.sort(key=lambda x: x.occurred_on + timedelta(days=x.recurrence_period_days or 0))
-    return upcoming_list
+        if floor <= next_due <= horizon:
+            out.append(t)
+    out.sort(key=lambda x: x.occurred_on + timedelta(days=x.recurrence_period_days or 0))
+    return out
 
 
 @router.get("/groups", response_model=list[RecurringGroup])
