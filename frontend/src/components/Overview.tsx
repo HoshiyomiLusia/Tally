@@ -3,7 +3,7 @@ import { CalendarClock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import MonthPicker from "./MonthPicker";
-import { api, type Category, type Currency, type DashboardData, type Merchant, type Transaction, type WalletType } from "../lib/api";
+import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount, todayIso as todayIsoStr } from "../lib/format";
 
@@ -40,6 +40,8 @@ export default function Overview() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
+  const loans = useQuery({ queryKey: ["loan-accounts"], queryFn: async () => (await api.get<LoanAccount[]>("/loans/accounts")).data });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
   // 合并窗口: 过去 7 天 + 未来 14 天, 一段时间轴一起显示, 标出"今天"位置
   const upcoming = useQuery({
     queryKey: ["recurring-upcoming", "window"],
@@ -57,6 +59,27 @@ export default function Overview() {
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
   const merchantName = (id: number | null) => id == null ? "" : merchants.data?.find((m) => m.id === id)?.name ?? "";
   const walletName = (id: number) => dash.data?.wallet_balances.find((w) => w.wallet_id === id)?.wallet_name ?? "?";
+
+  // 借贷净额折算到 baseCurrency. balance: 负=应收(对方欠我), 正=应付(我欠别人)
+  const loanNet = useMemo(() => {
+    const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
+    const rateMap = new Map<string, number>();
+    for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    const fold = (amt: number, from: string): number => {
+      if (from === baseCurrency) return amt;
+      const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
+      let rate = rateMap.get(`${from}->${baseCurrency}`);
+      if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      return Math.round(amt * rate * Math.pow(10, td - fd));
+    };
+    let receivable = 0, payable = 0;
+    for (const a of loans.data ?? []) {
+      const v = fold(a.balance, a.currency_code);
+      if (v < 0) receivable += -v;  // 应收
+      else payable += v;            // 应付
+    }
+    return { receivable, payable };
+  }, [loans.data, rates.data, currencies.data, baseCurrency]);
 
   const groupedWallets = useMemo(() => {
     const m = new Map<string, DashboardData["wallet_balances"]>();
@@ -112,6 +135,18 @@ export default function Overview() {
                 <div>
                   <div className="text-[10px] uppercase tracking-wider opacity-50">信用卡待还</div>
                   <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</div>
+                </div>
+              )}
+              {loanNet.receivable > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider opacity-50">借贷 · 应收</div>
+                  <div className="text-sm font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatAmount(loanNet.receivable, baseCurrency, currencies.data)}</div>
+                </div>
+              )}
+              {loanNet.payable > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider opacity-50">借贷 · 应付</div>
+                  <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(loanNet.payable, baseCurrency, currencies.data)}</div>
                 </div>
               )}
             </div>
@@ -242,7 +277,7 @@ export default function Overview() {
 
       {/* 周期账单时间轴: 过去 7 天 ~ 未来 14 天, 标出今天位置 */}
       <section>
-        <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 周期账单</h2>
+        <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 周期账单预测</h2>
         <div className="card divide-y divide-ink-100 p-0">
           {recurItems.length === 0 && (
             <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>

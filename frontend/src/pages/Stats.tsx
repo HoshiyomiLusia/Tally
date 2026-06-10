@@ -49,7 +49,15 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
-  const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => (await api.get<DailyPoint[]>("/stats/daily?kind=expense")).data });
+  // 支出节奏对比基准: 上月 / 上上月 / 去年同月
+  const [paceBase, setPaceBase] = useState<"prev" | "prev2" | "yoy">("prev");
+  // 拉近 400 天日数据, 覆盖去年同月对比
+  const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 400 * 86400000);
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return (await api.get<DailyPoint[]>(`/stats/daily?kind=expense&start=${iso(start)}&end=${iso(end)}`)).data;
+  } });
   const topMerch = useQuery({ queryKey: ["stats-top-merchants", month], queryFn: async () => (await api.get<TopMerchant[]>(`/stats/top-merchants?month=${month}`)).data });
 
   const allCurrencies = useMemo(() => {
@@ -162,14 +170,17 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
 
-  // 本月 vs 上月每日累计支出 ("支出节奏")
+  // 本月 vs 对比月 每日累计支出 ("支出节奏")
   // x = 月内第几天 (1..31), y = 截至该天的累计支出
-  // 两条线: 本月 (实线) / 上月 (虚线)
+  // 两条线: 本月 (实线) / 对比月 (虚线)
   const pace = useMemo(() => {
     const src = daily.data ?? [];
     const [yr, mn] = month.split("-").map(Number);
-    const prevMonth = mn === 1 ? 12 : mn - 1;
-    const prevYear = mn === 1 ? yr - 1 : yr;
+    // 对比月: 上月 / 上上月 / 去年同月
+    let cYr = yr, cMn = mn;
+    if (paceBase === "prev") { cMn = mn === 1 ? 12 : mn - 1; cYr = mn === 1 ? yr - 1 : yr; }
+    else if (paceBase === "prev2") { cMn = mn <= 2 ? mn + 10 : mn - 2; cYr = mn <= 2 ? yr - 1 : yr; }
+    else { cMn = mn; cYr = yr - 1; }
     // 按 day-of-month 聚合两个月
     const cur: number[] = new Array(31).fill(0);
     const prev: number[] = new Array(31).fill(0);
@@ -181,7 +192,7 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
       const m = dt.getMonth() + 1;
       const day = dt.getDate();
       if (y === yr && m === mn) cur[day - 1] += v;
-      else if (y === prevYear && m === prevMonth) prev[day - 1] += v;
+      else if (y === cYr && m === cMn) prev[day - 1] += v;
     }
     // 累计
     const today = new Date();
@@ -200,7 +211,7 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
       });
     }
     return rows;
-  }, [daily.data, month, activeCurrency, isAll, baseCurrency, fxTo]);
+  }, [daily.data, month, paceBase, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // Top 商家
   const topMerchForCurrency = useMemo(() => {
@@ -311,7 +322,18 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
       </section>
 
       <section className="mb-5">
-        <h2 className="mb-2 text-sm font-medium text-ink-600">本月支出节奏（与上月同期对比）</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
+          <div className="flex gap-1 text-xs">
+            {([["prev", "对比上月"], ["prev2", "对比上上月"], ["yoy", "对比去年同月"]] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setPaceBase(k)}
+                className={`rounded-full border px-2.5 py-0.5 ${paceBase === k ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
         <div className="card">
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={pace} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -323,7 +345,7 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
                 labelFormatter={(d) => `${d} 号`}
               />
               <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={2.5} dot={false} name="本月" connectNulls={false} />
-              <Line type="monotone" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 3" dot={false} name="上月" />
+              <Line type="monotone" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 3" dot={false} name={paceBase === "prev" ? "上月" : paceBase === "prev2" ? "上上月" : "去年同月"} />
             </LineChart>
           </ResponsiveContainer>
         </div>
