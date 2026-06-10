@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import MonthPicker from "./MonthPicker";
 import { api, type Category, type Currency, type DashboardData, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { formatAmount } from "../lib/format";
+import { formatAmount, todayIso as todayIsoStr } from "../lib/format";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
@@ -40,12 +40,10 @@ export default function Overview() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
-  // "future" = 未来 14 天即将到期; "past" = 过去 7 天预计已扣款 (回头补记账)
-  const [recurMode, setRecurMode] = useState<"future" | "past">("future");
-  const recurQuery = recurMode === "future" ? "days=14&back=0" : "days=0&back=7";
+  // 合并窗口: 过去 7 天 + 未来 14 天, 一段时间轴一起显示, 标出"今天"位置
   const upcoming = useQuery({
-    queryKey: ["recurring-upcoming", recurMode],
-    queryFn: async () => (await api.get<Transaction[]>(`/recurring/upcoming?${recurQuery}`)).data,
+    queryKey: ["recurring-upcoming", "window"],
+    queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?back=7&days=14")).data,
   });
 
   const { user } = useAuth();
@@ -70,6 +68,17 @@ export default function Overview() {
     }
     return Array.from(m.entries());
   }, [dash.data]);
+
+  // 周期账单时间轴: 算出每条的预计扣款日 + 是否已过去, 按日期升序
+  const todayIso = todayIsoStr();
+  const recurItems = useMemo(() => {
+    return (upcoming.data ?? [])
+      .map((tx) => {
+        const due = addDaysIso(tx.occurred_on, tx.recurrence_period_days || 0);
+        return { tx, due, isPast: due < todayIso };
+      })
+      .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+  }, [upcoming.data, todayIso]);
 
   return (
     <div className="space-y-5">
@@ -231,49 +240,54 @@ export default function Overview() {
         </div>
       </section>
 
-      {/* 周期账单: 未来即将到期 / 过去已扣款 切换 */}
+      {/* 周期账单时间轴: 过去 7 天 ~ 未来 14 天, 标出今天位置 */}
       <section>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 周期账单</h2>
-          <div className="flex gap-1 text-xs">
-            <button
-              onClick={() => setRecurMode("future")}
-              className={`rounded-full border px-2.5 py-0.5 ${recurMode === "future" ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-            >未来 14 天</button>
-            <button
-              onClick={() => setRecurMode("past")}
-              className={`rounded-full border px-2.5 py-0.5 ${recurMode === "past" ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-            >近 7 天已扣款</button>
-          </div>
-        </div>
+        <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 周期账单</h2>
         <div className="card divide-y divide-ink-100 p-0">
-          {(upcoming.data ?? []).length === 0 && (
-            <div className="px-4 py-6 text-center text-sm text-ink-500">
-              {recurMode === "future" ? "未来 14 天没有预计扣款" : "近 7 天没有预计扣款"}
-            </div>
+          {recurItems.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
           )}
-          {(upcoming.data ?? []).map((t) => {
-            const due = addDaysIso(t.occurred_on, t.recurrence_period_days || 0);
+          {recurItems.map((it, i) => {
+            const t = it.tx;
             const mname = merchantName(t.merchant_id);
             const cname = catName(t.category_id);
             const primary = mname || t.note || cname;
             const showCat = primary !== cname;
+            // 在第一个"今天及以后"的条目前插入今天分隔线
+            const prev = recurItems[i - 1];
+            const showTodayDivider = !it.isPast && (!prev || prev.isPast);
             return (
-              <div key={t.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span>{catEmoji(t.category_id)}</span>
-                    <span className="truncate font-medium">{primary}</span>
-                    {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
+              <div key={t.id}>
+                {showTodayDivider && (
+                  <div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    今天 {todayIso}
                   </div>
-                  <div className="text-xs text-ink-500">
-                    {recurMode === "future" ? "下次约 " : "预计扣款 "}{due} · 扣款账户 {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
+                )}
+                <div className={`flex items-center justify-between px-4 py-2 text-sm ${it.isPast ? "opacity-60" : ""}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>{catEmoji(t.category_id)}</span>
+                      <span className="truncate font-medium">{primary}</span>
+                      {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
+                      {it.isPast && (
+                        <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">预估·待确认</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-ink-500">
+                      {it.isPast ? "应已扣款 " : "下次约 "}{it.due} · 扣款账户 {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
+                    </div>
                   </div>
+                  <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
                 </div>
-                <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
               </div>
             );
           })}
+          {recurItems.some((it) => it.isPast) && (
+            <div className="px-4 py-2 text-[11px] text-ink-400">
+              「预估·待确认」= 按上次金额推算的过去扣款，实际金额可能不同，请核对账单后手动记账。
+            </div>
+          )}
         </div>
       </section>
     </div>
