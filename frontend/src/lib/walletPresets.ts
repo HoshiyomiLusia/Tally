@@ -28,10 +28,10 @@ export const WALLET_PRESETS: WalletPreset[] = [
   { name: "楽天Pay", type: "e_wallet", currency_code: "JPY", color: "#bf0000", region: "JP", tag: "QR" },
   // Japan credit cards
   { name: "楽天カード", type: "credit_card", currency_code: "JPY", color: "#bf0000", region: "JP", tag: "Credit" },
-  { name: "PayPayカード", type: "credit_card", currency_code: "JPY", color: "#ff0035", region: "JP", tag: "Credit" },
+  { name: "PayPayカード", type: "credit_card", currency_code: "JPY", color: "#ff0035", region: "JP", tag: "PayPay" },
   { name: "メルカード", type: "credit_card", currency_code: "JPY", color: "#ff0211", region: "JP", tag: "mercari" },
-  { name: "三井住友カード(NL)", type: "credit_card", currency_code: "JPY", color: "#0f7d3a", region: "JP", tag: "Credit" },
-  { name: "JCBカード", type: "credit_card", currency_code: "JPY", color: "#0e3a8a", region: "JP", tag: "Credit" },
+  { name: "三井住友カード(NL)", type: "credit_card", currency_code: "JPY", color: "#0f7d3a", region: "JP", tag: "SMBC" },
+  { name: "JCBカード", type: "credit_card", currency_code: "JPY", color: "#0e3a8a", region: "JP", tag: "JCB" },
   { name: "エポスカード", type: "credit_card", currency_code: "JPY", color: "#e2001a", region: "JP", tag: "Epos" },
   { name: "dカード", type: "credit_card", currency_code: "JPY", color: "#cc0033", region: "JP", tag: "docomo" },
   { name: "au PAY カード", type: "credit_card", currency_code: "JPY", color: "#eb5505", region: "JP", tag: "au" },
@@ -39,7 +39,7 @@ export const WALLET_PRESETS: WalletPreset[] = [
   { name: "ビューカード", type: "credit_card", currency_code: "JPY", color: "#0a8a3c", region: "JP", tag: "JRE" },
   { name: "セゾンカード", type: "credit_card", currency_code: "JPY", color: "#003da5", region: "JP", tag: "SAISON" },
   { name: "三菱UFJカード", type: "credit_card", currency_code: "JPY", color: "#a8051c", region: "JP", tag: "MUFG" },
-  { name: "AMEX Japan", type: "credit_card", currency_code: "JPY", color: "#006fcf", region: "JP", tag: "Credit" },
+  { name: "AMEX Japan", type: "credit_card", currency_code: "JPY", color: "#006fcf", region: "JP", tag: "AMEX" },
 
   // China banks
   { name: "招商银行", type: "bank", currency_code: "CNY", color: "#c8102e", region: "CN", tag: "CMB" },
@@ -61,10 +61,7 @@ export const WALLET_PRESETS: WalletPreset[] = [
   { name: "云闪付", type: "e_wallet", currency_code: "CNY", color: "#d70022", region: "CN", tag: "QR" },
 
   // Global
-  { name: "Visa", type: "credit_card", currency_code: "USD", color: "#1a1f71", region: "GLOBAL", tag: "Credit" },
-  { name: "Mastercard", type: "credit_card", currency_code: "USD", color: "#eb001b", region: "GLOBAL", tag: "Credit" },
   { name: "American Express", type: "credit_card", currency_code: "USD", color: "#006fcf", region: "GLOBAL", tag: "AMEX" },
-  { name: "UnionPay", type: "credit_card", currency_code: "USD", color: "#d70022", region: "GLOBAL", tag: "银联" },
   { name: "PayPal", type: "e_wallet", currency_code: "USD", color: "#003087", region: "GLOBAL", tag: "Online" },
   { name: "Wise", type: "e_wallet", currency_code: "USD", color: "#9fe870", region: "GLOBAL", tag: "Multi" },
   { name: "Apple Cash", type: "e_wallet", currency_code: "USD", color: "#1d1d1f", region: "GLOBAL", tag: "Apple" },
