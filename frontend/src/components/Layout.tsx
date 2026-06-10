@@ -1,5 +1,5 @@
 import {
-  BarChart3, HandCoins, LayoutDashboard, Moon,
+  HandCoins, LayoutDashboard, ListChecks, Moon,
   Settings as SettingsIcon, Sun, Wallet,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -8,7 +8,7 @@ import { useTheme } from "../lib/theme";
 
 const nav = [
   { to: "/", label: "首页", icon: LayoutDashboard, end: true },
-  { to: "/stats", label: "统计", icon: BarChart3 },
+  { to: "/transactions", label: "账单", icon: ListChecks },
   { to: "/wallets", label: "Wallet", icon: Wallet },
   { to: "/loans", label: "借贷", icon: HandCoins },
   { to: "/settings", label: "设置", icon: SettingsIcon },

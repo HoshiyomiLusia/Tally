@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftRight, ChevronLeft, ChevronRight, FileText, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import Overview from "../components/Overview";
 import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
 import TransferForm from "../components/TransferForm";
@@ -148,9 +147,7 @@ export default function Transactions() {
 
   return (
     <div className="px-4 py-5 pb-28 md:px-6">
-      <Overview />
-
-      <div className="mb-4 mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-5 dark:border-ink-800">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">账单</h1>
           <p className="text-sm text-ink-500">所有记账记录（含分摊、借贷）</p>

@@ -35,7 +35,7 @@ function thisMonth(): string {
 
 interface FxRate { id: number; on_date: string; base: string; quote: string; rate: number; }
 
-export default function Stats() {
+export default function Stats({ embedded = false }: { embedded?: boolean }) {
   const [month, setMonth] = useState(thisMonth());
   const { user } = useAuth();
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
@@ -218,8 +218,8 @@ export default function Stats() {
   }, [topMerch.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
   return (
-    <div className="px-4 py-5 md:px-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <div className={embedded ? "px-4 pb-5 md:px-6" : "px-4 py-5 md:px-6"}>
+      <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">统计</h1>
           <p className="text-sm text-ink-500">KPI · Top 商家 / 分类对比 · 支出节奏</p>
