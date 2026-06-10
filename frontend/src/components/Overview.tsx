@@ -3,15 +3,25 @@ import { CalendarClock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import MonthPicker from "./MonthPicker";
-import { api, type Category, type Currency, type DashboardData, type Merchant, type Transaction } from "../lib/api";
+import { api, type Category, type Currency, type DashboardData, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
 
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户",
+  e_wallet: "电子钱包",
+  cash: "现金",
+  credit_card: "信用卡",
+  virtual: "虚拟账户",
+};
+
 interface CrossTotal {
   base_currency: string;
-  total: number;        // 物理总资产
-  total_real: number;   // 真实总资产 (含借出未还的债权)
-  breakdown: { currency_code: string; balance: number; balance_real: number; rate: number; converted: number; converted_real: number }[];
+  total: number;              // 净资产
+  total_spendable: number;    // 可支配 (非信用卡)
+  total_credit_debt: number;  // 信用卡待还
+  breakdown: { currency_code: string; net: number; spendable: number; credit_debt: number; rate: number; converted: number }[];
 }
 
 function addDaysIso(iso: string, days: number): string {
@@ -56,54 +66,47 @@ export default function Overview() {
 
   return (
     <div className="space-y-5">
-      {/* 总资产 (统计口径: 真实为主, 物理为辅) */}
+      {/* 资产总览 */}
       <section>
         <div className="overview-card rounded-2xl p-5 shadow-sm">
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs uppercase tracking-wider opacity-60">总资产（折算到）</span>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-xs uppercase tracking-wider opacity-60">净资产 · 折算到</span>
             <select
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
-              className="overview-select rounded px-2 py-0.5 text-xs outline-none"
+              className="overview-select rounded px-1.5 py-0.5 text-xs outline-none"
             >
               {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
           </div>
-          <div className="flex flex-wrap items-end gap-x-8 gap-y-1">
-            <div>
-              <div className="text-[11px] opacity-60">真实总资产 · 含借出债权</div>
-              <div className="text-3xl font-semibold tracking-tight">
-                {formatAmount(cross.data?.total_real ?? cross.data?.total ?? 0, baseCurrency, currencies.data)}
-              </div>
-            </div>
-            {cross.data && cross.data.total_real !== cross.data.total && (
-              <div>
-                <div className="text-[11px] opacity-60">物理总资产 · 手头实有</div>
-                <div className="text-2xl font-semibold tracking-tight opacity-70">
-                  {formatAmount(cross.data.total, baseCurrency, currencies.data)}
-                </div>
-              </div>
+          <div className="text-3xl font-semibold tracking-tight">
+            {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-6 gap-y-0.5 text-[11px] opacity-70">
+            <span>可支配 {formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</span>
+            {!!cross.data?.total_credit_debt && (
+              <span className="text-rose-500 dark:text-rose-300">信用卡待还 {formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</span>
             )}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0 || b.balance_real !== 0).map((b) => (
+            {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0).map((b) => (
               <div key={b.currency_code} className="overview-chip rounded-lg p-2">
                 <div className="flex items-center justify-between text-[10px] uppercase tracking-wider opacity-60">
                   <span>{b.currency_code}</span>
                   {b.currency_code !== baseCurrency && <span>× {b.rate.toFixed(4)}</span>}
                 </div>
-                <div className={`mt-0.5 text-sm font-semibold ${b.balance_real < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
-                  {formatAmount(b.balance_real, b.currency_code, currencies.data)}
+                <div className={`mt-0.5 text-sm font-semibold ${b.net < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
+                  {formatAmount(b.net, b.currency_code, currencies.data)}
                 </div>
-                {b.balance_real !== b.balance && (
-                  <div className="text-[10px] opacity-60">手头 {formatAmount(b.balance, b.currency_code, currencies.data)}</div>
+                {b.credit_debt !== 0 && (
+                  <div className="text-[10px] text-rose-500 dark:text-rose-300/80">待还 {formatAmount(b.credit_debt, b.currency_code, currencies.data)}</div>
                 )}
                 {b.currency_code !== baseCurrency && (
-                  <div className="text-[10px] opacity-60">≈ {formatAmount(b.converted_real, baseCurrency, currencies.data)}</div>
+                  <div className="text-[10px] opacity-60">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
                 )}
               </div>
             ))}
-            {(cross.data?.breakdown ?? []).filter((b) => b.balance !== 0 || b.balance_real !== 0).length === 0 && (
+            {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0).length === 0 && (
               <div className="col-span-full text-xs opacity-60">还没有任何余额</div>
             )}
           </div>
@@ -143,34 +146,64 @@ export default function Overview() {
         )}
       </section>
 
-      {/* Wallet 余额 (物理为主) */}
+      {/* Wallet 余额: 可支配钱包按类型分组, 信用卡单列显示待还 */}
       <section>
         <h2 className="mb-2 text-sm font-medium text-ink-600">Wallet 余额</h2>
         <div className="space-y-2">
           {groupedWallets.map(([code, list]) => {
-            const total = list.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+            // 可支配合计只算非信用卡; 信用卡单独算待还
+            const spendTotal = list
+              .filter((w) => w.type !== "credit_card")
+              .reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+            const byType = new Map<string, typeof list>();
+            for (const w of list) {
+              const arr = byType.get(w.type) ?? [];
+              arr.push(w);
+              byType.set(w.type, arr);
+            }
+            const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
             return (
               <div key={code} className="card">
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="text-sm font-medium text-ink-700">{code} 账户</div>
-                  <div className="text-sm font-semibold">{formatAmount(total, code, currencies.data)}</div>
+                  <div className="text-sm font-medium text-ink-700">{code} · 可支配</div>
+                  <div className="text-sm font-semibold">{formatAmount(spendTotal, code, currencies.data)}</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {list.map((w) => {
-                    const physical = w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet;
-                    const hasLoanDiff = w.loan_out_on_wallet !== 0 || w.loan_repayment_on_wallet !== 0;
-                    return (
-                      <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2">
-                        <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
-                        <div className={`text-sm font-medium ${physical < 0 ? "text-rose-600" : ""}`}>
-                          {formatAmount(physical, code, currencies.data)}
-                        </div>
-                        {hasLoanDiff && (
-                          <div className="text-[10px] text-ink-400">实际 {formatAmount(w.balance, code, currencies.data)}</div>
-                        )}
+                <div className="space-y-2">
+                  {typed.map((t) => (
+                    <div key={t}>
+                      <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">{WALLET_TYPE_LABEL[t]}</div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {(byType.get(t) ?? []).map((w) => {
+                          const isCredit = w.type === "credit_card";
+                          // 信用卡: 待还 = -系统余额; 其他: 物理余额
+                          const physical = w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet;
+                          const debt = -w.balance;
+                          const hasLoanDiff = w.loan_out_on_wallet !== 0 || w.loan_repayment_on_wallet !== 0;
+                          return (
+                            <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2 dark:bg-ink-800/40">
+                              <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
+                              {isCredit ? (
+                                <>
+                                  <div className={`text-sm font-medium ${debt > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                                    {debt > 0 ? `待还 ${formatAmount(debt, code, currencies.data)}` : formatAmount(0, code, currencies.data)}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className={`text-sm font-medium ${physical < 0 ? "text-rose-600" : ""}`}>
+                                    {formatAmount(physical, code, currencies.data)}
+                                  </div>
+                                  {hasLoanDiff && (
+                                    <div className="text-[10px] text-ink-400">系统 {formatAmount(w.balance, code, currencies.data)}</div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             );

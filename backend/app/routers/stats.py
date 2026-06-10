@@ -62,8 +62,10 @@ class TopTx(BaseModel):
 
 class CrossCurrencyTotal(BaseModel):
     base_currency: str
-    total: int           # 物理总资产 (手头实有)
-    total_real: int = 0  # 真实总资产 (含借出未还的债权)
+    total: int                  # 净资产 (所有钱包系统余额之和)
+    total_spendable: int = 0    # 可支配 (非信用卡物理余额)
+    total_credit_debt: int = 0  # 信用卡待还合计
+    total_real: int = 0         # 兼容旧字段 = 净资产
     breakdown: list[dict]
 
 
@@ -400,16 +402,23 @@ async def cross_currency_total(
     digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
     base_d = digits.get(base, 2)
 
-    # 物理余额 = 系统余额 - 借出 + 还款.
-    # by_currency = 物理 (手头实有); by_currency_real = 系统 (含借出未还的债权)
-    by_currency: dict[str, int] = {}
-    by_currency_real: dict[str, int] = {}
+    # 三个口径 (每个币种各算一份):
+    #   net      = 净资产 = 所有钱包系统余额之和 (信用卡系统余额为负=欠款, 自然相减;
+    #              借出未还的钱 loan_out 不减系统余额, 等于把应收当资产算进去)
+    #   spendable= 可支配 = 非信用卡钱包的物理余额 (= 系统 - 借出 + 还款)
+    #   credit   = 信用卡待还 = 信用卡欠款合计 (正数)
+    by_net: dict[str, int] = {}
+    by_spend: dict[str, int] = {}
+    by_credit: dict[str, int] = {}
     for w in wallets:
         sys_bal = balances.get(w.id, w.initial_balance)
         lo, li = loans.get(w.id, (0, 0))
-        physical = sys_bal - lo + li
-        by_currency[w.currency_code] = by_currency.get(w.currency_code, 0) + physical
-        by_currency_real[w.currency_code] = by_currency_real.get(w.currency_code, 0) + sys_bal
+        by_net[w.currency_code] = by_net.get(w.currency_code, 0) + sys_bal
+        if w.type == "credit_card":
+            # 欠款 = -系统余额 (刷卡 expense 让系统余额变负)
+            by_credit[w.currency_code] = by_credit.get(w.currency_code, 0) - sys_bal
+        else:
+            by_spend[w.currency_code] = by_spend.get(w.currency_code, 0) + (sys_bal - lo + li)
 
     rate_rows = (
         await session.execute(
@@ -424,25 +433,36 @@ async def cross_currency_total(
         if (q, b) not in rates:
             rates[(q, b)] = 1.0 / r if r else 0.0
 
-    total = 0
-    total_real = 0
-    breakdown = []
-    for code, amt in by_currency.items():
-        amt_real = by_currency_real.get(code, 0)
-        code_d = digits.get(code, 2)
+    def conv_to_base(amt: int, code: str) -> int:
         if code == base:
-            rate = 1.0
-            conv = amt
-            conv_real = amt_real
-        else:
-            rate = rates.get((code, base)) or 0.0
-            factor = rate * (10 ** (base_d - code_d))
-            conv = int(amt * factor)
-            conv_real = int(amt_real * factor)
-        total += conv
-        total_real += conv_real
+            return amt
+        rate = rates.get((code, base)) or 0.0
+        return int(amt * rate * (10 ** (base_d - digits.get(code, 2))))
+
+    codes = set(by_net) | set(by_spend) | set(by_credit)
+    total = 0          # 净资产
+    total_spendable = 0
+    total_credit = 0
+    breakdown = []
+    for code in sorted(codes):
+        net = by_net.get(code, 0)
+        spend = by_spend.get(code, 0)
+        credit = by_credit.get(code, 0)
+        rate = 1.0 if code == base else (rates.get((code, base)) or 0.0)
+        conv_net = conv_to_base(net, code)
+        total += conv_net
+        total_spendable += conv_to_base(spend, code)
+        total_credit += conv_to_base(credit, code)
         breakdown.append({
-            "currency_code": code, "balance": amt, "balance_real": amt_real,
-            "rate": rate, "converted": conv, "converted_real": conv_real,
+            "currency_code": code,
+            "net": net, "spendable": spend, "credit_debt": credit,
+            "rate": rate, "converted": conv_net,
+            # 向后兼容旧字段名
+            "balance": spend, "balance_real": net, "converted_real": conv_net,
         })
-    return CrossCurrencyTotal(base_currency=base, total=total, total_real=total_real, breakdown=breakdown)
+    return CrossCurrencyTotal(
+        base_currency=base,
+        total=total, total_spendable=total_spendable, total_credit_debt=total_credit,
+        total_real=total,  # 兼容旧字段: real 即净资产
+        breakdown=breakdown,
+    )

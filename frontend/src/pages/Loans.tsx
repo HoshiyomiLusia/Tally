@@ -51,7 +51,7 @@ export default function Loans() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">借贷</h1>
-          <p className="text-sm text-ink-500">每个联系人 = 一张借贷账户 · 负数 = 别人欠我 · 正数 = 我欠别人</p>
+          <p className="text-sm text-ink-500">每个联系人 = 一张借贷账户 · 负数 = 应收（对方未还） · 正数 = 应付（我未还）</p>
         </div>
         <button onClick={() => { setEditingContact(null); setContactFormOpen(true); }} className="btn-primary">
           <UserPlus size={14} /> 新建联系人
