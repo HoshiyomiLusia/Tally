@@ -217,7 +217,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
           <div className="space-y-3">
             <div className="text-xs text-ink-500">选择预设卡片（或下方"自定义"）</div>
             <div className="flex gap-1 overflow-x-auto">
-              {(["JP", "CN", "GLOBAL", "CASH"] as const).map((r) => (
+              {(["JP", "CN", "GLOBAL"] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setRegion(r)}

@@ -5,7 +5,7 @@ export interface WalletPreset {
   type: WalletType;
   currency_code: string;
   color: string;
-  region: "JP" | "CN" | "GLOBAL" | "CASH";
+  region: "JP" | "CN" | "GLOBAL";
   tag: string;
 }
 
@@ -39,7 +39,10 @@ export const WALLET_PRESETS: WalletPreset[] = [
   { name: "ビューカード", type: "credit_card", currency_code: "JPY", color: "#0a8a3c", region: "JP", tag: "JRE" },
   { name: "セゾンカード", type: "credit_card", currency_code: "JPY", color: "#003da5", region: "JP", tag: "SAISON" },
   { name: "三菱UFJカード", type: "credit_card", currency_code: "JPY", color: "#a8051c", region: "JP", tag: "MUFG" },
+  { name: "JALカード", type: "credit_card", currency_code: "JPY", color: "#c8102e", region: "JP", tag: "JAL" },
+  { name: "ANAカード", type: "credit_card", currency_code: "JPY", color: "#13256b", region: "JP", tag: "ANA" },
   { name: "AMEX Japan", type: "credit_card", currency_code: "JPY", color: "#006fcf", region: "JP", tag: "AMEX" },
+  { name: "现金 (JPY)", type: "cash", currency_code: "JPY", color: "#5f6068", region: "JP", tag: "Cash" },
 
   // China banks
   { name: "招商银行", type: "bank", currency_code: "CNY", color: "#c8102e", region: "CN", tag: "CMB" },
@@ -60,22 +63,19 @@ export const WALLET_PRESETS: WalletPreset[] = [
   { name: "支付宝", type: "e_wallet", currency_code: "CNY", color: "#1677ff", region: "CN", tag: "QR" },
   { name: "云闪付", type: "e_wallet", currency_code: "CNY", color: "#d70022", region: "CN", tag: "QR" },
 
+  { name: "现金 (CNY)", type: "cash", currency_code: "CNY", color: "#5f6068", region: "CN", tag: "Cash" },
+
   // Global
   { name: "American Express", type: "credit_card", currency_code: "USD", color: "#006fcf", region: "GLOBAL", tag: "AMEX" },
   { name: "PayPal", type: "e_wallet", currency_code: "USD", color: "#003087", region: "GLOBAL", tag: "Online" },
   { name: "Wise", type: "e_wallet", currency_code: "USD", color: "#9fe870", region: "GLOBAL", tag: "Multi" },
   { name: "Apple Cash", type: "e_wallet", currency_code: "USD", color: "#1d1d1f", region: "GLOBAL", tag: "Apple" },
-
-  // Cash
-  { name: "现金 (JPY)", type: "cash", currency_code: "JPY", color: "#5f6068", region: "CASH", tag: "Cash" },
-  { name: "现金 (CNY)", type: "cash", currency_code: "CNY", color: "#5f6068", region: "CASH", tag: "Cash" },
-  { name: "现金 (USD)", type: "cash", currency_code: "USD", color: "#5f6068", region: "CASH", tag: "Cash" },
-  { name: "现金 (EUR)", type: "cash", currency_code: "EUR", color: "#5f6068", region: "CASH", tag: "Cash" },
+  { name: "现金 (USD)", type: "cash", currency_code: "USD", color: "#5f6068", region: "GLOBAL", tag: "Cash" },
+  { name: "现金 (EUR)", type: "cash", currency_code: "EUR", color: "#5f6068", region: "GLOBAL", tag: "Cash" },
 ];
 
 export const REGION_LABELS: Record<WalletPreset["region"], string> = {
   JP: "🇯🇵 日本",
   CN: "🇨🇳 中国",
   GLOBAL: "🌐 全球",
-  CASH: "💵 现金",
 };
