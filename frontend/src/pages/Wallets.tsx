@@ -326,6 +326,23 @@ function shade(hex: string, percent: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
+// 底色够亮就用深色字, 否则白字 (保证卡面文字可读)
+function isLight(hex: string): boolean {
+  const num = parseInt(hex.replace("#", ""), 16);
+  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 165;
+}
+
+// 信用卡类型 -> 顶部印的卡组织字样 (从 tag 推断; 无则按名字猜)
+function cardScheme(name: string, tag: string): string {
+  const t = tag.toUpperCase();
+  if (["JCB", "AMEX", "VISA", "MASTERCARD"].includes(t)) return t;
+  const n = name.toLowerCase();
+  if (n.includes("amex") || name.includes("アメックス")) return "AMEX";
+  if (n.includes("jcb")) return "JCB";
+  return "CARD";
+}
+
 function WalletCardItem({
   wallet,
   currencyCode,
@@ -372,20 +389,51 @@ function WalletCardItem({
     },
   });
 
+  const isCredit = wallet.type === "credit_card";
+  const debt = -wallet.balance;
+  const light = isLight(color);
+  const faceText = light ? "text-ink-900" : "text-white";
+  const faceSub = light ? "text-ink-900/70" : "text-white/75";
+
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-ink-100 bg-white p-3 shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
-      <div className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
-      <div className="absolute right-2 top-2 opacity-30" style={{ color }}>
-        <Icon size={36} />
-      </div>
-      <div className="relative">
-        <div className="text-sm font-medium">{wallet.name}</div>
-        <div className="text-xs text-ink-500">{TYPE_LABELS[wallet.type]}</div>
-        <div className={`mt-1 text-lg font-semibold ${isNegative ? "text-rose-600" : ""}`}>
-          {formatAmount(physical, currencyCode, currencies)}
+    <div className="group overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
+      {/* 品牌色风格化卡面 */}
+      <div
+        className={`relative overflow-hidden p-3 ${faceText}`}
+        style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
+      >
+        <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
+        <div className="absolute right-2 top-2 opacity-25"><Icon size={30} /></div>
+        <div className="relative flex h-full flex-col">
+          <div className="flex items-start justify-between gap-2 pr-8">
+            <div className="text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+          </div>
+          <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
+          {isCredit ? (
+            <div className="mt-2 text-lg font-semibold tracking-tight drop-shadow-sm">
+              {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
+            </div>
+          ) : (
+            <div className="mt-2 text-lg font-semibold tracking-tight drop-shadow-sm">
+              {formatAmount(physical, currencyCode, currencies)}
+            </div>
+          )}
+          <div className="mt-2 flex items-end justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-4 rounded-[2px] bg-gradient-to-br from-amber-200 to-amber-400 opacity-80 shadow-inner" />
+              <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
+            </div>
+            <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
+              {isCredit ? cardScheme(wallet.name, "") : currencyCode}
+            </span>
+          </div>
         </div>
-        {hasLoanDiff && (
-          <div className="flex flex-wrap items-center gap-1 text-xs text-ink-500">
+      </div>
+      {/* 卡面下方中性区: 借贷调整提示 + 操作按钮 */}
+      <div className="p-2">
+        {hasLoanDiff && !isCredit && (
+          <div className="mb-1 flex flex-wrap items-center gap-1 text-xs text-ink-500">
             <span>实际 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借贷调整</span>
             {siblings.length > 0 && (
               <button
@@ -395,7 +443,7 @@ function WalletCardItem({
             )}
           </div>
         )}
-        <div className="mt-1 flex gap-0.5">
+        <div className="flex gap-0.5">
           <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
           <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>
           <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
