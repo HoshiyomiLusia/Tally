@@ -12,7 +12,17 @@ import {
   type Transaction,
   type Wallet,
 } from "../lib/api";
+import type { WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户",
+  e_wallet: "电子钱包",
+  cash: "现金",
+  credit_card: "信用卡",
+  virtual: "虚拟账户",
+};
 
 interface Props {
   open: boolean;
@@ -397,39 +407,49 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             </div>
           </div>
 
-          <div className="border-t border-ink-100 pt-3 dark:border-ink-700">
-            <div className="mb-1 text-xs text-ink-500">Wallet</div>
-            <div className="space-y-1.5">
-              {Array.from(walletsByCurrency.entries()).map(([code, list]) => (
-                <div key={code}>
-                  <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-500">{code}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {list.map((w) => {
-                      const on = walletId === w.id;
-                      return (
-                        <button
-                          key={w.id}
-                          type="button"
-                          onClick={() => setWalletId(w.id)}
-                          className={
-                            on
-                              ? "chip chip-selected"
-                              : "chip chip-idle"
-                          }
-                        >
-                          {on && <span className="mr-0.5">✓</span>}
-                          {w.name}
-                        </button>
-                      );
-                    })}
+          <div className="-mx-5 border-t-4 border-ink-100 px-5 pt-3 dark:border-ink-800">
+            <div className="mb-1.5 text-sm font-semibold text-ink-700 dark:text-ink-200">Wallet</div>
+            <div className="space-y-2">
+              {Array.from(walletsByCurrency.entries()).map(([code, list]) => {
+                const byType = new Map<WalletType, Wallet[]>();
+                for (const w of list) {
+                  const arr = byType.get(w.type) ?? [];
+                  arr.push(w);
+                  byType.set(w.type, arr);
+                }
+                const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
+                return (
+                  <div key={code}>
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{code}</div>
+                    <div className="space-y-1.5">
+                      {typed.map((t) => (
+                        <div key={t} className="flex flex-wrap items-center gap-1.5">
+                          <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                          {(byType.get(t) ?? []).map((w) => {
+                            const on = walletId === w.id;
+                            return (
+                              <button
+                                key={w.id}
+                                type="button"
+                                onClick={() => setWalletId(w.id)}
+                                className={on ? "chip chip-selected" : "chip chip-idle"}
+                              >
+                                {on && <span className="mr-0.5">✓</span>}
+                                {w.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          <div className="border-t border-ink-100 pt-3 dark:border-ink-700">
-            <div className="mb-1 text-xs text-ink-500">分类 <span className="text-ink-400">（点大类就够了，需要更细再点小类）</span></div>
+          <div className="-mx-5 border-t-4 border-ink-100 px-5 pt-3 dark:border-ink-800">
+            <div className="mb-1.5 text-sm font-semibold text-ink-700 dark:text-ink-200">分类 <span className="text-xs font-normal text-ink-400">（点大类就够了，需要更细再点小类）</span></div>
             <div className="flex flex-wrap gap-1.5">
               {topLevel.map((p) => {
                 const isSelected = categoryId === p.id;
@@ -473,8 +493,8 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
             )}
           </div>
 
-          <div>
-            <div className="mb-1 text-xs text-ink-500">商家 (可选)</div>
+          <div className="-mx-5 border-t-4 border-ink-100 px-5 pt-3 dark:border-ink-800">
+            <div className="mb-1.5 text-sm font-semibold text-ink-700 dark:text-ink-200">商家 <span className="text-xs font-normal text-ink-400">(可选)</span></div>
             <input
               ref={merchantInputRef}
               className="input"
