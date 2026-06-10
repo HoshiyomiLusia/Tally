@@ -77,7 +77,7 @@ export default function Overview() {
       <section>
         <div className="overview-card rounded-2xl p-5 shadow-sm">
           <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-xs uppercase tracking-wider opacity-60">净资产 · 折算到</span>
+            <span className="text-xs uppercase tracking-wider opacity-60">真实余额 · 折算到</span>
             <select
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
@@ -90,7 +90,7 @@ export default function Overview() {
             {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-6 gap-y-0.5 text-[11px] opacity-70">
-            <span>可支配 {formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</span>
+            <span>实际物理余额 {formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</span>
             {!!cross.data?.total_credit_debt && (
               <span className="text-rose-500 dark:text-rose-300">信用卡待还 {formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</span>
             )}
@@ -172,7 +172,7 @@ export default function Overview() {
             return (
               <div key={code} className="card">
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="text-sm font-medium text-ink-700">{code} · 可支配</div>
+                  <div className="text-sm font-medium text-ink-700">{code} · 实际物理余额</div>
                   <div className="text-sm font-semibold">{formatAmount(spendTotal, code, currencies.data)}</div>
                 </div>
                 <div className="space-y-2">
