@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, FileText, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import CreditRepayForm from "../components/CreditRepayForm";
 import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
 import TransferForm from "../components/TransferForm";
@@ -46,6 +47,7 @@ export default function Transactions() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [reimburseOpen, setReimburseOpen] = useState(false);
+  const [creditRepayOpen, setCreditRepayOpen] = useState(false);
 
   useEffect(() => { setPage(0); }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
   useEffect(() => { setChildCatId(""); }, [parentCatId]);
@@ -158,6 +160,9 @@ export default function Transactions() {
           </button>
           <button onClick={() => setTransferOpen(true)} className="btn-ghost">
             <ArrowLeftRight size={14} /> 转移
+          </button>
+          <button onClick={() => setCreditRepayOpen(true)} className="btn-ghost">
+            <CreditCard size={14} /> 信用卡还款
           </button>
           <button onClick={() => setQuickOpen(true)} className="btn-ghost">
             <Zap size={14} /> 快速添加
@@ -329,6 +334,7 @@ export default function Transactions() {
 
       <TransactionForm open={open} onClose={() => { setOpen(false); setEditing(null); }} editing={editing} />
       <TransferForm open={transferOpen} onClose={() => setTransferOpen(false)} />
+      <CreditRepayForm open={creditRepayOpen} onClose={() => setCreditRepayOpen(false)} />
       <ReimburseForm open={reimburseOpen} onClose={() => setReimburseOpen(false)} />
 
       <button

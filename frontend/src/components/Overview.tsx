@@ -103,7 +103,7 @@ export function BalanceModule() {
         </div>
         <div className="shrink-0 space-y-1 text-right">
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-400">实际物理余额</div>
+            <div className="text-[10px] uppercase tracking-wider text-ink-400">物理余额</div>
             <div className="text-sm font-semibold tracking-tight">{formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</div>
           </div>
           {!!cross.data?.total_credit_debt && (
@@ -165,7 +165,7 @@ export function BalanceModule() {
         return (
           <div key={code} className="mt-4 border-t border-ink-100 pt-3 dark:border-ink-800">
             <div className="mb-2 flex items-baseline gap-2">
-              <span className="text-sm font-medium text-ink-700">{code} · 实际物理余额</span>
+              <span className="text-sm font-medium text-ink-700">{code} · 物理余额</span>
               <span className="text-base font-semibold">{formatAmount(spendTotal, code, currencies.data)}</span>
             </div>
             <div className="space-y-2">
@@ -191,7 +191,7 @@ export function BalanceModule() {
                                 {formatAmount(physical, code, currencies.data)}
                               </div>
                               {hasLoanDiff && (
-                                <div className="text-[10px] text-ink-400">另有借出未还 {formatAmount(w.loan_out_on_wallet - w.loan_repayment_on_wallet, code, currencies.data)}</div>
+                                <div className="text-[10px] text-ink-400">真实余额 {formatAmount(w.balance, code, currencies.data)}</div>
                               )}
                             </>
                           )}
