@@ -62,10 +62,10 @@ class TopTx(BaseModel):
 
 class CrossCurrencyTotal(BaseModel):
     base_currency: str
-    total: int                  # 净资产 (所有钱包系统余额之和)
-    total_spendable: int = 0    # 可支配 (非信用卡物理余额)
+    total: int                  # 真实余额 (所有钱包系统余额之和)
+    total_spendable: int = 0    # 物理余额 (非信用卡, 系统 - 借出 + 还款)
     total_credit_debt: int = 0  # 信用卡待还合计
-    total_real: int = 0         # 兼容旧字段 = 净资产
+    total_real: int = 0         # 兼容旧字段 = 真实余额
     breakdown: list[dict]
 
 
@@ -403,9 +403,9 @@ async def cross_currency_total(
     base_d = digits.get(base, 2)
 
     # 三个口径 (每个币种各算一份):
-    #   net      = 净资产 = 所有钱包系统余额之和 (信用卡系统余额为负=欠款, 自然相减;
+    #   net      = 真实余额 = 所有钱包系统余额之和 (信用卡系统余额为负=欠款, 自然相减;
     #              借出未还的钱 loan_out 不减系统余额, 等于把应收当资产算进去)
-    #   spendable= 可支配 = 非信用卡钱包的物理余额 (= 系统 - 借出 + 还款)
+    #   spendable= 物理余额 = 非信用卡钱包 (= 系统 - 借出 + 还款)
     #   credit   = 信用卡待还 = 信用卡欠款合计 (正数)
     by_net: dict[str, int] = {}
     by_spend: dict[str, int] = {}
@@ -440,7 +440,7 @@ async def cross_currency_total(
         return int(amt * rate * (10 ** (base_d - digits.get(code, 2))))
 
     codes = set(by_net) | set(by_spend) | set(by_credit)
-    total = 0          # 净资产
+    total = 0          # 真实余额
     total_spendable = 0
     total_credit = 0
     breakdown = []
@@ -463,6 +463,6 @@ async def cross_currency_total(
     return CrossCurrencyTotal(
         base_currency=base,
         total=total, total_spendable=total_spendable, total_credit_debt=total_credit,
-        total_real=total,  # 兼容旧字段: real 即净资产
+        total_real=total,  # 兼容旧字段: real 即真实余额
         breakdown=breakdown,
     )

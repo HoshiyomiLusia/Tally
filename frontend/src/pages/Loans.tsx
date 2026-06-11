@@ -307,7 +307,7 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
           <AlertTriangle size={18} /> <div className="font-semibold">核销坏账 — {acct.contact_name}</div>
         </div>
         <div className="mb-2 text-sm text-ink-600">
-          会生成两笔：一笔"坏账损失"消费扣在选定 Wallet（让系统余额与物理对齐）+ 一笔贷款还款清掉欠款。
+          会生成两笔：一笔"坏账损失"消费扣在选定 Wallet（让真实余额与物理余额对齐）+ 一笔贷款还款清掉欠款。
         </div>
         <div className="space-y-3">
           <label className="block">

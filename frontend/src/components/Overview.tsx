@@ -17,8 +17,8 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
 
 interface CrossTotal {
   base_currency: string;
-  total: number;              // 净资产 (真实余额)
-  total_spendable: number;    // 可支配 (实际物理余额)
+  total: number;              // 真实余额 (各钱包系统余额之和, 含借出债权)
+  total_spendable: number;    // 物理余额 (非信用卡, 系统 - 借出 + 还款)
   total_credit_debt: number;  // 信用卡待还
   breakdown: { currency_code: string; net: number; spendable: number; credit_debt: number; rate: number; converted: number }[];
 }
@@ -35,7 +35,7 @@ function addDaysIso(iso: string, days: number): string {
 }
 
 // ───────────────────────── 板块 1: 余额 ─────────────────────────
-// 资产总览 (真实余额为主) + Wallet 余额 (实际物理余额, 按账户类型分组)
+// 资产总览 (真实余额为主) + Wallet 余额 (按账户类型分组)
 export function BalanceModule() {
   const { user } = useAuth();
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
@@ -136,12 +136,14 @@ export function BalanceModule() {
             <div className={`mt-0.5 text-sm font-semibold ${b.net < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
               真实 {formatAmount(b.net, b.currency_code, currencies.data)}
             </div>
-            <div className="text-[10px] text-ink-400">物理 {formatAmount(b.spendable, b.currency_code, currencies.data)}</div>
+            {b.spendable !== b.net && (
+              <div className="text-[10px] text-ink-400">物理 {formatAmount(b.spendable, b.currency_code, currencies.data)}</div>
+            )}
             {b.credit_debt !== 0 && (
               <div className="text-[10px] text-rose-500 dark:text-rose-300/80">待还 {formatAmount(b.credit_debt, b.currency_code, currencies.data)}</div>
             )}
             {b.currency_code !== baseCurrency && (
-              <div className="text-[10px] text-ink-400">≈ 真实 {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
+              <div className="text-[10px] text-ink-400">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
             )}
           </div>
         ))}

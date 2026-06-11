@@ -96,7 +96,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
 
         <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
           <div className="flex justify-between">
-            <span className="text-ink-600">系统余额</span>
+            <span className="text-ink-600">真实余额</span>
             <span className="font-medium">{formatAmount(view.data?.system_balance ?? 0, wallet.currency_code, currencies.data)}</span>
           </div>
           {(view.data?.loan_out_on_wallet ?? 0) > 0 && (
@@ -150,7 +150,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
           </div>
         ) : (
           <label className="mb-3 block">
-            <span className="text-xs text-ink-500">实际余额</span>
+            <span className="text-xs text-ink-500">实点金额</span>
             <input className="input mt-1" inputMode="decimal" value={actualText} onChange={(e) => setActualText(e.target.value)} autoFocus />
           </label>
         )}
