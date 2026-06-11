@@ -60,15 +60,9 @@ export default function Stats({
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
-  // 支出节奏对比基准: 可多选 (同时叠加多条对比线)
-  const [paceBases, setPaceBases] = useState<Set<"prev" | "prev2" | "prev3" | "yoy">>(() => new Set(["prev"]));
-  const togglePaceBase = (k: "prev" | "prev2" | "prev3" | "yoy") =>
-    setPaceBases((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) { if (next.size > 0) next.delete(k); } else next.add(k);
-      return next;
-    });
-  // 拉近 400 天日数据, 覆盖去年同月对比
+  // 支出节奏: 本月线对照过去 N 个月的历史群线, 看本月花得比平时快/慢
+  const [paceMonths, setPaceMonths] = useState<6 | 12>(6);
+  // 拉近 ~13 个月日数据, 覆盖 12 个月历史对比
   const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => {
     const end = new Date();
     const start = new Date(end.getTime() - 400 * 86400000);
@@ -187,44 +181,35 @@ export default function Stats({
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
 
-  // 支出节奏: 本月每日累计 + 可同时叠加多条对比月 (上月/上上月/上上上月/去年同月)
-  // x = 月内第几天 (1..31), y = 截至该天的累计支出. 每条对比线一个动态 dataKey "cmp_<key>"
-  const PACE_OPTIONS = useMemo(() => ([
-    { key: "prev" as const, label: "上月", color: "#94a3b8", offset: 1 },
-    { key: "prev2" as const, label: "上上月", color: "#f59e0b", offset: 2 },
-    { key: "prev3" as const, label: "上上上月", color: "#a855f7", offset: 3 },
-    { key: "yoy" as const, label: "去年同月", color: "#3b82f6", offset: 12 },
-  ]), []);
-  const activePaceOpts = useMemo(() => PACE_OPTIONS.filter((o) => paceBases.has(o.key)), [PACE_OPTIONS, paceBases]);
-
+  // 支出节奏: 本月每日累计支出 (粗红线) 对照过去 paceMonths 个月的同期累计 (淡灰群线).
+  // x = 月内第几天 (1..31), y = 截至该天累计. 历史月 dataKey = "h0".."hN" (h0=上月,越远越淡),
+  // 不做逐月图例 —— 看的是"本月线浮在历史群线上方还是下方".
   const pace = useMemo(() => {
     const src = daily.data ?? [];
     const [yr, mn] = month.split("-").map(Number);
-    // 月偏移 -> 实际年月
     const shifted = (offset: number) => {
       let m = mn - offset, y = yr;
       while (m <= 0) { m += 12; y -= 1; }
-      return { y, m };
+      return { y, m, label: `${y}-${String(m).padStart(2, "0")}` };
     };
-    // 每个 (年,月) -> 按日索引的当日支出数组
+    const hist = Array.from({ length: paceMonths }, (_, i) => ({ key: `h${i}`, ...shifted(i + 1) }));
     const cur: number[] = new Array(31).fill(0);
-    const cmp: Record<string, number[]> = {};
-    for (const o of activePaceOpts) cmp[o.key] = new Array(31).fill(0);
-    const targets = activePaceOpts.map((o) => ({ key: o.key, ...shifted(o.offset) }));
+    const buckets: Record<string, number[]> = {};
+    for (const h of hist) buckets[h.key] = new Array(31).fill(0);
     for (const d of src) {
       if (!isAll && d.currency_code !== activeCurrency) continue;
       const v = isAll ? fxTo(d.amount, d.currency_code, baseCurrency) : d.amount;
       const dt = new Date(d.on_date);
       const y = dt.getFullYear(), m = dt.getMonth() + 1, day = dt.getDate();
       if (y === yr && m === mn) { cur[day - 1] += v; continue; }
-      for (const t of targets) if (y === t.y && m === t.m) cmp[t.key][day - 1] += v;
+      for (const h of hist) if (y === h.y && m === h.m) { buckets[h.key][day - 1] += v; break; }
     }
     const today = new Date();
     const isCurMonth = today.getFullYear() === yr && today.getMonth() + 1 === mn;
     const todayDay = today.getDate();
     let curCum = 0;
-    const cmpCum: Record<string, number> = {};
-    for (const o of activePaceOpts) cmpCum[o.key] = 0;
+    const cum: Record<string, number> = {};
+    for (const h of hist) cum[h.key] = 0;
     const rows: Record<string, number | null>[] = [];
     for (let i = 0; i < 31; i++) {
       curCum += cur[i];
@@ -232,11 +217,11 @@ export default function Stats({
         day: i + 1,
         current: isCurMonth && i + 1 > todayDay ? null : curCum,
       };
-      for (const o of activePaceOpts) { cmpCum[o.key] += cmp[o.key][i]; row[`cmp_${o.key}`] = cmpCum[o.key]; }
+      for (const h of hist) { cum[h.key] += buckets[h.key][i]; row[h.key] = cum[h.key]; }
       rows.push(row);
     }
-    return rows;
-  }, [daily.data, month, activePaceOpts, activeCurrency, isAll, baseCurrency, fxTo]);
+    return { rows, hist };
+  }, [daily.data, month, paceMonths, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // Top 商家
   const topMerchForCurrency = useMemo(() => {
@@ -367,38 +352,47 @@ export default function Stats({
 
       <section className="mb-5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
-          <div className="flex flex-wrap items-center gap-1 text-xs">
-            <span className="mr-0.5 text-ink-400">叠加对比</span>
-            {PACE_OPTIONS.map((o) => {
-              const on = paceBases.has(o.key);
-              return (
-                <button
-                  key={o.key}
-                  onClick={() => togglePaceBase(o.key)}
-                  className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 ${on ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-                >
-                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : o.color }} />
-                  {o.label}
-                </button>
-              );
-            })}
+          <div>
+            <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
+            <p className="text-[11px] text-ink-400">本月（红）对照过去 {paceMonths} 个月同期。线在灰群上方=花得比平时快</p>
+          </div>
+          <div className="flex gap-1 text-xs">
+            {([6, 12] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => setPaceMonths(n)}
+                className={`rounded-full border px-2.5 py-0.5 ${paceMonths === n ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+              >近 {n} 个月</button>
+            ))}
           </div>
         </div>
         <div className={`${box} p-4`}>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={pace} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <LineChart data={pace.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
               <XAxis dataKey="day" fontSize={10} tickFormatter={(d) => `${d} 号`} />
               <YAxis fontSize={10} />
               <Tooltip
-                formatter={(v: number) => formatAmount(v, displayCode, currencies.data)}
+                formatter={(v: number, key: string) => {
+                  const h = pace.hist.find((x) => x.key === key);
+                  return [formatAmount(v, displayCode, currencies.data), h ? h.label : "本月"];
+                }}
                 labelFormatter={(d) => `${d} 号`}
               />
-              <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={2.5} dot={false} name="本月" connectNulls={false} />
-              {activePaceOpts.map((o) => (
-                <Line key={o.key} type="monotone" dataKey={`cmp_${o.key}`} stroke={o.color} strokeWidth={2} strokeDasharray="5 3" dot={false} name={o.label} />
+              {/* 历史群线: 越近越实 (越远透明度越低), 统一灰色, 不进图例 */}
+              {pace.hist.map((h, i) => (
+                <Line
+                  key={h.key}
+                  type="monotone"
+                  dataKey={h.key}
+                  stroke="#94a3b8"
+                  strokeOpacity={Math.max(0.12, 0.5 - i * (0.38 / Math.max(1, pace.hist.length - 1)))}
+                  strokeWidth={1.5}
+                  dot={false}
+                />
               ))}
+              {/* 本月: 粗红实线, 压在最上层 */}
+              <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={2.5} dot={false} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
