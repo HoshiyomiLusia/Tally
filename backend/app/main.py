@@ -92,6 +92,12 @@ if static_dir.exists():
 
     @app.get("/{full_path:path}")
     async def spa(full_path: str):
+        # 先尝试 static 根目录下的真实文件 (manifest / 图标等), 命中就直接返回,
+        # 避免被 SPA fallback 吞成 index.html
+        if full_path:
+            candidate = (static_dir / full_path).resolve()
+            if candidate.is_file() and str(candidate).startswith(str(static_dir.resolve())):
+                return FileResponse(candidate)
         index = static_dir / "index.html"
         if index.exists():
             return FileResponse(index)

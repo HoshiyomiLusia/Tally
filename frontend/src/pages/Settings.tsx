@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Store, Tags, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Share, Smartphone, Store, Tags, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { todayIso } from "../lib/format";
+import { useInstallPrompt } from "../lib/useInstallPrompt";
 
 interface Rate {
   id: number;
@@ -20,6 +21,8 @@ export default function Settings() {
   const { user, logout, refresh: refreshUser } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const install = useInstallPrompt();
+  const [iosHelp, setIosHelp] = useState(false);
   const savePrimaryCurrency = useMutation({
     mutationFn: async (code: string) => api.patch("/users/me", { primary_currency_code: code }),
     onSuccess: () => { refreshUser(); },
@@ -134,6 +137,45 @@ export default function Settings() {
           ))}
         </select>
       </div>
+
+      {!install.isStandalone && (
+        <div className="card mb-3">
+          <div className="mb-2 flex items-center gap-2">
+            <Smartphone size={16} className="text-ink-500" />
+            <div>
+              <div className="font-medium">添加到主屏幕</div>
+              <div className="text-xs text-ink-500">把 Tally 装到手机桌面，像 App 一样全屏打开</div>
+            </div>
+          </div>
+          {install.isIOS ? (
+            <>
+              <button onClick={() => setIosHelp((v) => !v)} className="btn-ghost">
+                <Share size={14} /> iPhone / iPad 怎么添加
+              </button>
+              {iosHelp && (
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-ink-600 dark:text-ink-300">
+                  <li>用 <b>Safari</b> 打开本页（其他浏览器不支持）</li>
+                  <li>点底部中间的 <b>分享</b> 按钮 <Share size={11} className="inline" /></li>
+                  <li>下滑选 <b>「添加到主屏幕」</b></li>
+                  <li>右上角点 <b>「添加」</b>，桌面就会出现 Tally 图标</li>
+                </ol>
+              )}
+            </>
+          ) : install.canPromptAndroid ? (
+            <button
+              onClick={async () => {
+                const r = await install.promptInstall();
+                if (r === "unavailable") alert("当前浏览器暂不支持一键安装，请用浏览器菜单的「添加到主屏幕」");
+              }}
+              className="btn-primary"
+            ><Smartphone size={14} /> 一键添加到主屏幕</button>
+          ) : (
+            <div className="text-xs text-ink-500">
+              在 Android Chrome 里打开本页即可一键安装；若没出现按钮，用浏览器右上角菜单选「安装应用 / 添加到主屏幕」。
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card mb-3 p-0">
         <div className="px-4 pt-3 pb-2 text-xs font-medium uppercase tracking-wider text-ink-500">管理</div>
