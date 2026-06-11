@@ -190,7 +190,7 @@ export function BalanceModule() {
                                 {formatAmount(physical, code, currencies.data)}
                               </div>
                               {hasLoanDiff && (
-                                <div className="text-[10px] text-ink-400">系统 {formatAmount(w.balance, code, currencies.data)}</div>
+                                <div className="text-[10px] text-ink-400">账面 {formatAmount(w.balance, code, currencies.data)}（含借出未还）</div>
                               )}
                             </>
                           )}

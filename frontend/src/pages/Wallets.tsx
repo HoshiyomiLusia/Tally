@@ -456,7 +456,7 @@ function WalletCardItem({
         <div className="min-w-0 flex-1 text-xs text-ink-500">
           {hasLoanDiff && !isCredit && (
             <div className="flex flex-wrap items-center gap-1">
-              <span className="truncate">实际 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借贷调整</span>
+              <span className="truncate">账面 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借出未还</span>
               {siblings.length > 0 && (
                 <button
                   onClick={() => setPickerOpen(true)}
