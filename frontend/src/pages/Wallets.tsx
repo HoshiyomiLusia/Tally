@@ -127,8 +127,8 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      {/* 居中排布: 手机一张占满宽度, 桌面每张 260px 居中, 不留单边空栏 */}
-                      <div className="flex flex-wrap justify-center gap-3">
+                      {/* 手机居中(一张占满宽), 桌面左对齐(正常网格) */}
+                      <div className="flex flex-wrap justify-center gap-3 sm:justify-start">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
