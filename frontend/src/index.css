@@ -140,7 +140,10 @@ html.dark .input { color-scheme: dark; }
 @keyframes sheetUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes riseIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-.anim-fade { animation: fadeIn .18s ease-out; }
+.anim-fade { animation: fadeIn .18s ease-out both; }
+/* 页面切换淡入: 只用透明度, 不用 transform —— transform 祖先会把内部 position:fixed
+   的弹窗困在页面里(而非视口), 导致弹窗跑到长页面正中/下方 */
+.anim-page { animation: fadeIn .22s ease-out both; }
 .anim-sheet { animation: sheetUp .24s cubic-bezier(.22, 1, .36, 1); }
 .anim-rise { animation: riseIn .28s ease-out both; }
 .anim-drop { animation: dropIn .16s ease-out; }

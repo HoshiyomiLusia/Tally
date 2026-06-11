@@ -65,7 +65,7 @@ export default function Layout() {
       </nav>
       <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">
         {/* 宽屏不要无脑横向拉伸: 内容居中 + 限宽, 避免"地广人稀" */}
-        <div key={location.pathname} className="anim-rise mx-auto max-w-[1400px]">
+        <div key={location.pathname} className="anim-page mx-auto max-w-[1400px]">
           <Outlet />
         </div>
       </main>
