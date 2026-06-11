@@ -108,7 +108,7 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,260px))]">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
@@ -235,7 +235,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                     {(() => { const I = TYPE_ICON[t]; return <I size={11} />; })()}
                     <span>{TYPE_SECTION_LABEL[t]}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(150px,180px))]">
                     {presetsInRegion.filter((p) => p.type === t).map((p) => (
                       <PresetCard key={p.name} preset={p} onClick={() => pickPreset(p)} />
                     ))}
@@ -414,59 +414,56 @@ function WalletCardItem({
   const faceSub = light ? "text-ink-900/70" : "text-white/75";
 
   return (
-    <div className="group overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
-      {/* 品牌色风格化卡面 — 锁定真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540) */}
-      <div
-        className={`relative aspect-[856/540] overflow-hidden p-3 ${faceText}`}
-        style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
-      >
-        <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
-        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
-        <div className="absolute right-2 top-2 opacity-25"><Icon size={30} /></div>
-        <div className="relative flex h-full flex-col justify-between">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold leading-tight drop-shadow-sm pr-8">{wallet.name}</div>
-            <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
-            {isCredit ? (
-              <div className="mt-1.5 text-lg font-semibold tracking-tight drop-shadow-sm">
-                {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
-              </div>
-            ) : (
-              <div className="mt-1.5 text-lg font-semibold tracking-tight drop-shadow-sm">
-                {formatAmount(wallet.balance, currencyCode, currencies)}
-              </div>
-            )}
-          </div>
-          <div className="flex items-end justify-between">
-            <div className="flex items-center gap-1.5">
-              <ChipIcon />
-              <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
-            </div>
-            <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
-              {isCredit ? cardScheme(wallet.name) : currencyCode}
-            </span>
-          </div>
-        </div>
+    <div
+      className={`group relative aspect-[856/540] overflow-hidden rounded-xl p-3 shadow-sm ${faceText}`}
+      style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
+    >
+      {/* 卡面 = 真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540), 操作按钮浮在卡上不占高度 */}
+      <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
+
+      {/* 操作浮层: 右上角小图标 */}
+      <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
+        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
+        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
+        <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
       </div>
-      {/* 卡面下方中性区: 左=借贷调整(可空), 右=操作按钮. 同一行, 高度恒定 */}
-      <div className="flex items-center justify-between gap-2 p-2">
-        <div className="min-w-0 flex-1 text-xs text-ink-500">
+
+      <div className="relative flex h-full flex-col justify-between">
+        <div className="min-w-0 pr-20">
+          <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+          <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
+        </div>
+        <div className="min-w-0">
+          {isCredit ? (
+            <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+              {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
+            </div>
+          ) : (
+            <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+              {formatAmount(wallet.balance, currencyCode, currencies)}
+            </div>
+          )}
           {hasLoanDiff && !isCredit && (
-            <div className="flex flex-wrap items-center gap-1">
+            <div className={`flex flex-wrap items-center gap-1 text-[10px] ${faceSub}`}>
               <span className="truncate">物理余额 {formatAmount(physical, currencyCode, currencies)}</span>
               {siblings.length > 0 && (
                 <button
                   onClick={() => setPickerOpen(true)}
-                  className="rounded border border-ink-300 px-1.5 py-0.5 text-[10px] text-ink-600 hover:border-emerald-500 hover:text-emerald-600 dark:border-ink-600 dark:text-ink-300"
+                  className="rounded bg-black/15 px-1.5 py-0.5 backdrop-blur-sm hover:bg-black/30"
                 >合到其他钱包</button>
               )}
             </div>
           )}
         </div>
-        <div className="flex shrink-0 gap-0.5">
-          <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
-          <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>
-          <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
+        <div className="flex items-end justify-between">
+          <div className="flex items-center gap-1.5">
+            <ChipIcon />
+            <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
+          </div>
+          <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
+            {isCredit ? cardScheme(wallet.name) : currencyCode}
+          </span>
         </div>
       </div>
 
