@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
-import RecurringPanel from "../components/RecurringPanel";
 import { api, type Category, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
@@ -240,8 +239,11 @@ export default function Stats({
     return Array.from(m.values()).sort((a, b) => b.total - a.total).slice(0, 10);
   }, [topMerch.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
+  // 嵌入首页矩形内时, 子块用浅色 tile 而非整张 .card (避免卡片套卡片)
+  const box = embedded ? "rounded-xl bg-ink-50 dark:bg-ink-800/40" : "card";
+
   return (
-    <div className={embedded ? "px-4 pb-5 md:px-6" : "px-4 py-5 md:px-6"}>
+    <div className={embedded ? "" : "px-4 py-5 md:px-6"}>
       {!hideHeader && (
         <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
           {embedded ? (
@@ -283,10 +285,10 @@ export default function Stats({
 
       {cur && (
         <section className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <KPI label="支出" current={cur.expense} previous={cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad />
-          <KPI label="收入" current={cur.income} previous={cur.income_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} />
-          <KPI label="净额" current={cur.net} previous={cur.income_prev - cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} />
-          <div className="card">
+          <KPI label="支出" current={cur.expense} previous={cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad box={box} />
+          <KPI label="收入" current={cur.income} previous={cur.income_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} box={box} />
+          <KPI label="净额" current={cur.net} previous={cur.income_prev - cur.expense_prev} currency={displayCode} currencies={currencies.data} negativeIsBad={false} box={box} />
+          <div className={`${box} p-4`}>
             <div className="text-xs text-ink-500">日均支出</div>
             <div className="mt-1 text-lg font-semibold">{formatAmount(cur.avg_daily_expense, displayCode, currencies.data)}</div>
             <div className="text-[10px] text-ink-400">月内 {cur.days_in_month} 天</div>
@@ -297,7 +299,7 @@ export default function Stats({
       <section className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 商家</h2>
-          <div className="card divide-y divide-ink-100 p-0">
+          <div className={`${box} divide-y divide-ink-100 p-0`}>
             {topMerchForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
             {topMerchForCurrency.map((m, i) => (
               <div key={m.merchant_id} className="flex items-center justify-between px-4 py-2 text-sm">
@@ -312,7 +314,7 @@ export default function Stats({
         </div>
         <div>
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类</h2>
-          <div className="card divide-y divide-ink-100 p-0">
+          <div className={`${box} divide-y divide-ink-100 p-0`}>
             {categoryGroups.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
             {categoryGroups.map((g) => (
               <div key={g.id ?? `null-${g.name}`} className="px-4 py-2">
@@ -352,7 +354,7 @@ export default function Stats({
             ))}
           </div>
         </div>
-        <div className="card">
+        <div className={`${box} p-4`}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={pace} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
@@ -369,17 +371,12 @@ export default function Stats({
         </div>
       </section>
 
-      <section className="mb-5">
-        <h2 className="mb-1 text-sm font-medium text-ink-600">周期账单</h2>
-        <p className="mb-2 text-xs text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>
-        <RecurringPanel month={month} />
-      </section>
     </div>
   );
 }
 
 function KPI({
-  label, current, previous, currency, currencies, negativeIsBad,
+  label, current, previous, currency, currencies, negativeIsBad, box = "card",
 }: {
   label: string;
   current: number;
@@ -387,13 +384,14 @@ function KPI({
   currency: string;
   currencies?: Currency[];
   negativeIsBad: boolean;
+  box?: string;
 }) {
   const delta = current - previous;
   const ratio = previous === 0 ? 0 : delta / previous;
   const Trend = delta > 0 ? ArrowUpRight : delta < 0 ? ArrowDownRight : Minus;
   const isBad = negativeIsBad ? delta > 0 : delta < 0;
   return (
-    <div className="card">
+    <div className={`${box} p-4`}>
       <div className="text-xs text-ink-500">{label}</div>
       <div className="mt-1 text-lg font-semibold">{formatAmount(current, currency, currencies)}</div>
       {previous !== 0 && (
