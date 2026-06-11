@@ -35,8 +35,20 @@ function thisMonth(): string {
 
 interface FxRate { id: number; on_date: string; base: string; quote: string; rate: number; }
 
-export default function Stats({ embedded = false }: { embedded?: boolean }) {
-  const [month, setMonth] = useState(thisMonth());
+export default function Stats({
+  embedded = false,
+  hideHeader = false,
+  month: monthProp,
+  onMonthChange,
+}: {
+  embedded?: boolean;
+  hideHeader?: boolean;       // 隐藏自己的标题+月份选择器 (由外层提供)
+  month?: string;             // 受控月份 (外层共享时传入)
+  onMonthChange?: (m: string) => void;
+}) {
+  const [monthState, setMonthState] = useState(thisMonth());
+  const month = monthProp ?? monthState;
+  const setMonth = onMonthChange ?? setMonthState;
   const { user } = useAuth();
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => {
@@ -230,17 +242,19 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={embedded ? "px-4 pb-5 md:px-6" : "px-4 py-5 md:px-6"}>
-      <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
-        {embedded ? (
-          <h2 className="text-sm font-medium text-ink-600">统计</h2>
-        ) : (
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">统计</h1>
-            <p className="text-sm text-ink-500">KPI · Top 商家 / 分类对比 · 支出节奏</p>
-          </div>
-        )}
-        <MonthPicker value={month} onChange={setMonth} />
-      </div>
+      {!hideHeader && (
+        <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
+          {embedded ? (
+            <h2 className="text-sm font-medium text-ink-600">统计</h2>
+          ) : (
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">统计</h1>
+              <p className="text-sm text-ink-500">KPI · Top 商家 / 分类对比 · 支出节奏</p>
+            </div>
+          )}
+          <MonthPicker value={month} onChange={setMonth} />
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-1">
         <button
