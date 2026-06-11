@@ -24,10 +24,26 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
   virtual: "虚拟账户",
 };
 
+export interface TransactionPrefill {
+  kind: "expense" | "income";
+  wallet_id: number;
+  category_id: number | null;
+  merchant_id: number | null;
+  amount: number;            // 最小单位
+  currency_code: string;
+  occurred_on: string;
+  note: string;
+  is_recurring: boolean;
+  recurrence_period_days: number | null;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   editing?: Transaction | null;
+  // 周期账单"确认扣款": 用模板预填一笔新账单 (整张表单都能改, 含分摊/附件等)
+  prefill?: TransactionPrefill | null;
+  recurrenceSourceId?: number | null;
 }
 
 interface ParticipantState {
@@ -35,7 +51,7 @@ interface ParticipantState {
   share_text: string;
 }
 
-export default function TransactionForm({ open, onClose, editing }: Props) {
+export default function TransactionForm({ open, onClose, editing, prefill, recurrenceSourceId }: Props) {
   const qc = useQueryClient();
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data, enabled: open });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data, enabled: open });
@@ -67,9 +83,9 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       initKey.current = null;
       return;
     }
-    const key = editing ? `edit:${editing.id}` : "new";
-    // editing 需要 currencies / merchants 才能算对金额单位和回填商家名
-    if (editing && (!currencies.data || !merchants.data)) return;
+    const key = editing ? `edit:${editing.id}` : prefill ? `prefill:${recurrenceSourceId ?? "x"}:${prefill.occurred_on}` : "new";
+    // editing / prefill 需要 currencies / merchants 才能算对金额单位和回填商家名
+    if ((editing || prefill) && (!currencies.data || !merchants.data)) return;
     if (initKey.current === key) return;
     initKey.current = key;
     if (editing) {
@@ -89,6 +105,23 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       setAmountText((editing.amount / Math.pow(10, digits)).toString());
       setSplitOn(false);
       setParticipants([]);
+    } else if (prefill) {
+      setKind(prefill.kind);
+      setWalletId(prefill.wallet_id);
+      setCategoryId(prefill.category_id);
+      setMerchantId(prefill.merchant_id);
+      const initName = merchants.data?.find((m) => m.id === prefill.merchant_id)?.name ?? "";
+      setMerchantInput(initName);
+      if (merchantInputRef.current) merchantInputRef.current.value = initName;
+      setOccurredOn(prefill.occurred_on);
+      setNote(prefill.note);
+      setIsRecurring(prefill.is_recurring);
+      setRecurrenceText(prefill.recurrence_period_days?.toString() ?? "");
+      const cur = currencies.data?.find((c) => c.code === prefill.currency_code);
+      const digits = cur?.decimal_digits ?? 2;
+      setAmountText((prefill.amount / Math.pow(10, digits)).toString());
+      setSplitOn(false);
+      setParticipants([]);
     } else {
       setKind("expense");
       setCategoryId(null);
@@ -106,7 +139,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     setStagedFiles([]);
     setError("");
     setTimeout(() => amountRef.current?.focus(), 50);
-  }, [open, editing, merchants.data, currencies.data]);
+  }, [open, editing, prefill, recurrenceSourceId, merchants.data, currencies.data]);
 
   const wallet = wallets.data?.find((w) => w.id === walletId) ?? null;
   const digits = currencies.data?.find((c) => c.code === wallet?.currency_code)?.decimal_digits ?? 2;
@@ -282,6 +315,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           note,
           is_recurring: isRecurring,
           recurrence_period_days: isRecurring && recurrenceText ? Number(recurrenceText) : null,
+          recurrence_source_id: recurrenceSourceId ?? null,
           my_share: myShare,
           participants: participants.map((p) => ({ contact_id: p.contact_id, share: parseAmount(p.share_text || "0", digits) })),
         };
@@ -299,6 +333,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
           note,
           is_recurring: isRecurring,
           recurrence_period_days: isRecurring && recurrenceText ? Number(recurrenceText) : null,
+          recurrence_source_id: recurrenceSourceId ?? null,
         };
         if (editing) {
           await api.patch(`/transactions/${editing.id}`, payload);
@@ -325,6 +360,10 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
       qc.invalidateQueries({ queryKey: ["loan-accounts"] });
       qc.invalidateQueries({ queryKey: ["merchants"] });
       qc.invalidateQueries({ queryKey: ["frequent"] });
+      qc.invalidateQueries({ queryKey: ["recurring-upcoming"] });
+      qc.invalidateQueries({ queryKey: ["recurring-by-month"] });
+      qc.invalidateQueries({ queryKey: ["stats-summary"] });
+      qc.invalidateQueries({ queryKey: ["stats-daily"] });
       onClose();
     },
     onError: (e: unknown) => {
@@ -341,7 +380,7 @@ export default function TransactionForm({ open, onClose, editing }: Props) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">{editing ? "编辑交易" : "添加交易"}</div>
+          <div className="text-lg font-semibold">{editing ? "编辑交易" : recurrenceSourceId ? "确认扣款" : "添加交易"}</div>
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
         </div>
         <div className="space-y-3">

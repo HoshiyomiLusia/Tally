@@ -15,6 +15,7 @@ from ..schemas.loan import (
     WriteOffRequest,
 )
 from ..schemas.transaction import TransactionRead
+from .recurring import resolve_recurrence_group
 
 router = APIRouter(prefix="/loans", tags=["loans"])
 
@@ -96,7 +97,10 @@ async def create_split(
         raise HTTPException(400, "need at least one participant")
 
     group_id = str(uuid.uuid4())
-    rec_group = str(uuid.uuid4()) if payload.is_recurring else None
+    if payload.recurrence_source_id:
+        rec_group = await resolve_recurrence_group(session, user, payload.recurrence_source_id)
+    else:
+        rec_group = str(uuid.uuid4()) if payload.is_recurring else None
 
     created: list[Transaction] = []
     if payload.my_share > 0:

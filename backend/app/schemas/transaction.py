@@ -17,6 +17,8 @@ class TransactionCreate(BaseModel):
     note: str = ""
     is_recurring: bool = False
     recurrence_period_days: int | None = None
+    # 确认周期账单本期扣款时传: 让这笔并入来源账单的周期分组, 使预测顺延
+    recurrence_source_id: int | None = None
 
 
 class TransactionUpdate(BaseModel):

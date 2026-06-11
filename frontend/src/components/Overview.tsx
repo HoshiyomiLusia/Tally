@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount, todayIso as todayIsoStr } from "../lib/format";
-import RecurringConfirmForm from "./RecurringConfirmForm";
+import TransactionForm, { type TransactionPrefill } from "./TransactionForm";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
@@ -219,7 +219,7 @@ export function BalanceModule() {
 // ───────────────────────── 周期账单预测时间轴 (放到周期账单板块顶部) ─────────────────────────
 // 过去 7 天 ~ 未来 14 天的预计扣款, 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
-  const [confirm, setConfirm] = useState<{ tx: Transaction; due: string; name: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
@@ -286,7 +286,21 @@ export function RecurringForecast() {
                   <div className={`text-rose-600 ${it.isPast ? "opacity-60" : ""}`}>~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
                   {canConfirm && (
                     <button
-                      onClick={() => setConfirm({ tx: t, due: it.due, name: primary })}
+                      onClick={() => setConfirm({
+                        sourceId: t.id,
+                        prefill: {
+                          kind: t.kind === "income" ? "income" : "expense",
+                          wallet_id: t.wallet_id,
+                          category_id: t.category_id,
+                          merchant_id: t.merchant_id,
+                          amount: t.amount,
+                          currency_code: t.currency_code,
+                          occurred_on: it.due,
+                          note: t.note,
+                          is_recurring: true,
+                          recurrence_period_days: t.recurrence_period_days,
+                        },
+                      })}
                       className="rounded-full border border-emerald-500 px-2 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
                     >确认扣款</button>
                   )}
@@ -301,11 +315,10 @@ export function RecurringForecast() {
           </div>
         )}
       </div>
-      <RecurringConfirmForm
+      <TransactionForm
         open={confirm !== null}
-        tx={confirm?.tx ?? null}
-        due={confirm?.due ?? todayIso}
-        name={confirm?.name ?? ""}
+        prefill={confirm?.prefill ?? null}
+        recurrenceSourceId={confirm?.sourceId ?? null}
         onClose={() => setConfirm(null)}
       />
     </div>

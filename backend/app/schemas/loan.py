@@ -18,6 +18,7 @@ class SplitCreateRequest(BaseModel):
     note: str = ""
     is_recurring: bool = False
     recurrence_period_days: int | None = None
+    recurrence_source_id: int | None = None
     my_share: int = Field(ge=0)
     participants: list[SplitParticipant] = Field(min_length=1)
 

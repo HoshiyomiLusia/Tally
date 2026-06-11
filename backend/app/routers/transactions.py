@@ -9,6 +9,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
+from .recurring import resolve_recurrence_group
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -121,7 +122,11 @@ async def create_transaction(
         raise HTTPException(400, "amount must be positive")
 
     data = payload.model_dump()
+    source_id = data.pop("recurrence_source_id", None)
+    group = await resolve_recurrence_group(session, user, source_id)
     t = Transaction(user_id=user.id, **data)
+    if group:
+        t.recurrence_group_id = group
     session.add(t)
     if payload.merchant_id:
         m = await session.get(Merchant, payload.merchant_id)
