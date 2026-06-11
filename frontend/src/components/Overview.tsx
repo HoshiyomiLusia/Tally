@@ -265,7 +265,7 @@ export function RecurringForecast() {
                     <span className="truncate font-medium">{primary}</span>
                     {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
                     {it.isPast && (
-                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">预估·待确认</span>
+                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">预估</span>
                     )}
                   </div>
                   <div className="text-xs text-ink-500">
@@ -279,7 +279,7 @@ export function RecurringForecast() {
         })}
         {recurItems.some((it) => it.isPast) && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
-            「预估·待确认」= 按上次金额推算的过去扣款，实际金额可能不同，请核对账单后手动记账。
+            「预估」= 按上次金额推算的过去扣款，实际金额可能不同，记得手动记账。
           </div>
         )}
       </div>

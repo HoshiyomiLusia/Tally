@@ -60,8 +60,14 @@ export default function Stats({
   const summary = useQuery({ queryKey: ["stats-summary", month], queryFn: async () => (await api.get<SummaryResp>(`/stats/summary?month=${month}`)).data });
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
-  // 支出节奏对比基准: 上月 / 上上月 / 去年同月
-  const [paceBase, setPaceBase] = useState<"prev" | "prev2" | "yoy">("prev");
+  // 支出节奏对比基准: 可多选 (同时叠加多条对比线)
+  const [paceBases, setPaceBases] = useState<Set<"prev" | "prev2" | "prev3" | "yoy">>(() => new Set(["prev"]));
+  const togglePaceBase = (k: "prev" | "prev2" | "prev3" | "yoy") =>
+    setPaceBases((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) { if (next.size > 0) next.delete(k); } else next.add(k);
+      return next;
+    });
   // 拉近 400 天日数据, 覆盖去年同月对比
   const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => {
     const end = new Date();
@@ -181,48 +187,56 @@ export default function Stats({
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
 
-  // 本月 vs 对比月 每日累计支出 ("支出节奏")
-  // x = 月内第几天 (1..31), y = 截至该天的累计支出
-  // 两条线: 本月 (实线) / 对比月 (虚线)
+  // 支出节奏: 本月每日累计 + 可同时叠加多条对比月 (上月/上上月/上上上月/去年同月)
+  // x = 月内第几天 (1..31), y = 截至该天的累计支出. 每条对比线一个动态 dataKey "cmp_<key>"
+  const PACE_OPTIONS = useMemo(() => ([
+    { key: "prev" as const, label: "上月", color: "#94a3b8", offset: 1 },
+    { key: "prev2" as const, label: "上上月", color: "#f59e0b", offset: 2 },
+    { key: "prev3" as const, label: "上上上月", color: "#a855f7", offset: 3 },
+    { key: "yoy" as const, label: "去年同月", color: "#3b82f6", offset: 12 },
+  ]), []);
+  const activePaceOpts = useMemo(() => PACE_OPTIONS.filter((o) => paceBases.has(o.key)), [PACE_OPTIONS, paceBases]);
+
   const pace = useMemo(() => {
     const src = daily.data ?? [];
     const [yr, mn] = month.split("-").map(Number);
-    // 对比月: 上月 / 上上月 / 去年同月
-    let cYr = yr, cMn = mn;
-    if (paceBase === "prev") { cMn = mn === 1 ? 12 : mn - 1; cYr = mn === 1 ? yr - 1 : yr; }
-    else if (paceBase === "prev2") { cMn = mn <= 2 ? mn + 10 : mn - 2; cYr = mn <= 2 ? yr - 1 : yr; }
-    else { cMn = mn; cYr = yr - 1; }
-    // 按 day-of-month 聚合两个月
+    // 月偏移 -> 实际年月
+    const shifted = (offset: number) => {
+      let m = mn - offset, y = yr;
+      while (m <= 0) { m += 12; y -= 1; }
+      return { y, m };
+    };
+    // 每个 (年,月) -> 按日索引的当日支出数组
     const cur: number[] = new Array(31).fill(0);
-    const prev: number[] = new Array(31).fill(0);
+    const cmp: Record<string, number[]> = {};
+    for (const o of activePaceOpts) cmp[o.key] = new Array(31).fill(0);
+    const targets = activePaceOpts.map((o) => ({ key: o.key, ...shifted(o.offset) }));
     for (const d of src) {
       if (!isAll && d.currency_code !== activeCurrency) continue;
       const v = isAll ? fxTo(d.amount, d.currency_code, baseCurrency) : d.amount;
       const dt = new Date(d.on_date);
-      const y = dt.getFullYear();
-      const m = dt.getMonth() + 1;
-      const day = dt.getDate();
-      if (y === yr && m === mn) cur[day - 1] += v;
-      else if (y === cYr && m === cMn) prev[day - 1] += v;
+      const y = dt.getFullYear(), m = dt.getMonth() + 1, day = dt.getDate();
+      if (y === yr && m === mn) { cur[day - 1] += v; continue; }
+      for (const t of targets) if (y === t.y && m === t.m) cmp[t.key][day - 1] += v;
     }
-    // 累计
     const today = new Date();
     const isCurMonth = today.getFullYear() === yr && today.getMonth() + 1 === mn;
     const todayDay = today.getDate();
-    let curCum = 0, prevCum = 0;
-    const rows: { day: number; current: number | null; previous: number | null }[] = [];
+    let curCum = 0;
+    const cmpCum: Record<string, number> = {};
+    for (const o of activePaceOpts) cmpCum[o.key] = 0;
+    const rows: Record<string, number | null>[] = [];
     for (let i = 0; i < 31; i++) {
       curCum += cur[i];
-      prevCum += prev[i];
-      rows.push({
+      const row: Record<string, number | null> = {
         day: i + 1,
-        // 当前月只画到今天为止
         current: isCurMonth && i + 1 > todayDay ? null : curCum,
-        previous: prevCum,
-      });
+      };
+      for (const o of activePaceOpts) { cmpCum[o.key] += cmp[o.key][i]; row[`cmp_${o.key}`] = cmpCum[o.key]; }
+      rows.push(row);
     }
     return rows;
-  }, [daily.data, month, paceBase, activeCurrency, isAll, baseCurrency, fxTo]);
+  }, [daily.data, month, activePaceOpts, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // Top 商家
   const topMerchForCurrency = useMemo(() => {
@@ -354,14 +368,21 @@ export default function Stats({
       <section className="mb-5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
-          <div className="flex gap-1 text-xs">
-            {([["prev", "对比上月"], ["prev2", "对比上上月"], ["yoy", "对比去年同月"]] as const).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setPaceBase(k)}
-                className={`rounded-full border px-2.5 py-0.5 ${paceBase === k ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-              >{label}</button>
-            ))}
+          <div className="flex flex-wrap items-center gap-1 text-xs">
+            <span className="mr-0.5 text-ink-400">叠加对比</span>
+            {PACE_OPTIONS.map((o) => {
+              const on = paceBases.has(o.key);
+              return (
+                <button
+                  key={o.key}
+                  onClick={() => togglePaceBase(o.key)}
+                  className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 ${on ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+                >
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: on ? "#fff" : o.color }} />
+                  {o.label}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className={`${box} p-4`}>
@@ -375,7 +396,9 @@ export default function Stats({
                 labelFormatter={(d) => `${d} 号`}
               />
               <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={2.5} dot={false} name="本月" connectNulls={false} />
-              <Line type="monotone" dataKey="previous" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 3" dot={false} name={paceBase === "prev" ? "上月" : paceBase === "prev2" ? "上上月" : "去年同月"} />
+              {activePaceOpts.map((o) => (
+                <Line key={o.key} type="monotone" dataKey={`cmp_${o.key}`} stroke={o.color} strokeWidth={2} strokeDasharray="5 3" dot={false} name={o.label} />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>

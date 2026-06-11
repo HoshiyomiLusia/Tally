@@ -41,10 +41,11 @@ interface MonthlyResp {
   yearly_totals: Record<string, number>;
 }
 
-type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
+type SortKey = "date_asc" | "date_desc" | "amount_desc" | "amount_asc";
+// 顺序即 chip 渲染顺序; 第一个 (日期↑) 也是默认值
 const SORT_LABEL: Record<SortKey, string> = {
-  date_desc: "日期 ↓",
   date_asc: "日期 ↑",
+  date_desc: "日期 ↓",
   amount_desc: "金额 ↓",
   amount_asc: "金额 ↑",
 };
