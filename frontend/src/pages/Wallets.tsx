@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Scale, Trash2 } from "lucide-react";
+import { HandCoins, Pencil, Plus, Scale, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } from "lucide-react";
@@ -84,8 +84,12 @@ export default function Wallets() {
 
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
-          // 真实余额口径: 跟卡片大数字一致, 各钱包系统余额求和 (信用卡为负债, 借出债权计入)
-          const total = list.reduce((s, w) => s + w.balance, 0);
+          const nonCredit = list.filter((w) => w.type !== "credit_card");
+          // 卡片只显物理; 借贷(借出未还)单独立账; 真实 = 物理 + 借贷 - 信用卡待还 (= 各钱包系统余额之和)
+          const phys = nonCredit.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+          const loan = nonCredit.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
+          const debt = list.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -w.balance), 0);
+          const real = list.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
             const arr = byType.get(w.type) ?? [];
@@ -95,11 +99,26 @@ export default function Wallets() {
           return (
             <div key={code}>
               {idx > 0 && <div className="mb-6 border-t border-ink-200 dark:border-ink-700" />}
-              <div className="mb-2 flex items-baseline justify-between px-1">
+              {/* 右上角一行汇总: 物理 / 借贷 / 待还 不同色, 真实高亮收尾 */}
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
                 <div className="text-sm font-medium">{code} 账户</div>
-                <div className="text-sm font-semibold">{formatAmount(total, code, currencies.data)}</div>
+                <div className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
+                  <span className="text-ink-500">物理 <span className="font-medium text-ink-700 dark:text-ink-200">{formatAmount(phys, code, currencies.data)}</span></span>
+                  {loan !== 0 && <span className="text-emerald-600 dark:text-emerald-400">借贷 {formatAmount(loan, code, currencies.data)}</span>}
+                  {debt !== 0 && <span className="text-rose-500">待还 {formatAmount(debt, code, currencies.data)}</span>}
+                  <span className="text-ink-500">真实 <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{formatAmount(real, code, currencies.data)}</span></span>
+                </div>
               </div>
               <div className="space-y-3">
+                {/* 借贷账户: 与各类账户同级, 不做卡片, 只一行小标题 + 高亮数字 */}
+                {loan !== 0 && (
+                  <div className="flex items-baseline justify-between px-1">
+                    <div className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-ink-500">
+                      <HandCoins size={11} /> 借贷账户
+                    </div>
+                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loan, code, currencies.data)}</div>
+                  </div>
+                )}
                 {TYPE_ORDER.filter((t) => byType.has(t)).map((t) => {
                   const wallets = byType.get(t)!;
                   const Icon = TYPE_ICON[t];
@@ -108,8 +127,7 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      {/* 卡片宽度锁死 260px (真实卡比例下高 164px, 刚好容下 text-lg 金额),
-                          拖视窗只改每行张数, 卡片本身不缩放 */}
+                      {/* 卡片宽度锁死 260px (真实卡比例下高 164px), 拖视窗只改每行张数 */}
                       <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,260px)]">
                         {wallets.map((w) => (
                           <WalletCardItem
@@ -117,7 +135,6 @@ export default function Wallets() {
                             wallet={w}
                             currencyCode={code}
                             currencies={currencies.data ?? []}
-                            siblings={list.filter((x) => x.id !== w.id)}
                             onReconcile={() => setReconcileFor(w)}
                             onEdit={() => { setEditing(w); setOpen(true); }}
                             onDelete={() => { if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id); }}
@@ -368,7 +385,6 @@ function WalletCardItem({
   wallet,
   currencyCode,
   currencies,
-  siblings,
   onReconcile,
   onEdit,
   onDelete,
@@ -376,142 +392,54 @@ function WalletCardItem({
   wallet: Wallet;
   currencyCode: string;
   currencies: Currency[];
-  siblings: Wallet[];
   onReconcile: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const qc = useQueryClient();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
-  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
-  const loanNet = wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet;  // 借出未还净额 = 真实 - 物理
-  const hasLoanDiff = wallet.loan_out_on_wallet !== 0 || wallet.loan_repayment_on_wallet !== 0;
-
-  const moveLoans = useMutation({
-    mutationFn: async (targetId: number) =>
-      (await api.post<{ reattributed: number; amount: number }>(`/wallets/${wallet.id}/move-loans-to/${targetId}`)).data,
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      if (r.reattributed === 0) {
-        alert("当前钱包没有借贷调整, 无需转移");
-      } else {
-        alert(`已重新归属 ${r.reattributed} 笔借贷 (共 ${formatAmount(r.amount, wallet.currency_code, currencies)}). 历史交易不动, 仅借贷归属变更.`);
-      }
-      setPickerOpen(false);
-    },
-    onError: (e: unknown) => {
-      const r = (e as { response?: { data?: { detail?: string } } }).response;
-      alert(r?.data?.detail ?? "转移失败");
-    },
-  });
-
   const isCredit = wallet.type === "credit_card";
+  // 卡片只显物理余额; 借出的钱已归到币种下的"借贷账户", 不再摊在每张卡上
+  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
   const debt = -wallet.balance;
   const light = isLight(color);
   const faceText = light ? "text-ink-900" : "text-white";
   const faceSub = light ? "text-ink-900/70" : "text-white/75";
 
-  const showLoanBar = hasLoanDiff && !isCredit && siblings.length > 0;
-
   return (
-    <div className="overflow-hidden rounded-xl shadow-sm">
-      {/* 卡面 = 真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540) */}
-      <div
-        className={`relative aspect-[856/540] overflow-hidden p-3 ${faceText}`}
-        style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
-      >
-        <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
-        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
+    <div
+      className={`relative aspect-[856/540] overflow-hidden rounded-xl p-3 shadow-sm ${faceText}`}
+      style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
+    >
+      <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
 
-        {/* 操作浮层: 右上角小图标, 不占高度 */}
-        <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
-          <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
-          <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
-          <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
-        </div>
-
-        <div className="relative flex h-full flex-col justify-between">
-          <div className="min-w-0 pr-20">
-            <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
-            <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
-          </div>
-          <div className="min-w-0">
-            {isCredit ? (
-              <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
-                {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
-              </div>
-            ) : (
-              <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
-                {formatAmount(wallet.balance, currencyCode, currencies)}
-              </div>
-            )}
-            {hasLoanDiff && !isCredit && (
-              <div className={`truncate text-[10px] tabular-nums ${faceSub}`}>
-                物理 {formatAmount(physical, currencyCode, currencies)} · 借出 {formatAmount(loanNet, currencyCode, currencies)}
-              </div>
-            )}
-          </div>
-          <div className="flex items-end justify-between">
-            <div className="flex items-center gap-1.5">
-              <ChipIcon />
-              <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
-            </div>
-            <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
-              {isCredit ? cardScheme(wallet.name) : currencyCode}
-            </span>
-          </div>
-        </div>
+      {/* 操作浮层: 右上角小图标 */}
+      <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
+        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
+        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
+        <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
       </div>
 
-      {/* 灰色条: 把借出未还的名义转移到其他钱包 (仅有借贷调整且有同币种兄弟钱包时出现) */}
-      {showLoanBar && (
-        <div className="flex items-center bg-ink-100 px-2 py-1 dark:bg-ink-800/70">
-          <button
-            onClick={() => setPickerOpen(true)}
-            className="text-[11px] text-ink-600 hover:text-emerald-600 dark:text-ink-300 dark:hover:text-emerald-400"
-          >借贷转移到其他钱包 →</button>
+      <div className="relative flex h-full flex-col justify-between">
+        <div className="min-w-0 pr-20">
+          <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+          <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
         </div>
-      )}
-
-      {pickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 dark:bg-ink-800">
-            <div className="mb-2 text-sm font-semibold">把 {wallet.name} 的借贷调整名义归到哪？</div>
-            <div className="mb-3 text-xs text-ink-500">
-              纯名义操作: 不创建任何新交易, 不改原借贷的钱包归属（历史保留）,
-              只把"借贷调整"的累计点改到目标钱包. 结果: 当前钱包的"含借贷调整"标记消失;
-              目标钱包接管这部分调整, 物理余额相应下降.
-              <br/>
-              <span className="mt-1 inline-block text-ink-400">两个钱包的真实余额都不变, 变的只是物理余额的归属.</span>
-            </div>
-            <div className="space-y-1.5">
-              {siblings.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    if (confirm(`确认把 ${wallet.name} 的借贷调整名义归到 ${t.name}？\n不会动任何交易, 只改归属.`)) {
-                      moveLoans.mutate(t.id);
-                    }
-                  }}
-                  disabled={moveLoans.isPending}
-                  className="flex w-full items-center justify-between rounded-lg border border-ink-200 px-3 py-2 text-left text-sm hover:border-emerald-500 dark:border-ink-700 dark:hover:border-emerald-400"
-                >
-                  <span>{t.name}</span>
-                  <span className="text-xs text-ink-500">{t.currency_code}</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex justify-end">
-              <button onClick={() => setPickerOpen(false)} className="btn-ghost text-xs">取消</button>
-            </div>
+        <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+          {isCredit
+            ? (debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies))
+            : formatAmount(physical, currencyCode, currencies)}
+        </div>
+        <div className="flex items-end justify-between">
+          <div className="flex items-center gap-1.5">
+            <ChipIcon />
+            <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
           </div>
+          <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
+            {isCredit ? cardScheme(wallet.name) : currencyCode}
+          </span>
         </div>
-      )}
+      </div>
     </div>
   );
 }

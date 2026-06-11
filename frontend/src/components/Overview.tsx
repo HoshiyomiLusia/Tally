@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, HandCoins } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
@@ -150,8 +150,10 @@ export function BalanceModule() {
       {/* Wallet 余额: 与上方资产总览同处一个矩形, 用分隔线区隔 */}
       {groupedWallets.map(([code, list]) => {
         const nonCredit = list.filter((w) => w.type !== "credit_card");
-        const netTotal = nonCredit.reduce((s, w) => s + w.balance, 0);
         const spendTotal = nonCredit.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+        const loanTotal = nonCredit.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
+        const debtTotal = list.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -w.balance), 0);
+        const realTotal = list.reduce((s, w) => s + w.balance, 0);
         const byType = new Map<string, typeof list>();
         for (const w of list) {
           const arr = byType.get(w.type) ?? [];
@@ -161,14 +163,23 @@ export function BalanceModule() {
         const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
         return (
           <div key={code} className="mt-4 border-t border-ink-100 pt-3 dark:border-ink-800">
-            <div className="mb-2 flex items-baseline gap-2">
-              <span className="text-sm font-medium text-ink-700">{code} · 真实余额</span>
-              <span className="text-base font-semibold">{formatAmount(netTotal, code, currencies.data)}</span>
-              {netTotal !== spendTotal && (
-                <span className="text-xs text-ink-400">物理 {formatAmount(spendTotal, code, currencies.data)}</span>
-              )}
+            {/* 一行汇总: 物理 / 借贷 / 待还 不同色, 真实高亮 */}
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-sm font-medium text-ink-700 dark:text-ink-200">{code} 账户</span>
+              <div className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
+                <span className="text-ink-500">物理 <span className="font-medium text-ink-700 dark:text-ink-200">{formatAmount(spendTotal, code, currencies.data)}</span></span>
+                {loanTotal !== 0 && <span className="text-emerald-600 dark:text-emerald-400">借贷 {formatAmount(loanTotal, code, currencies.data)}</span>}
+                {debtTotal !== 0 && <span className="text-rose-500">待还 {formatAmount(debtTotal, code, currencies.data)}</span>}
+                <span className="text-ink-500">真实 <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{formatAmount(realTotal, code, currencies.data)}</span></span>
+              </div>
             </div>
             <div className="space-y-2">
+              {loanTotal !== 0 && (
+                <div className="flex items-baseline justify-between rounded-md bg-ink-50 px-2 py-1 dark:bg-ink-800/40">
+                  <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-ink-400"><HandCoins size={11} /> 借贷账户</span>
+                  <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loanTotal, code, currencies.data)}</span>
+                </div>
+              )}
               {typed.map((t) => (
                 <div key={t}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">{WALLET_TYPE_LABEL[t]}</div>
@@ -177,7 +188,6 @@ export function BalanceModule() {
                       const isCredit = w.type === "credit_card";
                       const physical = w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet;
                       const debt = -w.balance;
-                      const hasLoanDiff = w.loan_out_on_wallet !== 0 || w.loan_repayment_on_wallet !== 0;
                       return (
                         <div key={w.wallet_id} className="rounded-md bg-ink-50 p-2 dark:bg-ink-800/40">
                           <div className="truncate text-xs text-ink-500">{w.wallet_name}</div>
@@ -186,14 +196,9 @@ export function BalanceModule() {
                               {debt > 0 ? `待还 ${formatAmount(debt, code, currencies.data)}` : formatAmount(0, code, currencies.data)}
                             </div>
                           ) : (
-                            <>
-                              <div className={`text-sm font-medium ${w.balance < 0 ? "text-rose-600" : ""}`}>
-                                {formatAmount(w.balance, code, currencies.data)}
-                              </div>
-                              {hasLoanDiff && (
-                                <div className="text-[10px] text-ink-400">物理余额 {formatAmount(physical, code, currencies.data)}</div>
-                              )}
-                            </>
+                            <div className={`text-sm font-medium ${physical < 0 ? "text-rose-600" : ""}`}>
+                              {formatAmount(physical, code, currencies.data)}
+                            </div>
                           )}
                         </div>
                       );
