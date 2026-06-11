@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Paperclip, Plus, Trash2, X } from "lucide-react";
+import { Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -65,6 +65,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const [merchantInput, setMerchantInput] = useState("");
   const [merchantId, setMerchantId] = useState<number | null>(null);
   const [amountText, setAmountText] = useState("");
+  const [padOpen, setPadOpen] = useState(false);
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [note, setNote] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
@@ -138,6 +139,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     }
     setStagedFiles([]);
     setError("");
+    setPadOpen(false);
     setTimeout(() => amountRef.current?.focus(), 50);
   }, [open, editing, prefill, recurrenceSourceId, merchants.data, currencies.data]);
 
@@ -374,6 +376,16 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     },
   });
 
+  // 鼠标小键盘: 往金额框追加/删除字符
+  function pressPad(key: string) {
+    setAmountText((cur) => {
+      if (key === "del") return cur.slice(0, -1);
+      if (key === ".") return cur.includes(".") ? cur : (cur || "0") + ".";
+      if (cur === "0") return key;  // 避免出现 "05"
+      return cur + key;
+    });
+  }
+
   if (!open) return null;
 
   return (
@@ -417,10 +429,32 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                 value={amountText}
                 onChange={(e) => setAmountText(e.target.value)}
               />
+              <button
+                type="button"
+                onClick={() => setPadOpen((v) => !v)}
+                title="数字小键盘"
+                className={`flex shrink-0 items-center rounded-md border px-2.5 ${padOpen ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"}`}
+              >
+                <Calculator size={18} />
+              </button>
               <div className={`flex shrink-0 items-center rounded-md px-3 text-sm font-semibold ${wallet ? "bg-ink-800 text-white" : "bg-amber-50 text-amber-700"}`}>
                 {wallet?.currency_code ?? "选 Wallet"}
               </div>
             </div>
+            {padOpen && (
+              <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/50">
+                {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "del"].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => pressPad(k)}
+                    className="flex items-center justify-center rounded-md border border-ink-200 bg-white py-3 text-lg font-medium text-ink-700 hover:bg-ink-100 active:scale-95 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 dark:hover:bg-ink-800"
+                  >
+                    {k === "del" ? <Delete size={18} /> : k}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {[
                 { label: "×10", factor: 10 },
