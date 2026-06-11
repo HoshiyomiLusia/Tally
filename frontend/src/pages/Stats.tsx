@@ -32,6 +32,12 @@ function thisMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// 支出节奏对比月配色 (最多 12 个月各一色)
+const PACE_COLORS = [
+  "#3b82f6", "#f59e0b", "#10b981", "#a855f7", "#0ea5e9", "#ec4899",
+  "#84cc16", "#f97316", "#14b8a6", "#8b5cf6", "#eab308", "#06b6d4",
+];
+
 interface FxRate { id: number; on_date: string; base: string; quote: string; rate: number; }
 
 export default function Stats({
@@ -181,9 +187,8 @@ export default function Stats({
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
 
-  // 支出节奏: 本月每日累计支出 (粗红线) 对照过去 paceMonths 个月的同期累计 (淡灰群线).
-  // x = 月内第几天 (1..31), y = 截至该天累计. 历史月 dataKey = "h0".."hN" (h0=上月,越远越淡),
-  // 不做逐月图例 —— 看的是"本月线浮在历史群线上方还是下方".
+  // 支出节奏: 本月每日累计支出 (粗红线) 对照过去 paceMonths 个月同期累计 (各月不同颜色).
+  // x = 月内第几天 (1..31), y = 截至该天累计. 历史月 dataKey = "h0".."hN", 下方图例标色=月.
   const pace = useMemo(() => {
     const src = daily.data ?? [];
     const [yr, mn] = month.split("-").map(Number);
@@ -192,7 +197,7 @@ export default function Stats({
       while (m <= 0) { m += 12; y -= 1; }
       return { y, m, label: `${y}-${String(m).padStart(2, "0")}` };
     };
-    const hist = Array.from({ length: paceMonths }, (_, i) => ({ key: `h${i}`, ...shifted(i + 1) }));
+    const hist = Array.from({ length: paceMonths }, (_, i) => ({ key: `h${i}`, color: PACE_COLORS[i % PACE_COLORS.length], ...shifted(i + 1) }));
     const cur: number[] = new Array(31).fill(0);
     const buckets: Record<string, number[]> = {};
     for (const h of hist) buckets[h.key] = new Array(31).fill(0);
@@ -379,22 +384,27 @@ export default function Stats({
                 }}
                 labelFormatter={(d) => `${d} 号`}
               />
-              {/* 历史群线: 越近越实 (越远透明度越低), 统一灰色, 不进图例 */}
-              {pace.hist.map((h, i) => (
-                <Line
-                  key={h.key}
-                  type="monotone"
-                  dataKey={h.key}
-                  stroke="#94a3b8"
-                  strokeOpacity={Math.max(0.12, 0.5 - i * (0.38 / Math.max(1, pace.hist.length - 1)))}
-                  strokeWidth={1.5}
-                  dot={false}
-                />
+              {/* 历史月: 每月一色 */}
+              {pace.hist.map((h) => (
+                <Line key={h.key} type="monotone" dataKey={h.key} stroke={h.color} strokeWidth={1.8} dot={false} />
               ))}
               {/* 本月: 粗红实线, 压在最上层 */}
-              <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={2.5} dot={false} connectNulls={false} />
+              <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={3} dot={false} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
+          {/* 图例: 色块 = 月份 */}
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "#e11d48" }} />
+              <span className="font-medium">本月</span>
+            </span>
+            {pace.hist.map((h) => (
+              <span key={h.key} className="flex items-center gap-1 text-ink-500">
+                <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: h.color }} />
+                {h.label}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
