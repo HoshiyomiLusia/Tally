@@ -359,7 +359,7 @@ export default function Stats({
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
-            <p className="text-[11px] text-ink-400">本月（红）对照过去 {paceMonths} 个月同期。线在灰群上方=花得比平时快</p>
+            <p className="text-[11px] text-ink-400">本月（粗红）对照过去 {paceMonths} 个月同期；红线在历史各月之上=花得比平时快</p>
           </div>
           <div className="flex gap-1 text-xs">
             {([6, 12] as const).map((n) => (
