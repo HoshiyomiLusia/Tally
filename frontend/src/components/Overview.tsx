@@ -134,13 +134,14 @@ export function BalanceModule() {
               {b.currency_code !== baseCurrency && <span>× {b.rate.toFixed(4)}</span>}
             </div>
             <div className={`mt-0.5 text-sm font-semibold ${b.net < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
-              {formatAmount(b.net, b.currency_code, currencies.data)}
+              真实 {formatAmount(b.net, b.currency_code, currencies.data)}
             </div>
+            <div className="text-[10px] text-ink-400">物理 {formatAmount(b.spendable, b.currency_code, currencies.data)}</div>
             {b.credit_debt !== 0 && (
               <div className="text-[10px] text-rose-500 dark:text-rose-300/80">待还 {formatAmount(b.credit_debt, b.currency_code, currencies.data)}</div>
             )}
             {b.currency_code !== baseCurrency && (
-              <div className="text-[10px] text-ink-400">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
+              <div className="text-[10px] text-ink-400">≈ 真实 {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
             )}
           </div>
         ))}
@@ -190,7 +191,7 @@ export function BalanceModule() {
                                 {formatAmount(physical, code, currencies.data)}
                               </div>
                               {hasLoanDiff && (
-                                <div className="text-[10px] text-ink-400">账面 {formatAmount(w.balance, code, currencies.data)}（含借出未还）</div>
+                                <div className="text-[10px] text-ink-400">另有借出未还 {formatAmount(w.loan_out_on_wallet - w.loan_repayment_on_wallet, code, currencies.data)}</div>
                               )}
                             </>
                           )}
