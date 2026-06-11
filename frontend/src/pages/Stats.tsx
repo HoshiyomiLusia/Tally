@@ -258,29 +258,39 @@ export default function Stats({
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-1">
-        <button
-          onClick={() => setActiveCurrency("")}
-          className={`rounded-full border px-3 py-1 text-xs ${isAll ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
-        >全部 · 折算到 {baseCurrency}</button>
-        {allCurrencies.map((c) => (
-          <button
-            key={c}
-            onClick={() => setActiveCurrency(c)}
-            className={`rounded-full border px-3 py-1 text-xs ${activeCurrency === c ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
-          >{c}</button>
-        ))}
-        {isAll && allCurrencies.length > 0 && (
-          <select
-            value={baseCurrency}
-            onChange={(e) => setBaseCurrency(e.target.value)}
-            className="ml-1 rounded-full border border-ink-200 bg-white px-2 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:bg-ink-800"
-            title="选择折算基准币种"
-          >
-            {allCurrencies.map((c) => <option key={c} value={c}>基准 {c}</option>)}
-          </select>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {allCurrencies.length === 0 ? (
+          <div className="text-sm text-ink-500">还没有交易数据</div>
+        ) : (
+          <>
+            <span className="text-xs text-ink-500">币种</span>
+            <div className="flex flex-wrap gap-1">
+              <button
+                onClick={() => setActiveCurrency("")}
+                className={`rounded-full border px-3 py-1 text-xs ${isAll ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+              >全部</button>
+              {allCurrencies.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setActiveCurrency(c)}
+                  className={`rounded-full border px-3 py-1 text-xs ${activeCurrency === c ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+                >{c}</button>
+              ))}
+            </div>
+            {isAll && (
+              <span className="flex items-center gap-1 text-xs text-ink-500">
+                折算到
+                <select
+                  value={baseCurrency}
+                  onChange={(e) => setBaseCurrency(e.target.value)}
+                  className="rounded border border-ink-200 bg-white px-1.5 py-0.5 text-xs text-ink-700 dark:border-ink-700 dark:bg-ink-800 dark:text-ink-200"
+                >
+                  {allCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </span>
+            )}
+          </>
         )}
-        {allCurrencies.length === 0 && <div className="text-sm text-ink-500">还没有交易数据</div>}
       </div>
 
       {cur && (
