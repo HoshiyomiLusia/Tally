@@ -269,6 +269,17 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const participantsSum = participants.reduce((s, p) => s + parseAmount(p.share_text || "0", digits), 0);
   const shareDiff = totalAmount - myShare - participantsSum;
 
+  // 我先填好自己那份, 把剩下的总额均摊给其他参与人 (余数落在第一个人头上)
+  const splitRemainder = () => {
+    if (!participants.length) return;
+    const remaining = totalAmount - myShare;
+    if (remaining < 0) return;
+    const n = participants.length;
+    const each = Math.floor(remaining / n);
+    const rem = remaining - each * n;
+    setParticipants(participants.map((p, i) => ({ ...p, share_text: formatAmountInput(each + (i === 0 ? rem : 0), digits) })));
+  };
+
   function onMerchantPick(m: Merchant) {
     setMerchantInput(m.name);
     if (merchantInputRef.current) merchantInputRef.current.value = m.name;
@@ -662,8 +673,9 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
                   {participants.length > 0 && (
                     <>
-                      <div className="flex justify-end">
-                        <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline">均摊</button>
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={splitRemainder} className="text-xs text-ink-600 underline" title="保留我填的金额, 把剩下的均摊给其他人">我付完余下AA</button>
+                        <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline">全部均摊</button>
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-sm">

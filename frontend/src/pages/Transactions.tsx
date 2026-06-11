@@ -7,6 +7,7 @@ import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
 import TransferForm from "../components/TransferForm";
 import { api, type Category, type Contact, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { formatAmount, todayIso } from "../lib/format";
 
 interface FrequentItem {
@@ -23,9 +24,12 @@ interface FrequentItem {
   last_on: string;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  expense: "支出", income: "收入", transfer_out: "转出", transfer_in: "转入",
-  loan_out: "借出", loan_repayment: "还款",
+// 非收支类账单本身没有"分类", 用类型本身做标题 (而不是显示"未分类")
+const SPECIAL_TITLE: Record<string, { emoji: string; name: string }> = {
+  transfer_in: { emoji: "🔁", name: "转账转入" },
+  transfer_out: { emoji: "🔁", name: "转账转出" },
+  loan_out: { emoji: "💸", name: "借出" },
+  loan_repayment: { emoji: "💰", name: "借贷还款" },
 };
 
 const PAGE_SIZES = [25, 50, 100, 200];
@@ -48,19 +52,21 @@ export default function Transactions() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [reimburseOpen, setReimburseOpen] = useState(false);
   const [creditRepayOpen, setCreditRepayOpen] = useState(false);
-  // 滑动时把右下角"+"收到屏幕右侧 (减少遮挡); 停下/上滑再露出
+  // 滑动时把右下角"+"收到屏幕右外侧 (不挡内容); 停下约 0.4s 后自动滑回来 (随时可点)
   const [fabTucked, setFabTucked] = useState(false);
-  const lastScrollY = useRef(0);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const onScroll = () => {
-      const y = window.scrollY;
-      if (y > lastScrollY.current + 8) setFabTucked(true);
-      else if (y < lastScrollY.current - 8) setFabTucked(false);
-      lastScrollY.current = y;
+      setFabTucked(true);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(() => setFabTucked(false), 400);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
   }, []);
 
   useEffect(() => { setPage(0); }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
@@ -101,7 +107,24 @@ export default function Transactions() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts?include_archived=true")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
   const frequent = useQuery({ queryKey: ["frequent"], queryFn: async () => (await api.get<FrequentItem[]>("/transactions/frequent?min_count=3&limit=12")).data });
+
+  const { user } = useAuth();
+  const baseCurrency = user?.primary_currency_code || localStorage.getItem("tally.baseCurrency") || "JPY";
+  // 把某币种金额折算到主币种 (当期汇率), 用于每日汇总的等效合计
+  const foldToBase = useMemo(() => {
+    const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
+    const rateMap = new Map<string, number>();
+    for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    return (amt: number, from: string): number => {
+      if (from === baseCurrency) return amt;
+      const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
+      let rate = rateMap.get(`${from}->${baseCurrency}`);
+      if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      return Math.round(amt * rate * Math.pow(10, td - fd));
+    };
+  }, [currencies.data, rates.data, baseCurrency]);
 
   const quickAdd = useMutation({
     mutationFn: async (f: FrequentItem) => api.post("/transactions", {
@@ -252,13 +275,17 @@ export default function Transactions() {
             else row.expense += t.amount;
             totals.set(t.currency_code, row);
           }
+          const hasForeign = Array.from(totals.keys()).some((c) => c !== baseCurrency);
+          let baseExp = 0, baseInc = 0;
+          for (const [code, row] of totals) { baseExp += foldToBase(row.expense, code); baseInc += foldToBase(row.income, code); }
           return (
           <div key={date} className="card p-0">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-100 px-4 py-2 text-xs">
               <span className="text-ink-500">{date}</span>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                 {Array.from(totals.entries()).map(([code, row]) => (
                   <span key={code} className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-medium text-ink-400">{code}</span>
                     {row.expense > 0 && (
                       <span className="text-rose-600">支 -{formatAmount(row.expense, code, currencies.data)}</span>
                     )}
@@ -267,6 +294,13 @@ export default function Transactions() {
                     )}
                   </span>
                 ))}
+                {hasForeign && (baseExp > 0 || baseInc > 0) && (
+                  <span className="flex items-center gap-1.5 border-l border-ink-200 pl-3 dark:border-ink-700">
+                    <span className="text-[10px] font-medium text-ink-400">≈ {baseCurrency}</span>
+                    {baseExp > 0 && <span className="text-rose-500/80">支 -{formatAmount(baseExp, baseCurrency, currencies.data)}</span>}
+                    {baseInc > 0 && <span className="text-emerald-500/80">收 +{formatAmount(baseInc, baseCurrency, currencies.data)}</span>}
+                  </span>
+                )}
               </div>
             </div>
             <div className="divide-y divide-ink-100">
@@ -274,15 +308,15 @@ export default function Transactions() {
                 const c = catName(t.category_id);
                 const m = merchantName(t.merchant_id);
                 const ct = contactName(t.contact_id);
-                const isTransfer = t.kind === "transfer_in" || t.kind === "transfer_out";
                 const isPositive = t.kind === "income" || t.kind === "loan_repayment" || t.kind === "transfer_in";
                 const amtColor =
                   t.kind === "income" || t.kind === "loan_repayment" ? "text-emerald-600"
                   : t.kind === "loan_out" ? "text-amber-600"
                   : t.kind.startsWith("transfer") ? "text-sky-600"
                   : "text-rose-600";
-                const titleEmoji = isTransfer ? "🔁" : (c?.emoji ?? "");
-                const titleName = isTransfer ? "转移" : (c?.name ?? "未分类");
+                const special = SPECIAL_TITLE[t.kind];
+                const titleEmoji = special ? special.emoji : (c?.emoji ?? "");
+                const titleName = special ? special.name : (c?.name ?? "未分类");
                 return (
                   <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                     <div className="min-w-0 flex-1">
@@ -291,9 +325,6 @@ export default function Transactions() {
                         <span className="font-medium">{titleName}</span>
                         {m && <span className="text-xs text-ink-500">· {m}</span>}
                         {ct && <span className="rounded bg-amber-50 px-1 text-[10px] text-amber-700">@{ct}</span>}
-                        {t.kind !== "expense" && t.kind !== "income" && (
-                          <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-600">{KIND_LABEL[t.kind]}</span>
-                        )}
                         {t.split_group_id && <span className="rounded bg-purple-50 px-1 text-[10px] text-purple-700">分摊</span>}
                         {t.is_recurring && <span className="rounded bg-blue-50 px-1 text-[10px] text-blue-700">周期</span>}
                       </div>
@@ -366,7 +397,7 @@ export default function Transactions() {
         type="button"
         onClick={() => { setEditing(null); setOpen(true); }}
         aria-label="添加交易"
-        className={`fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 transition-all duration-300 hover:translate-x-0 hover:bg-ink-700 hover:opacity-100 md:bottom-8 dark:bg-emerald-600 dark:hover:bg-emerald-500 ${fabTucked ? "translate-x-1/2 opacity-50" : ""}`}
+        className={`fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 transition-all duration-300 md:bottom-8 dark:bg-emerald-600 dark:hover:bg-emerald-500 ${fabTucked ? "pointer-events-none translate-x-[150%] opacity-0" : "hover:bg-ink-700"}`}
       >
         <Plus size={22} />
       </button>
