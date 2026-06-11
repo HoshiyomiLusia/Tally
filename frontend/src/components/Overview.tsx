@@ -108,48 +108,31 @@ export default function Overview() {
       {/* 资产总览 */}
       <section>
         <div className="overview-card rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            {/* 左: 真实余额主数字 */}
-            <div className="min-w-0">
-              <div className="mb-1 flex items-center gap-1.5">
-                <span className="text-xs uppercase tracking-wider opacity-60">真实余额 · 折算到</span>
-                <select
-                  value={baseCurrency}
-                  onChange={(e) => setBaseCurrency(e.target.value)}
-                  className="overview-select rounded px-1.5 py-0.5 text-xs outline-none"
-                >
-                  {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-                </select>
-              </div>
-              <div className="text-3xl font-semibold tracking-tight">
-                {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
-              </div>
-            </div>
-            {/* 右: 次要指标, 右对齐填充空白 */}
-            <div className="shrink-0 space-y-1 text-right">
-              <div>
-                <div className="text-[10px] uppercase tracking-wider opacity-50">实际物理余额</div>
-                <div className="text-sm font-semibold tracking-tight">{formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</div>
-              </div>
-              {!!cross.data?.total_credit_debt && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider opacity-50">信用卡待还</div>
-                  <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</div>
-                </div>
-              )}
-              {loanNet.receivable > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider opacity-50">借贷 · 应收</div>
-                  <div className="text-sm font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatAmount(loanNet.receivable, baseCurrency, currencies.data)}</div>
-                </div>
-              )}
-              {loanNet.payable > 0 && (
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider opacity-50">借贷 · 应付</div>
-                  <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(loanNet.payable, baseCurrency, currencies.data)}</div>
-                </div>
-              )}
-            </div>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-xs uppercase tracking-wider opacity-60">真实余额 · 折算到</span>
+            <select
+              value={baseCurrency}
+              onChange={(e) => setBaseCurrency(e.target.value)}
+              className="overview-select rounded px-1.5 py-0.5 text-xs outline-none"
+            >
+              {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+            </select>
+          </div>
+          <div className="text-3xl font-semibold tracking-tight">
+            {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+          </div>
+          {/* 次要指标: 大数字下方一行小标签, 不再钉到右边 */}
+          <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+            <span className="opacity-70">实际物理余额 <b className="font-semibold">{formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</b></span>
+            {!!cross.data?.total_credit_debt && (
+              <span className="text-rose-500 dark:text-rose-300">信用卡待还 <b className="font-semibold">{formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</b></span>
+            )}
+            {loanNet.receivable > 0 && (
+              <span className="text-emerald-600 dark:text-emerald-400">借贷·应收 <b className="font-semibold">{formatAmount(loanNet.receivable, baseCurrency, currencies.data)}</b></span>
+            )}
+            {loanNet.payable > 0 && (
+              <span className="text-rose-500 dark:text-rose-300">借贷·应付 <b className="font-semibold">{formatAmount(loanNet.payable, baseCurrency, currencies.data)}</b></span>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0).map((b) => (

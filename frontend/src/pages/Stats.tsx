@@ -231,10 +231,14 @@ export default function Stats({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={embedded ? "px-4 pb-5 md:px-6" : "px-4 py-5 md:px-6"}>
       <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">统计</h1>
-          <p className="text-sm text-ink-500">KPI · Top 商家 / 分类对比 · 支出节奏</p>
-        </div>
+        {embedded ? (
+          <h2 className="text-sm font-medium text-ink-600">统计</h2>
+        ) : (
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">统计</h1>
+            <p className="text-sm text-ink-500">KPI · Top 商家 / 分类对比 · 支出节奏</p>
+          </div>
+        )}
         <MonthPicker value={month} onChange={setMonth} />
       </div>
 

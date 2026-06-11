@@ -60,7 +60,7 @@ function sortItems(items: Item[], sort: SortKey): Item[] {
   return copy;
 }
 
-function renderRow(it: Item, prevAmount: number | undefined, currencies?: Currency[]) {
+function renderRow(it: Item, prevAmount: number | undefined, currencies?: Currency[], hideDelta = false) {
   const primary = it.merchant_name || it.note || it.category_name;
   const showCategorySub = primary !== it.category_name && !!it.category_name;
   const delta = prevAmount != null ? it.amount - prevAmount : null;
@@ -76,7 +76,7 @@ function renderRow(it: Item, prevAmount: number | undefined, currencies?: Curren
       </div>
       <div className="shrink-0 text-right">
         <div className="font-semibold text-rose-600">{formatAmount(it.amount, it.currency_code, currencies)}</div>
-        {prevAmount == null ? (
+        {hideDelta ? null : prevAmount == null ? (
           <div className="text-[10px] text-amber-600 dark:text-amber-400">上月无</div>
         ) : delta !== 0 ? (
           <div className={`text-[10px] ${delta! > 0 ? "text-rose-500" : "text-emerald-600"}`}>
@@ -116,6 +116,46 @@ export default function RecurringPanel({ month }: { month: string }) {
   }, [prevData.data]);
 
   const m = data.data;
+  const p = prevData.data;
+  const prevLabel = `${Number(prev.split("-")[1])} 月`;
+  const curLabel = `${Number(month.split("-")[1])} 月`;
+
+  // 一列: 标题 + 合计卡 + 列表 (本月带上月对照 delta; 上月纯列表)
+  function column(
+    title: string,
+    items: Item[] | undefined,
+    totals: Record<string, number> | undefined,
+    prevAmtMap: Map<string, number> | null,
+    emptyText: string,
+  ) {
+    return (
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <h4 className="text-xs font-semibold text-ink-600">{title}</h4>
+          <span className="text-[11px] text-ink-400">{items ? `${items.length} 笔` : ""}</span>
+        </div>
+        {totals && Object.keys(totals).length > 0 && (
+          <div className="mb-1.5 space-y-0.5 rounded-md bg-ink-50 px-3 py-1.5 dark:bg-ink-800/40">
+            {Object.entries(totals).map(([code, total]) => (
+              <div key={code} className="flex items-center justify-between text-xs">
+                <span className="text-ink-500">{code} 合计</span>
+                <span className="font-semibold">{formatAmount(total, code, currencies.data)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="card divide-y divide-ink-100 p-0">
+          {(!items || items.length === 0) && (
+            <div className="px-4 py-6 text-center text-sm text-ink-500">{emptyText}</div>
+          )}
+          {items && sortItems(items, sort).map((it) =>
+            renderRow(it, prevAmtMap ? prevAmtMap.get(itemKey(it)) : undefined, currencies.data, !prevAmtMap),
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-1 text-xs">
@@ -130,55 +170,18 @@ export default function RecurringPanel({ month }: { month: string }) {
       </div>
 
       <div className="mb-4">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium text-ink-600">月度账单</h3>
-          <span className="text-xs text-ink-500">{m ? `${m.monthly_items.length} 笔` : ""}</span>
-        </div>
-        {m && Object.keys(m.monthly_totals).length > 0 && (
-          <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {Object.entries(m.monthly_totals).map(([code, total]) => {
-              const ptotal = prevData.data?.monthly_totals[code] ?? 0;
-              const d = total - ptotal;
-              return (
-                <div key={code} className="card">
-                  <div className="text-xs text-ink-500">{code} 本月月度合计</div>
-                  <div className="mt-1 text-lg font-semibold">{formatAmount(total, code, currencies.data)}</div>
-                  <div className={`text-[11px] ${d > 0 ? "text-rose-500" : d < 0 ? "text-emerald-600" : "text-ink-400"}`}>
-                    上月 {formatAmount(ptotal, code, currencies.data)}{d !== 0 && ` · ${d > 0 ? "+" : "−"}${formatAmount(Math.abs(d), code, currencies.data)}`}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div className="card divide-y divide-ink-100 p-0">
-          {(!m || m.monthly_items.length === 0) && (
-            <div className="px-4 py-6 text-center text-sm text-ink-500">本月还没有月度账单</div>
-          )}
-          {m && sortItems(m.monthly_items, sort).map((it) => renderRow(it, prevMonthlyMap.get(itemKey(it)), currencies.data))}
+        <h3 className="mb-2 text-sm font-medium text-ink-600">月度账单 · 本月 vs 上月</h3>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {column(`本月 (${curLabel})`, m?.monthly_items, m?.monthly_totals, prevMonthlyMap, "本月还没有月度账单")}
+          {column(`上月 (${prevLabel})`, p?.monthly_items, p?.monthly_totals, null, "上月没有月度账单")}
         </div>
       </div>
 
       <div>
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium text-ink-600">年度账单</h3>
-          <span className="text-xs text-ink-500">{m ? `${m.yearly_items.length} 笔` : ""}</span>
-        </div>
-        {m && Object.keys(m.yearly_totals).length > 0 && (
-          <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {Object.entries(m.yearly_totals).map(([code, total]) => (
-              <div key={code} className="card">
-                <div className="text-xs text-ink-500">{code} 本年年度合计</div>
-                <div className="mt-1 text-lg font-semibold">{formatAmount(total, code, currencies.data)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="card divide-y divide-ink-100 p-0">
-          {(!m || m.yearly_items.length === 0) && (
-            <div className="px-4 py-6 text-center text-sm text-ink-500">本年还没有年度账单</div>
-          )}
-          {m && sortItems(m.yearly_items, sort).map((it) => renderRow(it, prevYearlyMap.get(itemKey(it)), currencies.data))}
+        <h3 className="mb-2 text-sm font-medium text-ink-600">年度账单 · 本月 vs 上月</h3>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {column(`本月 (${curLabel})`, m?.yearly_items, m?.yearly_totals, prevYearlyMap, "本月没有年度账单")}
+          {column(`上月 (${prevLabel})`, p?.yearly_items, p?.yearly_totals, null, "上月没有年度账单")}
         </div>
       </div>
     </div>
