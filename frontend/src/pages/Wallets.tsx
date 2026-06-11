@@ -110,13 +110,13 @@ export default function Wallets() {
                 </div>
               </div>
               <div className="space-y-3">
-                {/* 借贷账户: 与各类账户同级, 不做卡片, 只一行小标题 + 高亮数字 */}
+                {/* 借贷账户: 与各类账户同级, 不做卡片, 只一行小标题 + 高亮数字 (紧挨着) */}
                 {loan !== 0 && (
-                  <div className="flex items-baseline justify-between px-1">
-                    <div className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-ink-500">
+                  <div className="flex items-baseline gap-2 px-1">
+                    <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-ink-500">
                       <HandCoins size={11} /> 借贷账户
-                    </div>
-                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loan, code, currencies.data)}</div>
+                    </span>
+                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loan, code, currencies.data)}</span>
                   </div>
                 )}
                 {TYPE_ORDER.filter((t) => byType.has(t)).map((t) => {

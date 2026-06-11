@@ -175,7 +175,7 @@ export function BalanceModule() {
             </div>
             <div className="space-y-2">
               {loanTotal !== 0 && (
-                <div className="flex items-baseline justify-between rounded-md bg-ink-50 px-2 py-1 dark:bg-ink-800/40">
+                <div className="flex w-fit items-baseline gap-2 rounded-md bg-ink-50 px-2 py-1 dark:bg-ink-800/40">
                   <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-ink-400"><HandCoins size={11} /> 借贷账户</span>
                   <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loanTotal, code, currencies.data)}</span>
                 </div>
