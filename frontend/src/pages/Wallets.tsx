@@ -108,7 +108,7 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,260px))]">
+                      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,260px))]">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
