@@ -326,6 +326,24 @@ function shade(hex: string, percent: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
+// EMV 芯片: 金色圆角矩形 + 触点分割线 (中竖 + 上下两横), 模拟真实卡片芯片
+function ChipIcon() {
+  return (
+    <svg width="22" height="16" viewBox="0 0 22 16" fill="none" aria-hidden="true">
+      <rect x="0.5" y="0.5" width="21" height="15" rx="2.5" fill="#e7c66b" stroke="#b9942f" strokeWidth="0.6" />
+      <g stroke="#9c7d2a" strokeWidth="0.7">
+        {/* 中央竖线 */}
+        <line x1="11" y1="0.5" x2="11" y2="15.5" />
+        {/* 上下两条横线 */}
+        <line x1="0.5" y1="5" x2="21.5" y2="5" />
+        <line x1="0.5" y1="11" x2="21.5" y2="11" />
+        {/* 中央触点框 */}
+        <rect x="7" y="5" width="8" height="6" fill="#dab955" />
+      </g>
+    </svg>
+  );
+}
+
 // 底色够亮就用深色字, 否则白字 (保证卡面文字可读)
 function isLight(hex: string): boolean {
   const num = parseInt(hex.replace("#", ""), 16);
@@ -421,7 +439,7 @@ function WalletCardItem({
           )}
           <div className="mt-2 flex items-end justify-between">
             <div className="flex items-center gap-1.5">
-              <div className="h-3 w-4 rounded-[2px] bg-gradient-to-br from-amber-200 to-amber-400 opacity-80 shadow-inner" />
+              <ChipIcon />
               <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
             </div>
             <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
@@ -430,20 +448,22 @@ function WalletCardItem({
           </div>
         </div>
       </div>
-      {/* 卡面下方中性区: 借贷调整提示 + 操作按钮 */}
-      <div className="p-2">
-        {hasLoanDiff && !isCredit && (
-          <div className="mb-1 flex flex-wrap items-center gap-1 text-xs text-ink-500">
-            <span>实际 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借贷调整</span>
-            {siblings.length > 0 && (
-              <button
-                onClick={() => setPickerOpen(true)}
-                className="rounded border border-ink-300 px-1.5 py-0.5 text-[10px] text-ink-600 hover:border-emerald-500 hover:text-emerald-600 dark:border-ink-600 dark:text-ink-300"
-              >合到其他钱包</button>
-            )}
-          </div>
-        )}
-        <div className="flex gap-0.5">
+      {/* 卡面下方中性区: 左=借贷调整(可空), 右=操作按钮. 同一行, 高度恒定 */}
+      <div className="flex items-center justify-between gap-2 p-2">
+        <div className="min-w-0 flex-1 text-xs text-ink-500">
+          {hasLoanDiff && !isCredit && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="truncate">实际 {formatAmount(wallet.balance, currencyCode, currencies)} · 含借贷调整</span>
+              {siblings.length > 0 && (
+                <button
+                  onClick={() => setPickerOpen(true)}
+                  className="rounded border border-ink-300 px-1.5 py-0.5 text-[10px] text-ink-600 hover:border-emerald-500 hover:text-emerald-600 dark:border-ink-600 dark:text-ink-300"
+                >合到其他钱包</button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-0.5">
           <button onClick={onReconcile} className="btn-ghost px-2 py-1 text-xs" title="对账"><Scale size={12} /> 对账</button>
           <button onClick={onEdit} className="btn-ghost px-2 py-1 text-xs"><Pencil size={12} /></button>
           <button onClick={onDelete} className="btn-danger px-2 py-1 text-xs"><Trash2 size={12} /></button>
