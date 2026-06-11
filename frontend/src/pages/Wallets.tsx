@@ -108,7 +108,7 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
@@ -235,7 +235,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                     {(() => { const I = TYPE_ICON[t]; return <I size={11} />; })()}
                     <span>{TYPE_SECTION_LABEL[t]}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {presetsInRegion.filter((p) => p.type === t).map((p) => (
                       <PresetCard key={p.name} preset={p} onClick={() => pickPreset(p)} />
                     ))}
@@ -415,29 +415,29 @@ function WalletCardItem({
 
   return (
     <div className="group overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm dark:border-ink-800 dark:bg-ink-800/60">
-      {/* 品牌色风格化卡面 */}
+      {/* 品牌色风格化卡面 — 锁定真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540) */}
       <div
-        className={`relative overflow-hidden p-3 ${faceText}`}
+        className={`relative aspect-[856/540] overflow-hidden p-3 ${faceText}`}
         style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
       >
         <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
         <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
         <div className="absolute right-2 top-2 opacity-25"><Icon size={30} /></div>
-        <div className="relative flex h-full flex-col">
-          <div className="flex items-start justify-between gap-2 pr-8">
-            <div className="text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+        <div className="relative flex h-full flex-col justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold leading-tight drop-shadow-sm pr-8">{wallet.name}</div>
+            <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
+            {isCredit ? (
+              <div className="mt-1.5 text-lg font-semibold tracking-tight drop-shadow-sm">
+                {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
+              </div>
+            ) : (
+              <div className="mt-1.5 text-lg font-semibold tracking-tight drop-shadow-sm">
+                {formatAmount(wallet.balance, currencyCode, currencies)}
+              </div>
+            )}
           </div>
-          <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
-          {isCredit ? (
-            <div className="mt-2 text-lg font-semibold tracking-tight drop-shadow-sm">
-              {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
-            </div>
-          ) : (
-            <div className="mt-2 text-lg font-semibold tracking-tight drop-shadow-sm">
-              {formatAmount(wallet.balance, currencyCode, currencies)}
-            </div>
-          )}
-          <div className="mt-2 flex items-end justify-between">
+          <div className="flex items-end justify-between">
             <div className="flex items-center gap-1.5">
               <ChipIcon />
               <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
@@ -522,7 +522,7 @@ function PresetCard({ preset, onClick }: { preset: WalletPreset; onClick: () => 
     <button
       type="button"
       onClick={onClick}
-      className="group relative aspect-[16/10] overflow-hidden rounded-xl p-2.5 text-left text-white shadow-md transition hover:scale-[1.02]"
+      className="group relative aspect-[856/540] overflow-hidden rounded-xl p-2.5 text-left text-white shadow-md transition hover:scale-[1.02]"
       style={{
         background: `linear-gradient(135deg, ${preset.color} 0%, ${shade(preset.color, -32)} 100%)`,
       }}
