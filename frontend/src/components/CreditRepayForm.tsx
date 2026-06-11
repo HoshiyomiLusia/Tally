@@ -86,8 +86,8 @@ export default function CreditRepayForm({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900">
+    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
+      <div className="anim-sheet max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-semibold">信用卡还款</div>
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>

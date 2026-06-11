@@ -274,7 +274,7 @@ export default function Settings() {
       </div>
 
       {resetOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => !reset.isPending && setResetOpen(false)}>
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => !reset.isPending && setResetOpen(false)}>
           <div className="w-full max-w-sm rounded-xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center gap-1.5 text-rose-600">
               <AlertTriangle size={18} />

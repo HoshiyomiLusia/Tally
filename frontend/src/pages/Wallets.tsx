@@ -231,7 +231,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
   const presetsInRegion = WALLET_PRESETS.filter((p) => p.currency_code === activeCur);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 text-lg font-semibold">{editing ? "编辑 Wallet" : "新建 Wallet"}</div>
 

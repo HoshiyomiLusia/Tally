@@ -142,7 +142,7 @@ function CategoryForm({
   const title = editing ? "编辑分类" : parent ? `在「${parent.name}」下添加子分类` : "新建一级分类";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
+    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 text-lg font-semibold">{title}</div>
         <div className="space-y-3">

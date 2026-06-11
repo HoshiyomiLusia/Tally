@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { CalendarDays, Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -75,6 +75,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const stagedFileRef = useRef<HTMLInputElement>(null);
   const initKey = useRef<string | null>(null);
@@ -400,8 +401,8 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl">
+    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
+      <div className="anim-sheet max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-semibold">{editing ? "编辑交易" : recurrenceSourceId ? "确认扣款" : "添加交易"}</div>
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
@@ -409,12 +410,23 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
-            <input
-              className="input mt-0.5"
-              type="date"
-              value={occurredOn}
-              onChange={(e) => setOccurredOn(e.target.value)}
-            />
+            <div className="mt-0.5 flex items-stretch gap-2">
+              <input
+                ref={dateRef}
+                className="input flex-1"
+                type="date"
+                value={occurredOn}
+                onChange={(e) => setOccurredOn(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => dateRef.current?.showPicker?.()}
+                title="选择日期"
+                className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"
+              >
+                <CalendarDays size={18} />
+              </button>
+            </div>
           </label>
 
           <div className="flex gap-1.5 border-t border-ink-100 pt-3 dark:border-ink-700">
@@ -453,7 +465,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
               </div>
             </div>
             {padOpen && (
-              <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/50">
+              <div className="anim-drop mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/50">
                 {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "del"].map((k) => (
                   <button
                     key={k}

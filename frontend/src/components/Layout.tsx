@@ -2,7 +2,7 @@ import {
   HandCoins, LayoutDashboard, ListChecks, Moon,
   Settings as SettingsIcon, Sun, Wallet,
 } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { useTheme } from "../lib/theme";
 
@@ -16,6 +16,7 @@ const nav = [
 
 export default function Layout() {
   const { theme, toggle } = useTheme();
+  const location = useLocation();
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 border-r border-ink-100 bg-white p-4 md:flex md:flex-col">
@@ -64,7 +65,7 @@ export default function Layout() {
       </nav>
       <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">
         {/* 宽屏不要无脑横向拉伸: 内容居中 + 限宽, 避免"地广人稀" */}
-        <div className="mx-auto max-w-[1400px]">
+        <div key={location.pathname} className="anim-rise mx-auto max-w-[1400px]">
           <Outlet />
         </div>
       </main>

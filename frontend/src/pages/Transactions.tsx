@@ -403,7 +403,7 @@ export default function Transactions() {
       </button>
 
       {quickOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={() => setQuickOpen(false)}>
+        <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={() => setQuickOpen(false)}>
           <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <div>

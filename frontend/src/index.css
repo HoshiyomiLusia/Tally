@@ -46,7 +46,7 @@ body, #root {
            dark:border-ink-800 dark:bg-ink-800/60 dark:shadow-none;
   }
   .chip {
-    @apply inline-flex min-h-[36px] items-center rounded-full border px-4 py-1.5 text-sm font-medium transition-all
+    @apply inline-flex min-h-[40px] items-center rounded-full border px-4 py-2 text-sm font-medium transition-all
            sm:min-h-0 sm:px-3 sm:py-1 sm:text-xs;
   }
   .chip-idle {
@@ -130,3 +130,20 @@ html.dark .text-amber-600 { color: rgb(252 211 77); }
 html.dark .text-emerald-600 { color: rgb(110 231 183); }
 html.dark .text-rose-600 { color: rgb(252 165 165); }
 html.dark .text-sky-600 { color: rgb(125 211 252); }
+
+/* 原生日期/时间选择器跟随主题 (深色不再弹白框) */
+.input { color-scheme: light; }
+html.dark .input { color-scheme: dark; }
+
+/* --- 轻量动效: 自然不浮夸 --- */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheetUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes riseIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes dropIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.anim-fade { animation: fadeIn .18s ease-out; }
+.anim-sheet { animation: sheetUp .24s cubic-bezier(.22, 1, .36, 1); }
+.anim-rise { animation: riseIn .28s ease-out both; }
+.anim-drop { animation: dropIn .16s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade, .anim-sheet, .anim-rise, .anim-drop { animation: none; }
+}
