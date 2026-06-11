@@ -108,7 +108,9 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,260px))]">
+                      {/* 卡片宽度锁死 260px (真实卡比例下高 164px, 刚好容下 text-lg 金额),
+                          拖视窗只改每行张数, 卡片本身不缩放 */}
+                      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,260px)]">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
@@ -235,7 +237,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                     {(() => { const I = TYPE_ICON[t]; return <I size={11} />; })()}
                     <span>{TYPE_SECTION_LABEL[t]}</span>
                   </div>
-                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(150px,180px))]">
+                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,168px)]">
                     {presetsInRegion.filter((p) => p.type === t).map((p) => (
                       <PresetCard key={p.name} preset={p} onClick={() => pickPreset(p)} />
                     ))}
