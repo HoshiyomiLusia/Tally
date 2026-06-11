@@ -163,7 +163,9 @@ async def summary(
     codes = {c for c, _, _ in cur_rows} | set(prev_map.keys())
     out: list[CurrencySummary] = []
     cur_map = {c: (int(i or 0), int(e or 0)) for c, i, e in cur_rows}
-    for code in sorted(codes):
+    # 主货币排第一, 其余按字母序
+    primary = user.primary_currency_code or "JPY"
+    for code in sorted(codes, key=lambda c: (c != primary, c)):
         cur_i, cur_e = cur_map.get(code, (0, 0))
         prev_i, prev_e = prev_map.get(code, (0, 0))
         avg = cur_e // max(1, days_elapsed)
@@ -444,7 +446,8 @@ async def cross_currency_total(
     total_spendable = 0
     total_credit = 0
     breakdown = []
-    for code in sorted(codes):
+    # 主货币(用户选的 base)排第一, 其余按字母序
+    for code in sorted(codes, key=lambda c: (c != base, c)):
         net = by_net.get(code, 0)
         spend = by_spend.get(code, 0)
         credit = by_credit.get(code, 0)
