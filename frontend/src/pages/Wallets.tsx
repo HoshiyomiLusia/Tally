@@ -127,8 +127,8 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      {/* 卡片宽度锁死 260px (真实卡比例下高 164px), 拖视窗只改每行张数 */}
-                      <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fill,260px)]">
+                      {/* 居中排布: 手机一张占满宽度, 桌面每张 260px 居中, 不留单边空栏 */}
+                      <div className="flex flex-wrap justify-center gap-3">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
@@ -254,7 +254,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                     {(() => { const I = TYPE_ICON[t]; return <I size={11} />; })()}
                     <span>{TYPE_SECTION_LABEL[t]}</span>
                   </div>
-                  <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,168px)]">
+                  <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
                     {presetsInRegion.filter((p) => p.type === t).map((p) => (
                       <PresetCard key={p.name} preset={p} onClick={() => pickPreset(p)} />
                     ))}
@@ -407,7 +407,7 @@ function WalletCardItem({
 
   return (
     <div
-      className={`relative aspect-[856/540] overflow-hidden rounded-xl p-3 shadow-sm ${faceText}`}
+      className={`relative aspect-[856/540] w-full max-w-[340px] overflow-hidden rounded-xl p-3 shadow-sm sm:w-[260px] ${faceText}`}
       style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
     >
       <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
@@ -458,7 +458,7 @@ function PresetCard({ preset, onClick }: { preset: WalletPreset; onClick: () => 
     <button
       type="button"
       onClick={onClick}
-      className="group relative aspect-[856/540] overflow-hidden rounded-xl p-2.5 text-left text-white shadow-md transition hover:scale-[1.02]"
+      className="group relative aspect-[856/540] w-[calc(50%-0.25rem)] max-w-[180px] overflow-hidden rounded-xl p-2.5 text-left text-white shadow-md transition hover:scale-[1.02] sm:w-[150px]"
       style={{
         background: `linear-gradient(135deg, ${preset.color} 0%, ${shade(preset.color, -32)} 100%)`,
       }}
@@ -469,8 +469,9 @@ function PresetCard({ preset, onClick }: { preset: WalletPreset; onClick: () => 
         style={{ background: "radial-gradient(circle, white, transparent 70%)" }}
       />
       <div className="relative flex h-full flex-col justify-between">
-        <div className="flex items-start gap-1">
+        <div className="flex items-start justify-between gap-1">
           <span className="line-clamp-2 text-xs font-semibold leading-tight drop-shadow-sm">{preset.name}</span>
+          <span className="shrink-0 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider">{preset.tag}</span>
         </div>
         <div className="flex items-end justify-between">
           <div className="flex items-center gap-1.5">
