@@ -83,9 +83,10 @@ export function BalanceModule() {
 
   return (
     <>
-      {/* 资产总览: 真实余额主数字 + 右侧次要指标 */}
+      {/* 资产总览: 左=标题+真实余额主数字, 右=次要指标. 同一行顶部对齐 */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
+          <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
           <div className="mb-1 flex items-center gap-1.5">
             <span className="text-xs uppercase tracking-wider text-ink-500">真实余额 · 折算到</span>
             <select
@@ -125,7 +126,7 @@ export function BalanceModule() {
           )}
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0).map((b) => (
           <div key={b.currency_code} className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
             <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-ink-400">

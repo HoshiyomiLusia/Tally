@@ -19,9 +19,8 @@ export default function Home() {
 
   return (
     <div className="space-y-5 px-4 py-5 md:px-6">
-      {/* 板块 1: 余额 */}
+      {/* 板块 1: 余额 (标题在 BalanceModule 内部, 与右侧指标同行) */}
       <section className="card">
-        <h2 className="mb-3 text-base font-semibold tracking-tight">余额</h2>
         <BalanceModule />
       </section>
 
