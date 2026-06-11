@@ -1,6 +1,7 @@
+import uuid
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +71,75 @@ async def upcoming(
             out.append(t)
     out.sort(key=lambda x: x.occurred_on + timedelta(days=x.recurrence_period_days or 0))
     return out
+
+
+class ConfirmChargeRequest(BaseModel):
+    amount: int
+    occurred_on: date
+    wallet_id: int
+    note: str | None = None
+
+
+@router.post("/{tx_id}/confirm", response_model=TransactionRead, status_code=201)
+async def confirm_charge(
+    tx_id: int,
+    payload: ConfirmChargeRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """确认某笔周期账单本期实际扣款: 照模板生成一笔真实账单 (金额/日期/账户可改),
+    并让新旧同组, 这样下次预测自动顺延一个周期, 过期那条不再反复出现."""
+    src = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.id == tx_id,
+                Transaction.user_id == user.id,
+                Transaction.is_recurring == True,  # noqa: E712
+            )
+        )
+    ).scalar_one_or_none()
+    if src is None:
+        raise HTTPException(404, "recurring transaction not found")
+    if payload.amount <= 0:
+        raise HTTPException(400, "amount must be positive")
+    wallet = (
+        await session.execute(
+            select(Wallet).where(Wallet.id == payload.wallet_id, Wallet.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if wallet is None:
+        raise HTTPException(404, "wallet not found")
+    if wallet.currency_code != src.currency_code:
+        raise HTTPException(400, "currency must match the bill")
+
+    # 单条(无 group)的话给新旧都打上同一 group, 预测以最新一条为准, 不会重复
+    group_id = src.recurrence_group_id
+    if group_id is None:
+        group_id = str(uuid.uuid4())
+        src.recurrence_group_id = group_id
+
+    t = Transaction(
+        user_id=user.id,
+        wallet_id=payload.wallet_id,
+        category_id=src.category_id,
+        merchant_id=src.merchant_id,
+        amount=payload.amount,
+        currency_code=src.currency_code,
+        kind=src.kind,
+        occurred_on=payload.occurred_on,
+        note=src.note if payload.note is None else payload.note,
+        is_recurring=True,
+        recurrence_period_days=src.recurrence_period_days,
+        recurrence_group_id=group_id,
+    )
+    session.add(t)
+    if src.merchant_id:
+        m = await session.get(Merchant, src.merchant_id)
+        if m and m.user_id == user.id:
+            m.usage_count += 1
+    await session.commit()
+    await session.refresh(t)
+    return t
 
 
 @router.get("/groups", response_model=list[RecurringGroup])

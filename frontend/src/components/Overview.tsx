@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount, todayIso as todayIsoStr } from "../lib/format";
+import RecurringConfirmForm from "./RecurringConfirmForm";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
@@ -218,6 +219,7 @@ export function BalanceModule() {
 // ───────────────────────── 周期账单预测时间轴 (放到周期账单板块顶部) ─────────────────────────
 // 过去 7 天 ~ 未来 14 天的预计扣款, 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
+  const [confirm, setConfirm] = useState<{ tx: Transaction; due: string; name: string } | null>(null);
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
@@ -257,6 +259,7 @@ export function RecurringForecast() {
           const showCat = primary !== cname;
           const prev = recurItems[i - 1];
           const showTodayDivider = !it.isPast && (!prev || prev.isPast);
+          const canConfirm = it.due <= todayIso;  // 今天及以前: 可确认本期是否扣款
           return (
             <div key={t.id}>
               {showTodayDivider && (
@@ -265,8 +268,8 @@ export function RecurringForecast() {
                   今天 {todayIso}
                 </div>
               )}
-              <div className={`flex items-center justify-between px-4 py-2 text-sm ${it.isPast ? "opacity-60" : ""}`}>
-                <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+                <div className={`min-w-0 flex-1 ${it.isPast ? "opacity-60" : ""}`}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span>{catEmoji(t.category_id)}</span>
                     <span className="truncate font-medium">{primary}</span>
@@ -279,17 +282,32 @@ export function RecurringForecast() {
                     {it.isPast ? "应已扣款 " : "下次约 "}{it.due} · 扣款账户 {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
                   </div>
                 </div>
-                <div className="shrink-0 text-rose-600">~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <div className={`text-rose-600 ${it.isPast ? "opacity-60" : ""}`}>~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
+                  {canConfirm && (
+                    <button
+                      onClick={() => setConfirm({ tx: t, due: it.due, name: primary })}
+                      className="rounded-full border border-emerald-500 px-2 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                    >确认扣款</button>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
         {recurItems.some((it) => it.isPast) && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
-            「预估」= 按上次金额推算的过去扣款，实际金额可能不同，记得手动记账。
+            「预估」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」即可按预填信息记一笔（金额 / 账户 / 日期可改）。
           </div>
         )}
       </div>
+      <RecurringConfirmForm
+        open={confirm !== null}
+        tx={confirm?.tx ?? null}
+        due={confirm?.due ?? todayIso}
+        name={confirm?.name ?? ""}
+        onClose={() => setConfirm(null)}
+      />
     </div>
   );
 }
