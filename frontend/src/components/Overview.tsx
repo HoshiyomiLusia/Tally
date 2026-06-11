@@ -217,7 +217,7 @@ interface ForecastItem {
   status: "confirmed" | "due" | "predicted";
 }
 
-// 过去 7 天 ~ 未来 14 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
+// 前后 7 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
   const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
@@ -226,7 +226,7 @@ export function RecurringForecast() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({
     queryKey: ["recurring-upcoming", "window"],
-    queryFn: async () => (await api.get<ForecastItem[]>("/recurring/upcoming?back=7&days=14")).data,
+    queryFn: async () => (await api.get<ForecastItem[]>("/recurring/upcoming?back=7&days=7")).data,
   });
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
@@ -243,7 +243,7 @@ export function RecurringForecast() {
 
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 近 7 天 ~ 未来 14 天</h3>
+      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前后 7 天</h3>
       <div className="card divide-y divide-ink-100 p-0">
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
