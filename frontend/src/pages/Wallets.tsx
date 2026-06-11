@@ -7,7 +7,7 @@ import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } f
 import ReconcileModal from "../components/ReconcileModal";
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount } from "../lib/format";
-import { REGION_LABELS, WALLET_PRESETS, type WalletPreset } from "../lib/walletPresets";
+import { WALLET_PRESETS, type WalletPreset } from "../lib/walletPresets";
 
 const TYPE_ICON: Record<WalletType, LucideIcon> = {
   cash: Banknote,
@@ -146,7 +146,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
   const [currencyCode, setCurrencyCode] = useState("JPY");
   const [color, setColor] = useState("");
   const [initialText, setInitialText] = useState("");
-  const [region, setRegion] = useState<WalletPreset["region"] | "ALL">("JP");
+  const [region, setRegion] = useState<string>("JPY");  // 现按币种体系分组, region 存币种代码
   const [showCustom, setShowCustom] = useState(false);
   const [error, setError] = useState("");
 
@@ -167,7 +167,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       setCurrencyCode("JPY");
       setColor("");
       setInitialText("");
-      setRegion("JP");
+      setRegion("JPY");
       setShowCustom(false);
     }
     setError("");
@@ -206,7 +206,10 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
 
   if (!open) return null;
 
-  const presetsInRegion = WALLET_PRESETS.filter((p) => p.region === region);
+  // 预设按币种体系分组 (JPY / CNY / USD / EUR ...), 不按国家
+  const presetCurrencies = Array.from(new Set(WALLET_PRESETS.map((p) => p.currency_code)));
+  const activeCur = presetCurrencies.includes(region) ? region : presetCurrencies[0];
+  const presetsInRegion = WALLET_PRESETS.filter((p) => p.currency_code === activeCur);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
@@ -217,12 +220,12 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
           <div className="space-y-3">
             <div className="text-xs text-ink-500">选择预设卡片（或下方"自定义"）</div>
             <div className="flex gap-1 overflow-x-auto">
-              {(["JP", "CN", "GLOBAL"] as const).map((r) => (
+              {presetCurrencies.map((c) => (
                 <button
-                  key={r}
-                  onClick={() => setRegion(r)}
-                  className={`shrink-0 rounded-full border px-3 py-1 text-xs ${region === r ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
-                >{REGION_LABELS[r]}</button>
+                  key={c}
+                  onClick={() => setRegion(c)}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs ${activeCur === c ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+                >{c}</button>
               ))}
             </div>
             <div className="space-y-4">
