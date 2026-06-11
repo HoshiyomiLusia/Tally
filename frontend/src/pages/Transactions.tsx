@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import CreditRepayForm from "../components/CreditRepayForm";
 import ReimburseForm from "../components/ReimburseForm";
@@ -48,6 +48,20 @@ export default function Transactions() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [reimburseOpen, setReimburseOpen] = useState(false);
   const [creditRepayOpen, setCreditRepayOpen] = useState(false);
+  // 滑动时把右下角"+"收到屏幕右侧 (减少遮挡); 停下/上滑再露出
+  const [fabTucked, setFabTucked] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y > lastScrollY.current + 8) setFabTucked(true);
+      else if (y < lastScrollY.current - 8) setFabTucked(false);
+      lastScrollY.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => { setPage(0); }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
   useEffect(() => { setChildCatId(""); }, [parentCatId]);
@@ -183,7 +197,7 @@ export default function Transactions() {
             <option value="">所有币种</option>
             {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select className="input" value={kind} onChange={(e) => { setKind(e.target.value); setParentCatId(""); setChildCatId(""); }}>
             <option value="">所有类型</option>
             <option value="expense">支出</option>
             <option value="income">收入</option>
@@ -195,9 +209,20 @@ export default function Transactions() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <select className="input" value={parentCatId} onChange={(e) => setParentCatId(e.target.value)}>
             <option value="">所有大类</option>
-            {(categories.data ?? []).filter((c) => c.parent_id === null).map((c) => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-            ))}
+            {(kind === "" || kind === "expense") && (
+              <optgroup label="支出">
+                {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "expense").map((c) => (
+                  <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {(kind === "" || kind === "income") && (
+              <optgroup label="收入">
+                {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "income").map((c) => (
+                  <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <select
             className="input"
@@ -341,7 +366,7 @@ export default function Transactions() {
         type="button"
         onClick={() => { setEditing(null); setOpen(true); }}
         aria-label="添加交易"
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 hover:bg-ink-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+        className={`fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 transition-all duration-300 hover:translate-x-0 hover:bg-ink-700 hover:opacity-100 md:bottom-8 dark:bg-emerald-600 dark:hover:bg-emerald-500 ${fabTucked ? "translate-x-1/2 opacity-50" : ""}`}
       >
         <Plus size={22} />
       </button>

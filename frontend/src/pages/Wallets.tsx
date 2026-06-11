@@ -384,6 +384,7 @@ function WalletCardItem({
   const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
+  const loanNet = wallet.loan_out_on_wallet - wallet.loan_repayment_on_wallet;  // 借出未还净额 = 真实 - 物理
   const hasLoanDiff = wallet.loan_out_on_wallet !== 0 || wallet.loan_repayment_on_wallet !== 0;
 
   const moveLoans = useMutation({
@@ -413,59 +414,67 @@ function WalletCardItem({
   const faceText = light ? "text-ink-900" : "text-white";
   const faceSub = light ? "text-ink-900/70" : "text-white/75";
 
+  const showLoanBar = hasLoanDiff && !isCredit && siblings.length > 0;
+
   return (
-    <div
-      className={`group relative aspect-[856/540] overflow-hidden rounded-xl p-3 shadow-sm ${faceText}`}
-      style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
-    >
-      {/* 卡面 = 真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540), 操作按钮浮在卡上不占高度 */}
-      <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
-      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
+    <div className="overflow-hidden rounded-xl shadow-sm">
+      {/* 卡面 = 真实银行卡比例 (ISO ID-1 85.6×53.98 ≈ 856:540) */}
+      <div
+        className={`relative aspect-[856/540] overflow-hidden p-3 ${faceText}`}
+        style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
+      >
+        <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-15" style={{ background: "radial-gradient(circle, white, transparent 70%)" }} />
 
-      {/* 操作浮层: 右上角小图标 */}
-      <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
-        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
-        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
-        <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
-      </div>
+        {/* 操作浮层: 右上角小图标, 不占高度 */}
+        <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
+          <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
+          <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
+          <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
+        </div>
 
-      <div className="relative flex h-full flex-col justify-between">
-        <div className="min-w-0 pr-20">
-          <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
-          <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
-        </div>
-        <div className="min-w-0">
-          {isCredit ? (
-            <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
-              {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
-            </div>
-          ) : (
-            <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
-              {formatAmount(wallet.balance, currencyCode, currencies)}
-            </div>
-          )}
-          {hasLoanDiff && !isCredit && (
-            <div className={`flex flex-wrap items-center gap-1 text-[10px] ${faceSub}`}>
-              <span className="truncate">物理余额 {formatAmount(physical, currencyCode, currencies)}</span>
-              {siblings.length > 0 && (
-                <button
-                  onClick={() => setPickerOpen(true)}
-                  className="rounded bg-black/15 px-1.5 py-0.5 backdrop-blur-sm hover:bg-black/30"
-                >合到其他钱包</button>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex items-end justify-between">
-          <div className="flex items-center gap-1.5">
-            <ChipIcon />
-            <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
+        <div className="relative flex h-full flex-col justify-between">
+          <div className="min-w-0 pr-20">
+            <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+            <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
           </div>
-          <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
-            {isCredit ? cardScheme(wallet.name) : currencyCode}
-          </span>
+          <div className="min-w-0">
+            {isCredit ? (
+              <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+                {debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies)}
+              </div>
+            ) : (
+              <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+                {formatAmount(wallet.balance, currencyCode, currencies)}
+              </div>
+            )}
+            {hasLoanDiff && !isCredit && (
+              <div className={`truncate text-[10px] tabular-nums ${faceSub}`}>
+                物理 {formatAmount(physical, currencyCode, currencies)} · 借出 {formatAmount(loanNet, currencyCode, currencies)}
+              </div>
+            )}
+          </div>
+          <div className="flex items-end justify-between">
+            <div className="flex items-center gap-1.5">
+              <ChipIcon />
+              <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
+            </div>
+            <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
+              {isCredit ? cardScheme(wallet.name) : currencyCode}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* 灰色条: 把借出未还的名义转移到其他钱包 (仅有借贷调整且有同币种兄弟钱包时出现) */}
+      {showLoanBar && (
+        <div className="flex items-center bg-ink-100 px-2 py-1 dark:bg-ink-800/70">
+          <button
+            onClick={() => setPickerOpen(true)}
+            className="text-[11px] text-ink-600 hover:text-emerald-600 dark:text-ink-300 dark:hover:text-emerald-400"
+          >借贷转移到其他钱包 →</button>
+        </div>
+      )}
 
       {pickerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -476,7 +485,7 @@ function WalletCardItem({
               只把"借贷调整"的累计点改到目标钱包. 结果: 当前钱包的"含借贷调整"标记消失;
               目标钱包接管这部分调整, 物理余额相应下降.
               <br/>
-              <span className="mt-1 inline-block text-ink-400">两个钱包的 system_balance（小字"实际"）都不变.</span>
+              <span className="mt-1 inline-block text-ink-400">两个钱包的真实余额都不变, 变的只是物理余额的归属.</span>
             </div>
             <div className="space-y-1.5">
               {siblings.map((t) => (

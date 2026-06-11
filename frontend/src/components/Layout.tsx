@@ -63,7 +63,10 @@ export default function Layout() {
         ))}
       </nav>
       <main className="flex-1 overflow-x-hidden pb-20 md:pb-0">
-        <Outlet />
+        {/* 宽屏不要无脑横向拉伸: 内容居中 + 限宽, 避免"地广人稀" */}
+        <div className="mx-auto max-w-[1400px]">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

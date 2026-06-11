@@ -136,15 +136,15 @@ export function BalanceModule() {
             </div>
             <div className={`mt-0.5 text-sm font-semibold ${b.net < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
               真实 {formatAmount(b.net, b.currency_code, currencies.data)}
+              {b.currency_code !== baseCurrency && (
+                <span className="ml-1 text-[10px] font-normal text-ink-400">≈{formatAmount(b.converted, baseCurrency, currencies.data)}</span>
+              )}
             </div>
             {b.spendable !== b.net && (
               <div className="text-[10px] text-ink-400">物理 {formatAmount(b.spendable, b.currency_code, currencies.data)}</div>
             )}
             {b.credit_debt !== 0 && (
               <div className="text-[10px] text-rose-500 dark:text-rose-300/80">待还 {formatAmount(b.credit_debt, b.currency_code, currencies.data)}</div>
-            )}
-            {b.currency_code !== baseCurrency && (
-              <div className="text-[10px] text-ink-400">≈ {formatAmount(b.converted, baseCurrency, currencies.data)}</div>
             )}
           </div>
         ))}
