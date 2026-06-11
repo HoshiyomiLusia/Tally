@@ -84,8 +84,8 @@ export default function Wallets() {
 
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
-          // 物理余额口径: 跟卡片大数字一致, 借出未还的不计入汇总
-          const total = list.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+          // 真实余额口径: 跟卡片大数字一致, 各钱包系统余额求和 (信用卡为负债, 借出债权计入)
+          const total = list.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
             const arr = byType.get(w.type) ?? [];
@@ -354,10 +354,8 @@ function isLight(hex: string): boolean {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 165;
 }
 
-// 信用卡类型 -> 顶部印的卡组织字样 (从 tag 推断; 无则按名字猜)
-function cardScheme(name: string, tag: string): string {
-  const t = tag.toUpperCase();
-  if (["JCB", "AMEX", "VISA", "MASTERCARD"].includes(t)) return t;
+// 信用卡 -> 卡面右下印的卡组织字样 (按名字猜)
+function cardScheme(name: string): string {
   const n = name.toLowerCase();
   if (n.includes("amex") || name.includes("アメックス")) return "AMEX";
   if (n.includes("jcb")) return "JCB";
@@ -386,7 +384,6 @@ function WalletCardItem({
   const Icon = TYPE_ICON[wallet.type];
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
-  const isNegative = physical < 0;
   const hasLoanDiff = wallet.loan_out_on_wallet !== 0 || wallet.loan_repayment_on_wallet !== 0;
 
   const moveLoans = useMutation({
@@ -437,7 +434,7 @@ function WalletCardItem({
             </div>
           ) : (
             <div className="mt-2 text-lg font-semibold tracking-tight drop-shadow-sm">
-              {formatAmount(physical, currencyCode, currencies)}
+              {formatAmount(wallet.balance, currencyCode, currencies)}
             </div>
           )}
           <div className="mt-2 flex items-end justify-between">
@@ -446,7 +443,7 @@ function WalletCardItem({
               <span className={`text-[10px] tracking-[0.2em] ${faceSub}`}>•••• ••••</span>
             </div>
             <span className={`text-[10px] font-medium tracking-wider ${faceSub}`}>
-              {isCredit ? cardScheme(wallet.name, "") : currencyCode}
+              {isCredit ? cardScheme(wallet.name) : currencyCode}
             </span>
           </div>
         </div>
@@ -456,7 +453,7 @@ function WalletCardItem({
         <div className="min-w-0 flex-1 text-xs text-ink-500">
           {hasLoanDiff && !isCredit && (
             <div className="flex flex-wrap items-center gap-1">
-              <span className="truncate">真实余额 {formatAmount(wallet.balance, currencyCode, currencies)}</span>
+              <span className="truncate">物理余额 {formatAmount(physical, currencyCode, currencies)}</span>
               {siblings.length > 0 && (
                 <button
                   onClick={() => setPickerOpen(true)}
@@ -536,11 +533,8 @@ function PresetCard({ preset, onClick }: { preset: WalletPreset; onClick: () => 
         style={{ background: "radial-gradient(circle, white, transparent 70%)" }}
       />
       <div className="relative flex h-full flex-col justify-between">
-        <div className="flex items-start justify-between gap-1">
+        <div className="flex items-start gap-1">
           <span className="line-clamp-2 text-xs font-semibold leading-tight drop-shadow-sm">{preset.name}</span>
-          <span className="shrink-0 rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider">
-            {preset.tag}
-          </span>
         </div>
         <div className="flex items-end justify-between">
           <div className="flex items-center gap-1.5">

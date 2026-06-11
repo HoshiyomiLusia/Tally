@@ -152,9 +152,9 @@ export function BalanceModule() {
 
       {/* Wallet 余额: 与上方资产总览同处一个矩形, 用分隔线区隔 */}
       {groupedWallets.map(([code, list]) => {
-        const spendTotal = list
-          .filter((w) => w.type !== "credit_card")
-          .reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
+        const nonCredit = list.filter((w) => w.type !== "credit_card");
+        const netTotal = nonCredit.reduce((s, w) => s + w.balance, 0);
+        const spendTotal = nonCredit.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
         const byType = new Map<string, typeof list>();
         for (const w of list) {
           const arr = byType.get(w.type) ?? [];
@@ -165,8 +165,11 @@ export function BalanceModule() {
         return (
           <div key={code} className="mt-4 border-t border-ink-100 pt-3 dark:border-ink-800">
             <div className="mb-2 flex items-baseline gap-2">
-              <span className="text-sm font-medium text-ink-700">{code} · 物理余额</span>
-              <span className="text-base font-semibold">{formatAmount(spendTotal, code, currencies.data)}</span>
+              <span className="text-sm font-medium text-ink-700">{code} · 真实余额</span>
+              <span className="text-base font-semibold">{formatAmount(netTotal, code, currencies.data)}</span>
+              {netTotal !== spendTotal && (
+                <span className="text-xs text-ink-400">物理 {formatAmount(spendTotal, code, currencies.data)}</span>
+              )}
             </div>
             <div className="space-y-2">
               {typed.map((t) => (
@@ -187,11 +190,11 @@ export function BalanceModule() {
                             </div>
                           ) : (
                             <>
-                              <div className={`text-sm font-medium ${physical < 0 ? "text-rose-600" : ""}`}>
-                                {formatAmount(physical, code, currencies.data)}
+                              <div className={`text-sm font-medium ${w.balance < 0 ? "text-rose-600" : ""}`}>
+                                {formatAmount(w.balance, code, currencies.data)}
                               </div>
                               {hasLoanDiff && (
-                                <div className="text-[10px] text-ink-400">真实余额 {formatAmount(w.balance, code, currencies.data)}</div>
+                                <div className="text-[10px] text-ink-400">物理余额 {formatAmount(physical, code, currencies.data)}</div>
                               )}
                             </>
                           )}
