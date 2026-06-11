@@ -33,15 +33,23 @@ class RecurringGroup(BaseModel):
     next_due: date | None
 
 
-@router.get("/upcoming", response_model=list[TransactionRead])
+class ForecastItem(BaseModel):
+    transaction: TransactionRead
+    due: date          # confirmed=本期实际扣款日, due/predicted=预测扣款日
+    status: str        # "confirmed" 已确认 | "due" 过期待确认 | "predicted" 未来预测
+
+
+@router.get("/upcoming", response_model=list[ForecastItem])
 async def upcoming(
     days: int = 14,
-    back: int = 0,
+    back: int = 7,
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """预计扣款窗口 [今天-back, 今天+days].
-    days>0 看未来即将到期; back>0 看过去 back 天内已预计扣款 (方便回头补记账)."""
+    """周期账单预测窗口 [今天-back, 今天+days], 每个账单可能给出两类条目:
+      - confirmed: 最近一期真实扣款已记录(occurred_on 落在回看窗口内) -> 绿色已确认
+      - due/predicted: 下一期预测扣款日, 过期未记 = due(待确认), 未来 = predicted
+    这样点了"确认扣款"后, 该期从 due 变成 confirmed 留在原地, 而不是消失."""
     rows = (
         await session.execute(
             select(Transaction).where(
@@ -62,15 +70,22 @@ async def upcoming(
         if existing is None or t.occurred_on > existing.occurred_on:
             seen[key] = t
 
-    out: list[Transaction] = []
+    items: list[ForecastItem] = []
     for t in seen.values():
         if not t.recurrence_period_days:
             continue
+        # 本期已记录的真实扣款 (最新一笔落在回看窗内)
+        if floor <= t.occurred_on <= today:
+            items.append(ForecastItem(transaction=t, due=t.occurred_on, status="confirmed"))
+        # 下一期预测
         next_due = t.occurred_on + timedelta(days=t.recurrence_period_days)
         if floor <= next_due <= horizon:
-            out.append(t)
-    out.sort(key=lambda x: x.occurred_on + timedelta(days=x.recurrence_period_days or 0))
-    return out
+            items.append(ForecastItem(
+                transaction=t, due=next_due,
+                status="due" if next_due <= today else "predicted",
+            ))
+    items.sort(key=lambda x: x.due)
+    return items
 
 
 async def resolve_recurrence_group(session: AsyncSession, user: User, source_id: int | None) -> str | None:

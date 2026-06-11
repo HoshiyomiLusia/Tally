@@ -29,12 +29,6 @@ function thisMonthStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function addDaysIso(iso: string, days: number): string {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 // ───────────────────────── 板块 1: 余额 ─────────────────────────
 // 资产总览 (真实余额为主) + Wallet 余额 (按账户类型分组)
 export function BalanceModule() {
@@ -217,7 +211,13 @@ export function BalanceModule() {
 }
 
 // ───────────────────────── 周期账单预测时间轴 (放到周期账单板块顶部) ─────────────────────────
-// 过去 7 天 ~ 未来 14 天的预计扣款, 标出今天位置. 无外框, 由调用方包矩形.
+interface ForecastItem {
+  transaction: Transaction;
+  due: string;
+  status: "confirmed" | "due" | "predicted";
+}
+
+// 过去 7 天 ~ 未来 14 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
   const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
@@ -226,7 +226,7 @@ export function RecurringForecast() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({
     queryKey: ["recurring-upcoming", "window"],
-    queryFn: async () => (await api.get<Transaction[]>("/recurring/upcoming?back=7&days=14")).data,
+    queryFn: async () => (await api.get<ForecastItem[]>("/recurring/upcoming?back=7&days=14")).data,
   });
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
@@ -237,12 +237,9 @@ export function RecurringForecast() {
   const todayIso = todayIsoStr();
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
-      .map((tx) => {
-        const due = addDaysIso(tx.occurred_on, tx.recurrence_period_days || 0);
-        return { tx, due, isPast: due < todayIso };
-      })
+      .slice()
       .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [upcoming.data, todayIso]);
+  }, [upcoming.data]);
 
   return (
     <div>
@@ -252,16 +249,17 @@ export function RecurringForecast() {
           <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
         )}
         {recurItems.map((it, i) => {
-          const t = it.tx;
+          const t = it.transaction;
           const mname = merchantName(t.merchant_id);
           const cname = catName(t.category_id);
           const primary = mname || t.note || cname;
           const showCat = primary !== cname;
           const prev = recurItems[i - 1];
-          const showTodayDivider = !it.isPast && (!prev || prev.isPast);
-          const canConfirm = it.due <= todayIso;  // 今天及以前: 可确认本期是否扣款
+          const isFuture = it.due > todayIso;
+          const showTodayDivider = isFuture && (!prev || prev.due <= todayIso);
+          const dim = it.status === "due";  // 待确认的淡一点, 已确认/未来不淡
           return (
-            <div key={t.id}>
+            <div key={`${t.id}-${it.status}-${it.due}`}>
               {showTodayDivider && (
                 <div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -269,22 +267,27 @@ export function RecurringForecast() {
                 </div>
               )}
               <div className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-                <div className={`min-w-0 flex-1 ${it.isPast ? "opacity-60" : ""}`}>
+                <div className={`min-w-0 flex-1 ${dim ? "opacity-60" : ""}`}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span>{catEmoji(t.category_id)}</span>
                     <span className="truncate font-medium">{primary}</span>
                     {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
-                    {it.isPast && (
-                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">预估</span>
+                    {it.status === "confirmed" && (
+                      <span className="rounded bg-emerald-100 px-1 text-[10px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">已确认</span>
+                    )}
+                    {it.status === "due" && (
+                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">待确认</span>
                     )}
                   </div>
                   <div className="text-xs text-ink-500">
-                    {it.isPast ? "应已扣款 " : "下次约 "}{it.due} · 扣款账户 {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
+                    {it.status === "confirmed" ? "已扣款 " : it.status === "due" ? "应已扣款 " : "下次约 "}{it.due} · {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  <div className={`text-rose-600 ${it.isPast ? "opacity-60" : ""}`}>~{formatAmount(t.amount, t.currency_code, currencies.data)}</div>
-                  {canConfirm && (
+                  <div className={`${it.status === "confirmed" ? "font-medium text-ink-700 dark:text-ink-200" : "text-rose-600"} ${dim ? "opacity-60" : ""}`}>
+                    {it.status === "confirmed" ? "" : "~"}{formatAmount(t.amount, t.currency_code, currencies.data)}
+                  </div>
+                  {it.status === "due" && (
                     <button
                       onClick={() => setConfirm({
                         sourceId: t.id,
@@ -309,9 +312,9 @@ export function RecurringForecast() {
             </div>
           );
         })}
-        {recurItems.some((it) => it.isPast) && (
+        {recurItems.some((it) => it.status === "due") && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
-            「预估」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」即可按预填信息记一笔（金额 / 账户 / 日期可改）。
+            「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。
           </div>
         )}
       </div>
