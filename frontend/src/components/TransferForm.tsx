@@ -2,9 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Currency, type Wallet } from "../lib/api";
+import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { parseAmount, todayIso } from "../lib/format";
 import Modal from "./Modal";
+
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
+};
 
 interface Props {
   open: boolean;
@@ -239,36 +244,40 @@ function WalletPicker({
   return (
     <div>
       <div className="mb-1 text-xs text-ink-500">{label}</div>
-      <div className="space-y-1.5">
-        {groups.map(([code, list]) => (
-          <div key={code}>
-            <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-500">{code}</div>
-            <div className="flex flex-wrap gap-1.5">
-              {list.map((w) => {
-                const on = selectedId === w.id;
-                const disabled = disabledId === w.id;
-                return (
-                  <button
-                    key={w.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onPick(w.id)}
-                    className={
-                      on
-                        ? "chip chip-selected"
-                        : disabled
-                          ? "chip chip-idle opacity-30"
-                          : "chip chip-idle"
-                    }
-                  >
-                    {on && <span className="mr-0.5">✓</span>}
-                    {w.name}
-                  </button>
-                );
-              })}
+      <div className="space-y-2">
+        {groups.map(([code, list]) => {
+          const byType = new Map<WalletType, Wallet[]>();
+          for (const w of list) { const a = byType.get(w.type) ?? []; a.push(w); byType.set(w.type, a); }
+          const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
+          return (
+            <div key={code}>
+              <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{code}</div>
+              <div className="space-y-1.5">
+                {typed.map((t) => (
+                  <div key={t} className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                    {(byType.get(t) ?? []).map((w) => {
+                      const on = selectedId === w.id;
+                      const disabled = disabledId === w.id;
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => onPick(w.id)}
+                          className={on ? "chip chip-selected" : disabled ? "chip chip-idle opacity-30" : "chip chip-idle"}
+                        >
+                          {on && <span className="mr-0.5">✓</span>}
+                          {w.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
