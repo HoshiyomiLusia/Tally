@@ -4,7 +4,7 @@ services:
     container_name: tally
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8002}:8002"
+      - "${APP_PORT:-8088}:8002"
     environment:
       DATABASE_URL: sqlite+aiosqlite:////data/tally.db
       SECRET_KEY: ${SECRET_KEY:-change-me}
