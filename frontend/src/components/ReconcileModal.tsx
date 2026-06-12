@@ -37,6 +37,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
   const [useDenom, setUseDenom] = useState(false);
   const [denomRows, setDenomRows] = useState<DenomRow[]>([]);
   const [actualText, setActualText] = useState("");
+  const [creditMode, setCreditMode] = useState<"available" | "debt">("available");  // 信用卡: 按可用额度 / 按待还
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -46,6 +47,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
     setUseDenom(wallet.type === "cash");
     setDenomRows(denomsFor(wallet.currency_code, digits).map((v) => ({ value: v, count: "" })));
     setActualText("");
+    setCreditMode(wallet.credit_limit != null ? "available" : "debt");
     setOccurredOn(todayIso());
     setNote("");
     setError("");
@@ -60,7 +62,13 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
     return total;
   }, [denomRows, digits]);
 
-  const actual = useDenom ? denomSum : parseAmount(actualText || "0", digits);
+  const isCredit = wallet?.type === "credit_card";
+  const creditLimit = wallet?.credit_limit ?? 0;
+  const inputVal = parseAmount(actualText || "0", digits);
+  // 信用卡: 按可用额度 -> 余额 = 可用 - 额度; 按待还 -> 余额 = -待还. 其它: 实点/面额.
+  const actual = isCredit
+    ? (creditMode === "available" ? inputVal - creditLimit : -inputVal)
+    : (useDenom ? denomSum : inputVal);
   const expected = view.data?.expected_physical ?? 0;
   const diff = actual - expected;
 
@@ -90,65 +98,116 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
   return (
     <Modal onClose={onClose} title={`对账 — ${wallet.name}`} maxW="max-w-md">
 
-        <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-ink-600">真实余额</span>
-            <span className="font-medium">{formatAmount(view.data?.system_balance ?? 0, wallet.currency_code, currencies.data)}</span>
-          </div>
-          {(view.data?.loan_out_on_wallet ?? 0) > 0 && (
-            <div className="flex justify-between text-rose-600">
-              <span>− 该卡借出</span>
-              <span>{formatAmount(view.data!.loan_out_on_wallet, wallet.currency_code, currencies.data)}</span>
+        {isCredit ? (
+          <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-ink-600">系统当前待还</span>
+              <span className="font-medium">{formatAmount(-(view.data?.system_balance ?? 0), wallet.currency_code, currencies.data)}</span>
             </div>
-          )}
-          {(view.data?.loan_repayment_on_wallet ?? 0) > 0 && (
-            <div className="flex justify-between text-emerald-600">
-              <span>+ 该卡收到的还款</span>
-              <span>{formatAmount(view.data!.loan_repayment_on_wallet, wallet.currency_code, currencies.data)}</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-ink-200 pt-1 font-semibold">
-            <span>期望物理余额</span>
-            <span>{formatAmount(expected, wallet.currency_code, currencies.data)}</span>
-          </div>
-        </div>
-
-        <div className="mb-2 flex items-center gap-2 text-sm">
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={useDenom} onChange={(e) => setUseDenom(e.target.checked)} />
-            按面额计算（现金）
-          </label>
-        </div>
-
-        {useDenom ? (
-          <div className="mb-3 space-y-1.5 rounded-md bg-ink-50 p-2">
-            {denomRows.map((r, i) => (
-              <div key={r.value} className="flex items-center gap-2 text-sm">
-                <div className="w-20 shrink-0 text-right">{r.value}</div>
-                <div className="text-ink-400">×</div>
-                <input
-                  inputMode="numeric"
-                  className="input"
-                  value={r.count}
-                  onChange={(e) => {
-                    const copy = [...denomRows];
-                    copy[i] = { ...r, count: e.target.value.replace(/\D/g, "") };
-                    setDenomRows(copy);
-                  }}
-                  placeholder="0"
-                />
-              </div>
-            ))}
-            <div className="flex justify-end pt-1 text-sm">
-              <span className="text-ink-500">合计：</span>
-              <span className="ml-1 font-semibold">{formatAmount(denomSum, wallet.currency_code, currencies.data)}</span>
-            </div>
+            {wallet.credit_limit != null && (
+              <>
+                <div className="flex justify-between text-ink-500">
+                  <span>信用额度</span>
+                  <span>{formatAmount(wallet.credit_limit, wallet.currency_code, currencies.data)}</span>
+                </div>
+                <div className="flex justify-between border-t border-ink-200 pt-1 font-semibold">
+                  <span>当前可用</span>
+                  <span>{formatAmount(wallet.credit_limit + (view.data?.system_balance ?? 0), wallet.currency_code, currencies.data)}</span>
+                </div>
+              </>
+            )}
           </div>
         ) : (
-          <label className="mb-3 block">
-            <span className="text-xs text-ink-500">实点金额</span>
-            <input className="input mt-1" inputMode="decimal" value={actualText} onChange={(e) => setActualText(e.target.value)} autoFocus />
-          </label>
+          <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-ink-600">真实余额</span>
+              <span className="font-medium">{formatAmount(view.data?.system_balance ?? 0, wallet.currency_code, currencies.data)}</span>
+            </div>
+            {(view.data?.loan_out_on_wallet ?? 0) > 0 && (
+              <div className="flex justify-between text-rose-600">
+                <span>− 该卡借出</span>
+                <span>{formatAmount(view.data!.loan_out_on_wallet, wallet.currency_code, currencies.data)}</span>
+              </div>
+            )}
+            {(view.data?.loan_repayment_on_wallet ?? 0) > 0 && (
+              <div className="flex justify-between text-emerald-600">
+                <span>+ 该卡收到的还款</span>
+                <span>{formatAmount(view.data!.loan_repayment_on_wallet, wallet.currency_code, currencies.data)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-ink-200 pt-1 font-semibold">
+              <span>期望物理余额</span>
+              <span>{formatAmount(expected, wallet.currency_code, currencies.data)}</span>
+            </div>
+          </div>
+        )}
+
+        {isCredit ? (
+          <div className="mb-3 space-y-2">
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setCreditMode("available"); setActualText(""); }}
+                disabled={wallet.credit_limit == null}
+                className={`flex-1 rounded-md py-2 text-sm font-medium disabled:opacity-40 ${creditMode === "available" ? "bg-ink-800 text-white dark:bg-emerald-600" : "bg-ink-100 text-ink-600 dark:bg-ink-700/40 dark:text-ink-300"}`}
+              >按可用额度</button>
+              <button
+                type="button"
+                onClick={() => { setCreditMode("debt"); setActualText(""); }}
+                className={`flex-1 rounded-md py-2 text-sm font-medium ${creditMode === "debt" ? "bg-ink-800 text-white dark:bg-emerald-600" : "bg-ink-100 text-ink-600 dark:bg-ink-700/40 dark:text-ink-300"}`}
+              >按待还金额</button>
+            </div>
+            <label className="block">
+              <span className="text-xs text-ink-500">{creditMode === "available" ? "账单 App 里的可用额度" : "账单 App 里的当前待还"}</span>
+              <input className="input mt-1" inputMode="decimal" value={actualText} onChange={(e) => setActualText(e.target.value)} autoFocus placeholder="0" />
+            </label>
+            {creditMode === "available" && wallet.credit_limit == null && (
+              <div className="text-[11px] text-amber-600">这张卡还没设额度——先去编辑卡片填信用额度, 才能按可用额度对账</div>
+            )}
+            {creditMode === "available" && wallet.credit_limit != null && actualText !== "" && (
+              <div className="text-[11px] text-ink-400">推算待还 = 额度 − 可用 = {formatAmount(creditLimit - inputVal, wallet.currency_code, currencies.data)}</div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mb-2 flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={useDenom} onChange={(e) => setUseDenom(e.target.checked)} />
+                按面额计算（现金）
+              </label>
+            </div>
+
+            {useDenom ? (
+              <div className="mb-3 space-y-1.5 rounded-md bg-ink-50 p-2">
+                {denomRows.map((r, i) => (
+                  <div key={r.value} className="flex items-center gap-2 text-sm">
+                    <div className="w-20 shrink-0 text-right">{r.value}</div>
+                    <div className="text-ink-400">×</div>
+                    <input
+                      inputMode="numeric"
+                      className="input"
+                      value={r.count}
+                      onChange={(e) => {
+                        const copy = [...denomRows];
+                        copy[i] = { ...r, count: e.target.value.replace(/\D/g, "") };
+                        setDenomRows(copy);
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                ))}
+                <div className="flex justify-end pt-1 text-sm">
+                  <span className="text-ink-500">合计：</span>
+                  <span className="ml-1 font-semibold">{formatAmount(denomSum, wallet.currency_code, currencies.data)}</span>
+                </div>
+              </div>
+            ) : (
+              <label className="mb-3 block">
+                <span className="text-xs text-ink-500">实点金额</span>
+                <input className="input mt-1" inputMode="decimal" value={actualText} onChange={(e) => setActualText(e.target.value)} autoFocus />
+              </label>
+            )}
+          </>
         )}
 
         <div className="mb-2 rounded-md bg-ink-50 p-2 text-sm">
@@ -160,7 +219,9 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
           </div>
           {diff !== 0 && (
             <div className="mt-1 text-xs text-ink-500">
-              将生成一笔 {diff > 0 ? "income (对账多出)" : "expense (对账缺失)"} 入分类「对账调整」
+              {isCredit
+                ? `待还${diff > 0 ? "比记录少" : "比记录多"}, 生成一笔${diff > 0 ? " income" : " expense"} 入分类「对账调整」`
+                : `将生成一笔 ${diff > 0 ? "income (对账多出)" : "expense (对账缺失)"} 入分类「对账调整」`}
             </div>
           )}
         </div>
