@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronRight, Download, LogOut, Plus, RefreshCw, Share, 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import Modal from "../components/Modal";
 import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { todayIso } from "../lib/format";
@@ -274,12 +275,7 @@ export default function Settings() {
       </div>
 
       {resetOpen && (
-        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => !reset.isPending && setResetOpen(false)}>
-          <div className="w-full max-w-sm rounded-xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 flex items-center gap-1.5 text-rose-600">
-              <AlertTriangle size={18} />
-              <div className="font-semibold">重置所有数据</div>
-            </div>
+        <Modal onClose={() => !reset.isPending && setResetOpen(false)} title={<span className="flex items-center gap-1.5 text-rose-600"><AlertTriangle size={18} /> 重置所有数据</span>} maxW="max-w-sm">
             <div className="text-sm text-ink-600">
               这会删除当前账号下的全部 Wallet、交易、分类、商家、联系人、预算、附件。账号保留，分类与商家会重新种子。**不可撤销**。
             </div>
@@ -301,8 +297,7 @@ export default function Settings() {
                 {reset.isPending ? "重置中…" : "确认重置"}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

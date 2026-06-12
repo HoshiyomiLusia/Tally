@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownLeft, Pencil, Trash2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, Pencil, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import ContactForm from "../components/ContactForm";
+import Modal from "../components/Modal";
 import { api, type Contact, type Currency, type LoanAccount, type Transaction, type Wallet } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
@@ -202,12 +203,7 @@ function RepaymentModal({ acct, wallets, currencies, onClose }: {
 
   if (!acct) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">收到还款 — {acct.contact_name}</div>
-          <button onClick={onClose} className="text-ink-400"><X size={18} /></button>
-        </div>
+    <Modal onClose={onClose} title={`收到还款 — ${acct.contact_name}`} maxW="max-w-sm">
         <div className="mb-2 text-xs text-ink-500">
           当前余额 {formatAmount(acct.balance, acct.currency_code, currencies)}
           {acct.balance < 0 && <>（还需 {formatAmount(-acct.balance, acct.currency_code, currencies)}）</>}
@@ -242,8 +238,7 @@ function RepaymentModal({ acct, wallets, currencies, onClose }: {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -301,11 +296,7 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
 
   if (!acct) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-2 flex items-center gap-1.5 text-rose-600">
-          <AlertTriangle size={18} /> <div className="font-semibold">核销坏账 — {acct.contact_name}</div>
-        </div>
+    <Modal onClose={onClose} title={<span className="flex items-center gap-1.5 text-rose-600"><AlertTriangle size={18} /> 核销坏账 — {acct.contact_name}</span>} maxW="max-w-sm">
         <div className="mb-2 text-sm text-ink-600">
           会生成两笔：一笔"坏账损失"消费扣在选定 Wallet（让真实余额与物理余额对齐）+ 一笔贷款还款清掉欠款。
         </div>
@@ -332,8 +323,7 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -350,12 +340,7 @@ function HistoryModal({ acct, currencies, onClose }: {
 
   if (!acct) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">{acct.contact_name} · {acct.currency_code} 明细</div>
-          <button onClick={onClose} className="text-ink-400"><X size={18} /></button>
-        </div>
+    <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 明细`} maxW="max-w-md">
         <div className="divide-y divide-ink-100">
           {(list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment").map((t) => (
             <div key={t.id} className="flex items-center justify-between py-2 text-sm">
@@ -369,8 +354,7 @@ function HistoryModal({ acct, currencies, onClose }: {
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

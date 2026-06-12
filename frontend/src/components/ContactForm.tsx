@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type Contact } from "../lib/api";
+import Modal from "./Modal";
 
 export const CONTACT_COLORS = [
   "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
@@ -49,9 +50,7 @@ export default function ContactForm({
 
   if (!open) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 text-lg font-semibold">{editing ? "编辑联系人" : "新增联系人"}</div>
+    <Modal onClose={onClose} title={editing ? "编辑联系人" : "新增联系人"} maxW="max-w-sm">
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">名称</span>
@@ -84,7 +83,6 @@ export default function ContactForm({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import Modal from "../components/Modal";
 import { api, type Category, type Merchant } from "../lib/api";
 
 const REGIONS = [
@@ -128,9 +129,7 @@ function MerchantForm({
 
   if (!open) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 text-lg font-semibold">{editing ? "编辑商家" : "新增商家"}</div>
+    <Modal onClose={onClose} title={editing ? "编辑商家" : "新增商家"} maxW="max-w-sm">
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">名称</span>
@@ -163,7 +162,6 @@ function MerchantForm({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

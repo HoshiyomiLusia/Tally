@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type Currency, type Wallet } from "../lib/api";
+import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 import Modal from "./Modal";
+
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
+};
 
 interface Props {
   open: boolean;
@@ -147,21 +152,20 @@ export default function CreditRepayForm({ open, onClose }: Props) {
               {/* 支付账户 (同币种, 非信用卡) */}
               <div className="border-t border-ink-100 pt-3 dark:border-ink-700">
                 <div className="mb-1 text-xs text-ink-500">从哪个账户扣款（{card.currency_code}）</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {payOptions.map((w) => {
-                    const on = payId === w.id;
-                    return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => setPayId(w.id)}
-                        className={on ? "chip chip-selected" : "chip chip-idle"}
-                      >
-                        {on && <span className="mr-0.5">✓</span>}
-                        {w.name}
-                      </button>
-                    );
-                  })}
+                <div className="space-y-1.5">
+                  {WALLET_TYPE_ORDER.filter((t) => payOptions.some((w) => w.type === t)).map((t) => (
+                    <div key={t} className="flex flex-wrap items-center gap-1.5">
+                      <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                      {payOptions.filter((w) => w.type === t).map((w) => {
+                        const on = payId === w.id;
+                        return (
+                          <button key={w.id} type="button" onClick={() => setPayId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>
+                            {on && <span className="mr-0.5">✓</span>}{w.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                   {payOptions.length === 0 && <span className="text-sm text-ink-400">没有同币种的可用账户</span>}
                 </div>
               </div>

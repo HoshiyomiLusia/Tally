@@ -10,8 +10,14 @@ import {
   type Merchant,
   type Transaction,
   type Wallet,
+  type WalletType,
 } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
+};
 
 interface Props {
   open: boolean;
@@ -201,28 +207,29 @@ export default function ReimburseForm({ open, onClose }: Props) {
               <div className="space-y-1.5">
                 {walletsByCurrency.map(([code, list]) => (
                   <div key={code}>
-                    <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-ink-500">{code}</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {list.map((w) => {
-                        const on = walletId === w.id;
-                        return (
-                          <button
-                            key={w.id}
-                            type="button"
-                            onClick={() => {
-                              // 切到不同币种时清空金额, 强制用户按实际入账金额重填
-                              if (wallet && wallet.currency_code !== w.currency_code) {
-                                setAmountText("");
-                              }
-                              setWalletId(w.id);
-                            }}
-                            className={on ? "chip chip-selected" : "chip chip-idle"}
-                          >
-                            {on && <span className="mr-0.5">✓</span>}
-                            {w.name}
-                          </button>
-                        );
-                      })}
+                    <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{code}</div>
+                    <div className="space-y-1.5">
+                      {WALLET_TYPE_ORDER.filter((t) => list.some((w) => w.type === t)).map((t) => (
+                        <div key={t} className="flex flex-wrap items-center gap-1.5">
+                          <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                          {list.filter((w) => w.type === t).map((w) => {
+                            const on = walletId === w.id;
+                            return (
+                              <button
+                                key={w.id}
+                                type="button"
+                                onClick={() => {
+                                  if (wallet && wallet.currency_code !== w.currency_code) setAmountText("");
+                                  setWalletId(w.id);
+                                }}
+                                className={on ? "chip chip-selected" : "chip chip-idle"}
+                              >
+                                {on && <span className="mr-0.5">✓</span>}{w.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

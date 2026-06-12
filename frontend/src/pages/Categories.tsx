@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import Modal from "../components/Modal";
 import { api, type Category, type CategoryKind } from "../lib/api";
 
 export default function Categories() {
@@ -142,9 +143,7 @@ function CategoryForm({
   const title = editing ? "编辑分类" : parent ? `在「${parent.name}」下添加子分类` : "新建一级分类";
 
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 text-lg font-semibold">{title}</div>
+    <Modal onClose={onClose} title={title} maxW="max-w-sm">
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">名称</span>
@@ -162,7 +161,6 @@ function CategoryForm({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
