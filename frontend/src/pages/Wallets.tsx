@@ -166,6 +166,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
   const [currencyCode, setCurrencyCode] = useState("JPY");
   const [color, setColor] = useState("");
   const [initialText, setInitialText] = useState("");
+  const [creditLimitText, setCreditLimitText] = useState("");  // 信用卡额度
   const [region, setRegion] = useState<string>("JPY");  // 现按币种体系分组, region 存币种代码
   const [showCustom, setShowCustom] = useState(false);
   const [error, setError] = useState("");
@@ -180,6 +181,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       const cur = currencies.data?.find((c) => c.code === editing.currency_code);
       const d = cur?.decimal_digits ?? 2;
       setInitialText((editing.initial_balance / Math.pow(10, d)).toString());
+      setCreditLimitText(editing.credit_limit != null ? (editing.credit_limit / Math.pow(10, d)).toString() : "");
       setShowCustom(true);
     } else {
       setName("");
@@ -187,6 +189,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       setCurrencyCode("JPY");
       setColor("");
       setInitialText("");
+      setCreditLimitText("");
       setRegion("JPY");
       setShowCustom(false);
     }
@@ -206,7 +209,8 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       const cur = currencies.data?.find((c) => c.code === currencyCode);
       const d = cur?.decimal_digits ?? 2;
       const initial = parseAmount(initialText || "0", d);
-      const payload: Record<string, unknown> = { name, type, color };
+      const creditLimit = type === "credit_card" && creditLimitText ? parseAmount(creditLimitText, d) : null;
+      const payload: Record<string, unknown> = { name, type, color, credit_limit: creditLimit };
       if (!editing) {
         payload.currency_code = currencyCode;
         payload.initial_balance = initial;
@@ -325,6 +329,13 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
                 <input className="input mt-1" inputMode="decimal" value={initialText} onChange={(e) => setInitialText(e.target.value)} placeholder="0" />
               </label>
             )}
+            {type === "credit_card" && (
+              <label className="block">
+                <span className="text-xs text-ink-500">信用额度（{currencyCode}）</span>
+                <input className="input mt-1" inputMode="decimal" value={creditLimitText} onChange={(e) => setCreditLimitText(e.target.value)} placeholder="如 300000" />
+                <span className="mt-0.5 block text-[10px] text-ink-400">卡片会显示本月可用 = 额度 − 待还</span>
+              </label>
+            )}
             {error && <div className="text-sm text-red-600">{error}</div>}
             <div className="flex justify-end gap-2 pt-1">
               <button onClick={onClose} className="btn-ghost">取消</button>
@@ -423,10 +434,17 @@ function WalletCardItem({
           <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
           <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
         </div>
-        <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
-          {isCredit
-            ? (debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies))
-            : formatAmount(physical, currencyCode, currencies)}
+        <div className="min-w-0">
+          <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+            {isCredit
+              ? (debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies))
+              : formatAmount(physical, currencyCode, currencies)}
+          </div>
+          {isCredit && wallet.credit_limit != null && (
+            <div className={`truncate text-[10px] tabular-nums ${faceSub}`}>
+              可用 {formatAmount(wallet.credit_limit + wallet.balance, currencyCode, currencies)} / 额度 {formatAmount(wallet.credit_limit, currencyCode, currencies)}
+            </div>
+          )}
         </div>
         <div className="flex items-end justify-between">
           <div className="flex items-center gap-1.5">

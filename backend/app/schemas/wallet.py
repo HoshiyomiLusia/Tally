@@ -11,6 +11,7 @@ class WalletCreate(BaseModel):
     type: WalletType
     currency_code: str
     initial_balance: int = 0
+    credit_limit: int | None = None
     icon: str = ""
     color: str = ""
 
@@ -18,6 +19,7 @@ class WalletCreate(BaseModel):
 class WalletUpdate(BaseModel):
     name: str | None = None
     type: WalletType | None = None
+    credit_limit: int | None = None
     icon: str | None = None
     color: str | None = None
     archived: bool | None = None
@@ -32,6 +34,7 @@ class WalletRead(BaseModel):
     type: WalletType
     currency_code: str
     initial_balance: int
+    credit_limit: int | None = None
     icon: str
     color: str
     archived: bool

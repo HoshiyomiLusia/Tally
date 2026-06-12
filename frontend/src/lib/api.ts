@@ -40,6 +40,7 @@ export interface Wallet {
   type: WalletType;
   currency_code: string;
   initial_balance: number;
+  credit_limit: number | null;
   icon: string;
   color: string;
   archived: boolean;
