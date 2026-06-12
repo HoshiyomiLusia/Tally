@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { Calculator, ChevronLeft, ChevronRight, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import type { WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+import Modal from "./Modal";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
@@ -75,7 +76,6 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
-  const dateRef = useRef<HTMLInputElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
   const stagedFileRef = useRef<HTMLInputElement>(null);
   const initKey = useRef<string | null>(null);
@@ -401,18 +401,20 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   if (!open) return null;
 
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
-      <div className="anim-sheet max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">{editing ? "编辑交易" : recurrenceSourceId ? "确认扣款" : "添加交易"}</div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
-        </div>
+    <Modal onClose={onClose} title={editing ? "编辑交易" : recurrenceSourceId ? "确认扣款" : "添加交易"}>
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
             <div className="mt-0.5 flex items-stretch gap-2">
+              <button
+                type="button"
+                onClick={() => setOccurredOn(shiftDay(occurredOn, -1))}
+                title="前一天"
+                className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"
+              >
+                <ChevronLeft size={18} />
+              </button>
               <input
-                ref={dateRef}
                 className="input flex-1"
                 type="date"
                 value={occurredOn}
@@ -420,11 +422,11 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
               />
               <button
                 type="button"
-                onClick={() => dateRef.current?.showPicker?.()}
-                title="选择日期"
+                onClick={() => setOccurredOn(shiftDay(occurredOn, 1))}
+                title="后一天"
                 className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"
               >
-                <CalendarDays size={18} />
+                <ChevronRight size={18} />
               </button>
             </div>
           </label>
@@ -752,13 +754,19 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
 function formatAmountInput(amount: number, digits: number): string {
   return (amount / Math.pow(10, digits)).toString();
+}
+
+function shiftDay(iso: string, delta: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + delta);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 function stripTrailingZero(n: number): string {
