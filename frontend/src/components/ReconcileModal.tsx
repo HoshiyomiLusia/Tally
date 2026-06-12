@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type Currency, type ReconciliationView, type Wallet } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+import Modal from "./Modal";
 
 const JPY_DENOMS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
 const CNY_DENOMS = [100, 50, 20, 10, 5, 1, 0.5, 0.1];
@@ -87,12 +88,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
 
   if (!wallet) return null;
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">对账 — {wallet.name}</div>
-          <button onClick={onClose} className="text-ink-400"><X size={18} /></button>
-        </div>
+    <Modal onClose={onClose} title={`对账 — ${wallet.name}`} maxW="max-w-md">
 
         <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
           <div className="flex justify-between">
@@ -188,7 +184,6 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
             {submit.isPending ? "对账中…" : diff === 0 ? "确认（无差）" : "对账并调整"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

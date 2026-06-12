@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, RefreshCw, X } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Currency, type Wallet } from "../lib/api";
 import { parseAmount, todayIso } from "../lib/format";
+import Modal from "./Modal";
 
 interface Props {
   open: boolean;
@@ -129,12 +130,7 @@ export default function TransferForm({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center">
-      <div className="anim-sheet max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-semibold">转移</div>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-700"><X size={18} /></button>
-        </div>
+    <Modal onClose={onClose} title="转移">
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
@@ -227,8 +223,7 @@ export default function TransferForm({ open, onClose }: Props) {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
