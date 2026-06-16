@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HandCoins, Pencil, Plus, Scale, Trash2 } from "lucide-react";
+import { HandCoins, Pencil, Plus, Scale, Trash2, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } from "lucide-react";
@@ -86,10 +86,14 @@ export default function Wallets() {
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
           const nonCredit = list.filter((w) => w.type !== "credit_card");
-          // 卡片只显物理; 借贷(借出未还)单独立账; 真实 = 物理 + 借贷 - 信用卡待还 (= 各钱包系统余额之和)
-          const phys = nonCredit.reduce((s, w) => s + w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet, 0);
-          const loan = nonCredit.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
-          const debt = list.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -w.balance), 0);
+          const physOf = (w: Wallet) => w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet - w.invest_out_on_wallet + w.invest_in_on_wallet;
+          // 卡片只显物理; 借贷/投资 单独立账; 真实 = 各钱包系统余额之和
+          const phys = nonCredit.reduce((s, w) => s + physOf(w), 0);
+          // 借贷算上信用卡上垫付的: 不管借记卡还是信用卡, 替人垫的都是应收
+          const loan = list.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
+          const invest = list.reduce((s, w) => s + w.invest_out_on_wallet - w.invest_in_on_wallet, 0);
+          // 信用卡待还按实际刷卡额(含垫付)= -物理余额, 这样占用的额度才对得上
+          const debt = list.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -physOf(w)), 0);
           const real = list.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
@@ -106,6 +110,7 @@ export default function Wallets() {
                 <div className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
                   <span className="text-ink-500">物理 <span className="font-medium text-ink-700 dark:text-ink-200">{formatAmount(phys, code, currencies.data)}</span></span>
                   {loan !== 0 && <span className="text-emerald-600 dark:text-emerald-400">借贷 {formatAmount(loan, code, currencies.data)}</span>}
+                  {invest !== 0 && <span className="text-sky-600 dark:text-sky-400">投资 {formatAmount(invest, code, currencies.data)}</span>}
                   {debt !== 0 && <span className="text-rose-500">待还 {formatAmount(debt, code, currencies.data)}</span>}
                   <span className="text-ink-500">真实 <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{formatAmount(real, code, currencies.data)}</span></span>
                 </div>
@@ -118,6 +123,14 @@ export default function Wallets() {
                       <HandCoins size={11} /> 借贷账户
                     </span>
                     <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(loan, code, currencies.data)}</span>
+                  </div>
+                )}
+                {invest !== 0 && (
+                  <div className="flex items-baseline gap-2 px-1">
+                    <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-ink-500">
+                      <TrendingUp size={11} /> 投资账户
+                    </span>
+                    <span className="text-sm font-bold text-sky-600 dark:text-sky-400">{formatAmount(invest, code, currencies.data)}</span>
                   </div>
                 )}
                 {TYPE_ORDER.filter((t) => byType.has(t)).map((t) => {
@@ -407,9 +420,10 @@ function WalletCardItem({
 }) {
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const isCredit = wallet.type === "credit_card";
-  // 卡片只显物理余额; 借出的钱已归到币种下的"借贷账户", 不再摊在每张卡上
-  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet;
-  const debt = -wallet.balance;
+  // 卡片只显物理余额; 借出/投资的钱已归到币种下的"借贷账户/投资账户", 不再摊在每张卡上
+  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet - wallet.invest_out_on_wallet + wallet.invest_in_on_wallet;
+  // 信用卡: 实际欠银行 = -物理(含替人垫付的), 占用额度才对
+  const debt = -physical;
   const light = isLight(color);
   const faceText = light ? "text-ink-900" : "text-white";
   const faceSub = light ? "text-ink-900/70" : "text-white/75";
@@ -442,7 +456,7 @@ function WalletCardItem({
           </div>
           {isCredit && wallet.credit_limit != null && (
             <div className={`truncate text-[10px] tabular-nums ${faceSub}`}>
-              可用 {formatAmount(wallet.credit_limit + wallet.balance, currencyCode, currencies)} / 额度 {formatAmount(wallet.credit_limit, currencyCode, currencies)}
+              可用 {formatAmount(wallet.credit_limit + physical, currencyCode, currencies)} / 额度 {formatAmount(wallet.credit_limit, currencyCode, currencies)}
             </div>
           )}
         </div>

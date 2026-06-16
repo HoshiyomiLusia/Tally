@@ -7,17 +7,26 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Transaction, User, Wallet
 from ..schemas.wallet import WalletCreate, WalletRead, WalletUpdate
-from ..services.balances import all_wallet_loan_summary, wallet_balances
+from ..services.balances import (
+    all_wallet_investment_summary,
+    all_wallet_loan_summary,
+    wallet_balances,
+)
 
 router = APIRouter(prefix="/wallets", tags=["wallets"])
 
 
-def _to_read(w: Wallet, balance: int, loan_out: int = 0, loan_in: int = 0) -> WalletRead:
+def _to_read(
+    w: Wallet, balance: int, loan_out: int = 0, loan_in: int = 0,
+    invest_out: int = 0, invest_in: int = 0,
+) -> WalletRead:
     return WalletRead.model_validate({
         **w.__dict__,
         "balance": balance,
         "loan_out_on_wallet": loan_out,
         "loan_repayment_on_wallet": loan_in,
+        "invest_out_on_wallet": invest_out,
+        "invest_in_on_wallet": invest_in,
     })
 
 
@@ -33,8 +42,9 @@ async def list_wallets(
     wallets = (await session.execute(stmt)).scalars().all()
     balances = await wallet_balances(session, user.id)
     loans = await all_wallet_loan_summary(session, user.id)
+    invests = await all_wallet_investment_summary(session, user.id)
     return [
-        _to_read(w, balances.get(w.id, w.initial_balance), *loans.get(w.id, (0, 0)))
+        _to_read(w, balances.get(w.id, w.initial_balance), *loans.get(w.id, (0, 0)), *invests.get(w.id, (0, 0)))
         for w in wallets
     ]
 
@@ -68,7 +78,8 @@ async def update_wallet(
     await session.refresh(w)
     balances = await wallet_balances(session, user.id)
     loans = await all_wallet_loan_summary(session, user.id)
-    return _to_read(w, balances.get(w.id, w.initial_balance), *loans.get(w.id, (0, 0)))
+    invests = await all_wallet_investment_summary(session, user.id)
+    return _to_read(w, balances.get(w.id, w.initial_balance), *loans.get(w.id, (0, 0)), *invests.get(w.id, (0, 0)))
 
 
 class MoveLoansResponse(BaseModel):

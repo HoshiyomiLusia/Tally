@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
-from ..services.balances import all_wallet_loan_summary, wallet_balances
+from ..services.balances import (
+    all_wallet_investment_summary,
+    all_wallet_loan_summary,
+    wallet_balances,
+)
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -63,8 +67,9 @@ class TopTx(BaseModel):
 class CrossCurrencyTotal(BaseModel):
     base_currency: str
     total: int                  # 真实余额 (所有钱包系统余额之和)
-    total_spendable: int = 0    # 物理余额 (非信用卡, 系统 - 借出 + 还款)
+    total_spendable: int = 0    # 物理余额 (非信用卡, 系统 - 借出 + 还款 - 投资买入 + 投资卖出)
     total_credit_debt: int = 0  # 信用卡待还合计
+    total_invested: int = 0     # 投资中合计 (各持仓剩余成本)
     total_real: int = 0         # 兼容旧字段 = 真实余额
     breakdown: list[dict]
 
@@ -304,6 +309,87 @@ async def monthly_trend(
     return [MonthlyPoint(month=ym, currency_code=c, income=int(inc or 0), expense=int(exp or 0)) for ym, c, inc, exp in rows]
 
 
+class CatMonthly(BaseModel):
+    month: str
+    category_name: str       # 实际分类 (小类, 或没父的大类自身)
+    emoji: str
+    parent_name: str         # 顶层大类
+    parent_emoji: str
+    is_leaf: bool            # True=小类(挂在大类下), False=大类自身直接消费
+    currency_code: str
+    expense: int
+
+
+class MerchantTotal(BaseModel):
+    merchant_name: str
+    currency_code: str
+    expense: int
+    count: int
+
+
+class LifetimeStats(BaseModel):
+    monthly: list[MonthlyPoint]          # 逐月收支
+    category_monthly: list[CatMonthly]   # 逐月分类支出 (前端按区间/币种聚合)
+    merchants: list[MerchantTotal]       # 全时段商家支出 Top
+
+
+@router.get("/lifetime", response_model=LifetimeStats)
+async def lifetime(
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """全时段统计原料 (剔除对账调整等内部分类), 给"总分析"前端自由聚合."""
+    skip = await _internal_cat_ids(session, user.id)
+    notskip = (~Transaction.category_id.in_(skip)) if skip else True
+    income_amt = case((Transaction.kind == "income", Transaction.amount), else_=0)
+    expense_amt = case((Transaction.kind == "expense", Transaction.amount), else_=0)
+    ym = func.strftime("%Y-%m", Transaction.occurred_on)
+
+    m_rows = (await session.execute(
+        select(ym.label("ym"), Transaction.currency_code, func.sum(income_amt), func.sum(expense_amt))
+        .where(Transaction.user_id == user.id, Transaction.kind.in_(("income", "expense")), notskip)
+        .group_by("ym", Transaction.currency_code).order_by("ym")
+    )).all()
+    monthly = [MonthlyPoint(month=m, currency_code=c, income=int(i or 0), expense=int(e or 0)) for m, c, i, e in m_rows]
+
+    cat_rows = (await session.execute(
+        select(Category.id, Category.name, Category.emoji, Category.parent_id).where(Category.user_id == user.id)
+    )).all()
+    cmap = {cid: (nm, em, pid) for cid, nm, em, pid in cat_rows}
+
+    def resolve(cid: int | None) -> tuple[str, str, str, str, bool]:
+        # -> (小类名, 小类emoji, 大类名, 大类emoji, 是否小类)
+        if cid is None or cid not in cmap:
+            return ("未分类", "", "未分类", "", False)
+        nm, em, pid = cmap[cid]
+        if pid is not None and pid in cmap:
+            return (nm, em, cmap[pid][0], cmap[pid][1], True)
+        return (nm, em, nm, em, False)
+
+    c_rows = (await session.execute(
+        select(ym.label("ym"), Transaction.category_id, Transaction.currency_code, func.sum(Transaction.amount))
+        .where(Transaction.user_id == user.id, Transaction.kind == "expense", notskip)
+        .group_by("ym", Transaction.category_id, Transaction.currency_code).order_by("ym")
+    )).all()
+    category_monthly = []
+    for m, cid, code, s in c_rows:
+        nm, em, pnm, pem, leaf = resolve(cid)
+        category_monthly.append(CatMonthly(month=m, category_name=nm, emoji=em, parent_name=pnm,
+                                           parent_emoji=pem, is_leaf=leaf, currency_code=code, expense=int(s or 0)))
+
+    mer_rows = (await session.execute(
+        select(Merchant.name, Transaction.currency_code, func.sum(Transaction.amount), func.count(Transaction.id))
+        .join(Merchant, Merchant.id == Transaction.merchant_id)
+        .where(Transaction.user_id == user.id, Transaction.kind == "expense", notskip)
+        .group_by(Transaction.merchant_id, Transaction.currency_code)
+        .order_by(func.sum(Transaction.amount).desc())
+    )).all()
+    merchants = [MerchantTotal(merchant_name=nm, currency_code=c, expense=int(s or 0), count=int(n or 0))
+                 for nm, c, s, n in mer_rows]
+
+    return LifetimeStats(monthly=monthly, category_monthly=category_monthly, merchants=merchants)
+
+
 @router.get("/daily", response_model=list[DailyPoint])
 async def daily(
     start: date | None = None,
@@ -399,6 +485,7 @@ async def cross_currency_total(
 ):
     balances = await wallet_balances(session, user.id)
     loans = await all_wallet_loan_summary(session, user.id)
+    invests = await all_wallet_investment_summary(session, user.id)
     wallets = (await session.execute(select(Wallet).where(Wallet.user_id == user.id, Wallet.archived == False))).scalars().all()  # noqa: E712
 
     digits = {c: d for c, d in (await session.execute(select(Currency.code, Currency.decimal_digits))).all()}
@@ -412,15 +499,20 @@ async def cross_currency_total(
     by_net: dict[str, int] = {}
     by_spend: dict[str, int] = {}
     by_credit: dict[str, int] = {}
+    by_invest: dict[str, int] = {}   # 投资中 = 各持仓剩余成本 (= Σ invest_buy - invest_sell)
     for w in wallets:
         sys_bal = balances.get(w.id, w.initial_balance)
         lo, li = loans.get(w.id, (0, 0))
+        io, ii = invests.get(w.id, (0, 0))
+        # 物理 = 系统 - 借出 + 还款 - 投资买入 + 投资卖出 (投资买入像借出一样压低物理)
+        physical = sys_bal - lo + li - io + ii
         by_net[w.currency_code] = by_net.get(w.currency_code, 0) + sys_bal
+        by_invest[w.currency_code] = by_invest.get(w.currency_code, 0) + (io - ii)
         if w.type == "credit_card":
-            # 欠款 = -系统余额 (刷卡 expense 让系统余额变负)
-            by_credit[w.currency_code] = by_credit.get(w.currency_code, 0) - sys_bal
+            # 待还 = 实际刷卡额(含替人垫付的 loan_out) = -物理余额, 占用的额度才对得上
+            by_credit[w.currency_code] = by_credit.get(w.currency_code, 0) - physical
         else:
-            by_spend[w.currency_code] = by_spend.get(w.currency_code, 0) + (sys_bal - lo + li)
+            by_spend[w.currency_code] = by_spend.get(w.currency_code, 0) + physical
 
     rate_rows = (
         await session.execute(
@@ -441,24 +533,27 @@ async def cross_currency_total(
         rate = rates.get((code, base)) or 0.0
         return int(amt * rate * (10 ** (base_d - digits.get(code, 2))))
 
-    codes = set(by_net) | set(by_spend) | set(by_credit)
+    codes = set(by_net) | set(by_spend) | set(by_credit) | set(by_invest)
     total = 0          # 真实余额
     total_spendable = 0
     total_credit = 0
+    total_invested = 0
     breakdown = []
     # 主货币(用户选的 base)排第一, 其余按字母序
     for code in sorted(codes, key=lambda c: (c != base, c)):
         net = by_net.get(code, 0)
         spend = by_spend.get(code, 0)
         credit = by_credit.get(code, 0)
+        invested = by_invest.get(code, 0)
         rate = 1.0 if code == base else (rates.get((code, base)) or 0.0)
         conv_net = conv_to_base(net, code)
         total += conv_net
         total_spendable += conv_to_base(spend, code)
         total_credit += conv_to_base(credit, code)
+        total_invested += conv_to_base(invested, code)
         breakdown.append({
             "currency_code": code,
-            "net": net, "spendable": spend, "credit_debt": credit,
+            "net": net, "spendable": spend, "credit_debt": credit, "invested": invested,
             "rate": rate, "converted": conv_net,
             # 向后兼容旧字段名
             "balance": spend, "balance_real": net, "converted_real": conv_net,
@@ -466,6 +561,7 @@ async def cross_currency_total(
     return CrossCurrencyTotal(
         base_currency=base,
         total=total, total_spendable=total_spendable, total_credit_debt=total_credit,
+        total_invested=total_invested,
         total_real=total,  # 兼容旧字段: real 即真实余额
         breakdown=breakdown,
     )

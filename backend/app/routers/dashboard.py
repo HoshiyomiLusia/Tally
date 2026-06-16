@@ -14,7 +14,11 @@ from ..schemas.dashboard import (
     WalletBalanceItem,
 )
 from ..schemas.transaction import TransactionRead
-from ..services.balances import all_wallet_loan_summary, wallet_balances
+from ..services.balances import (
+    all_wallet_investment_summary,
+    all_wallet_loan_summary,
+    wallet_balances,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -46,6 +50,7 @@ async def get_dashboard(
     ).scalars().all()
     balances = await wallet_balances(session, user.id)
     loans = await all_wallet_loan_summary(session, user.id)
+    invests = await all_wallet_investment_summary(session, user.id)
     wallet_items = [
         WalletBalanceItem(
             wallet_id=w.id,
@@ -56,6 +61,8 @@ async def get_dashboard(
             archived=w.archived,
             loan_out_on_wallet=loans.get(w.id, (0, 0))[0],
             loan_repayment_on_wallet=loans.get(w.id, (0, 0))[1],
+            invest_out_on_wallet=invests.get(w.id, (0, 0))[0],
+            invest_in_on_wallet=invests.get(w.id, (0, 0))[1],
         )
         for w in wallets
     ]

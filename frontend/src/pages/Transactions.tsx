@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Pencil, Plus, Split, Trash2, Zap } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Pencil, Plus, Split, Trash2, TrendingUp, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import CreditRepayForm from "../components/CreditRepayForm";
 import ReimburseForm from "../components/ReimburseForm";
@@ -36,6 +37,7 @@ const PAGE_SIZES = [25, 50, 100, 200];
 
 export default function Transactions() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [walletId, setWalletId] = useState<string>("");
   const [parentCatId, setParentCatId] = useState<string>("");
   const [childCatId, setChildCatId] = useState<string>("");
@@ -200,6 +202,9 @@ export default function Transactions() {
           </button>
           <button onClick={() => setCreditRepayOpen(true)} className="btn-ghost">
             <CreditCard size={14} /> 信用卡还款
+          </button>
+          <button onClick={() => navigate("/investments")} className="btn-ghost">
+            <TrendingUp size={14} /> 投资
           </button>
           <button onClick={() => setQuickOpen(true)} className="btn-ghost">
             <Zap size={14} /> 快速添加

@@ -49,6 +49,8 @@ export interface Wallet {
   balance: number;
   loan_out_on_wallet: number;
   loan_repayment_on_wallet: number;
+  invest_out_on_wallet: number;
+  invest_in_on_wallet: number;
 }
 
 export type CategoryKind = "expense" | "income";
@@ -81,7 +83,7 @@ export interface Contact {
   created_at: string;
 }
 
-export type TransactionKind = "expense" | "income" | "transfer_out" | "transfer_in" | "loan_out" | "loan_repayment";
+export type TransactionKind = "expense" | "income" | "transfer_out" | "transfer_in" | "loan_out" | "loan_repayment" | "invest_buy" | "invest_sell";
 
 export interface Transaction {
   id: number;
@@ -109,6 +111,31 @@ export interface LoanAccount {
   balance: number;
   loan_out_total: number;
   loan_repayment_total: number;
+}
+
+export interface Position {
+  id: number;
+  name: string;
+  currency_code: string;
+  opened_on: string;
+  status: "open" | "closed";
+  cost_total: number;       // 累计买入成本
+  cost_remaining: number;   // 当前持有成本 (Σ买入 - Σ卖出)
+  realized_pnl: number;     // 已实现盈亏 (+赚 / -亏)
+  note: string;
+}
+
+export interface InvestEvent {
+  key: string;
+  position_id: number;
+  position_name: string;
+  currency_code: string;
+  occurred_on: string;
+  type: "buy" | "sell";
+  cost: number;
+  proceeds: number | null;  // 仅卖出
+  pnl: number | null;       // 仅卖出 (+/-)
+  note: string;
 }
 
 export interface Budget {
@@ -163,6 +190,8 @@ export interface DashboardData {
     archived: boolean;
     loan_out_on_wallet: number;
     loan_repayment_on_wallet: number;
+    invest_out_on_wallet: number;
+    invest_in_on_wallet: number;
   }[];
   month_totals: {
     currency_code: string;

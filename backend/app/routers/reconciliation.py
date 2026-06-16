@@ -6,7 +6,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Transaction, User, Wallet
 from ..schemas.reconciliation import ReconciliationRequest, ReconciliationResult, ReconciliationView
-from ..services.balances import wallet_balances, wallet_loan_summary
+from ..services.balances import wallet_balances, wallet_investment_summary, wallet_loan_summary
 
 router = APIRouter(prefix="/wallets", tags=["reconciliation"])
 
@@ -28,7 +28,8 @@ async def get_reconciliation(
     balances = await wallet_balances(session, user.id)
     system_balance = balances.get(wallet_id, wallet.initial_balance)
     loan_out, loan_in = await wallet_loan_summary(session, user.id, wallet_id)
-    expected = system_balance - loan_out + loan_in
+    invest_out, invest_in = await wallet_investment_summary(session, user.id, wallet_id)
+    expected = system_balance - loan_out + loan_in - invest_out + invest_in
     return ReconciliationView(
         wallet_id=wallet_id,
         currency_code=wallet.currency_code,
@@ -50,7 +51,8 @@ async def reconcile(
     balances = await wallet_balances(session, user.id)
     system_balance = balances.get(wallet_id, wallet.initial_balance)
     loan_out, loan_in = await wallet_loan_summary(session, user.id, wallet_id)
-    expected = system_balance - loan_out + loan_in
+    invest_out, invest_in = await wallet_investment_summary(session, user.id, wallet_id)
+    expected = system_balance - loan_out + loan_in - invest_out + invest_in
     diff = payload.actual_balance - expected
     if diff == 0:
         return ReconciliationResult(diff=0, transaction_id=None)

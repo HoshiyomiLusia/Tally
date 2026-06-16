@@ -5,6 +5,7 @@ from .contact import Contact
 from .currency import Currency
 from .exchange_rate import ExchangeRate
 from .merchant import Merchant
+from .position import Position
 from .transaction import Transaction
 from .user import User
 from .wallet import Wallet
@@ -17,6 +18,7 @@ __all__ = [
     "Currency",
     "ExchangeRate",
     "Merchant",
+    "Position",
     "Transaction",
     "User",
     "Wallet",

@@ -101,8 +101,8 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
         {isCredit ? (
           <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-ink-600">系统当前待还</span>
-              <span className="font-medium">{formatAmount(-(view.data?.system_balance ?? 0), wallet.currency_code, currencies.data)}</span>
+              <span className="text-ink-600">当前待还</span>
+              <span className="font-medium">{formatAmount(-expected, wallet.currency_code, currencies.data)}</span>
             </div>
             {wallet.credit_limit != null && (
               <>
@@ -112,7 +112,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
                 </div>
                 <div className="flex justify-between border-t border-ink-200 pt-1 font-semibold">
                   <span>当前可用</span>
-                  <span>{formatAmount(wallet.credit_limit + (view.data?.system_balance ?? 0), wallet.currency_code, currencies.data)}</span>
+                  <span>{formatAmount(wallet.credit_limit + expected, wallet.currency_code, currencies.data)}</span>
                 </div>
               </>
             )}

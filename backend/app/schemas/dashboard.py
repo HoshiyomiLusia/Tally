@@ -12,6 +12,8 @@ class WalletBalanceItem(BaseModel):
     archived: bool
     loan_out_on_wallet: int = 0
     loan_repayment_on_wallet: int = 0
+    invest_out_on_wallet: int = 0
+    invest_in_on_wallet: int = 0
 
 
 class CurrencyTotals(BaseModel):

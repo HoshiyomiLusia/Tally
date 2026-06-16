@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Categories from "./pages/Categories";
 import Contacts from "./pages/Contacts";
 import Home from "./pages/Home";
+import Investments from "./pages/Investments";
 import Loans from "./pages/Loans";
 import Login from "./pages/Login";
 import Merchants from "./pages/Merchants";
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/wallets" element={<Wallets />} />
         <Route path="/loans" element={<Loans />} />
+        <Route path="/investments" element={<Investments />} />
         <Route path="/contacts" element={<Contacts />} />
         {/* 旧路由重定向: 统计/周期/预算 都并进首页 */}
         <Route path="/stats" element={<Navigate to="/" replace />} />

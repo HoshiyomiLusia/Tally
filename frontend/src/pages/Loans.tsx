@@ -334,27 +334,83 @@ function HistoryModal({ acct, currencies, onClose }: {
 }) {
   const list = useQuery({
     queryKey: ["loan-history", acct?.contact_id, acct?.currency_code],
-    queryFn: async () => (await api.get<Transaction[]>(`/transactions?contact_id=${acct!.contact_id}&currency_code=${acct!.currency_code}&limit=500`)).data,
+    queryFn: async () => (await api.get<Transaction[]>(`/transactions?contact_id=${acct!.contact_id}&currency_code=${acct!.currency_code}&limit=2000`)).data,
     enabled: !!acct,
   });
+  const [filter, setFilter] = useState<"all" | "loan_out" | "loan_repayment">("all");
+  const [q, setQ] = useState("");
+  const [limit, setLimit] = useState(60);
+
+  const sums = useMemo(() => {
+    let out = 0, rep = 0, no = 0, nr = 0;
+    for (const t of list.data ?? []) {
+      if (t.kind === "loan_out") { out += t.amount; no++; }
+      else if (t.kind === "loan_repayment") { rep += t.amount; nr++; }
+    }
+    return { out, rep, no, nr };
+  }, [list.data]);
+
+  const rows = useMemo(() => {
+    let r = (list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment");
+    if (filter !== "all") r = r.filter((t) => t.kind === filter);
+    const kw = q.trim().toLowerCase();
+    if (kw) r = r.filter((t) => (t.note ?? "").toLowerCase().includes(kw) || t.occurred_on.includes(kw));
+    return [...r].sort((a, b) => (a.occurred_on < b.occurred_on ? 1 : a.occurred_on > b.occurred_on ? -1 : b.id - a.id));
+  }, [list.data, filter, q]);
 
   if (!acct) return null;
+  const fmt = (a: number) => formatAmount(a, acct.currency_code, currencies);
+  const shown = rows.slice(0, limit);
+
   return (
-    <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 明细`} maxW="max-w-md">
-        <div className="divide-y divide-ink-100">
-          {(list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment").map((t) => (
-            <div key={t.id} className="flex items-center justify-between py-2 text-sm">
-              <div>
-                <div>{t.kind === "loan_out" ? "🟥 借出" : "🟩 还款"} · {t.occurred_on}</div>
-                {t.note && <div className="text-xs text-ink-500">{t.note}</div>}
-              </div>
-              <div className={t.kind === "loan_out" ? "text-rose-600" : "text-emerald-600"}>
-                {t.kind === "loan_out" ? "-" : "+"}{formatAmount(t.amount, t.currency_code, currencies)}
-              </div>
+    <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 明细`} maxW="max-w-lg">
+      <div className="mb-3 grid grid-cols-3 gap-2">
+        <Sum label={`借出 · ${sums.no}笔`} v={fmt(sums.out)} tone="rose" />
+        <Sum label={`还款 · ${sums.nr}笔`} v={fmt(sums.rep)} tone="emerald" />
+        <Sum label="净额 (她欠你)" v={fmt(sums.out - sums.rep)} tone={sums.out - sums.rep >= 0 ? "rose" : "emerald"} />
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        {([["all", "全部"], ["loan_out", "借出"], ["loan_repayment", "还款"]] as const).map(([k, lbl]) => (
+          <button key={k} type="button" onClick={() => { setFilter(k); setLimit(60); }}
+            className={filter === k
+              ? "rounded-full bg-ink-800 px-2.5 py-0.5 text-xs text-white dark:bg-emerald-600"
+              : "rounded-full border border-ink-200 px-2.5 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:text-ink-300"}>
+            {lbl}</button>
+        ))}
+        <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(60); }} placeholder="搜备注 / 日期"
+          className="ml-auto w-32 rounded-md border border-ink-200 bg-transparent px-2 py-1 text-xs dark:border-ink-700" />
+      </div>
+      <div className="max-h-[52vh] divide-y divide-ink-100 overflow-y-auto dark:divide-ink-800">
+        {shown.length === 0 && <div className="py-6 text-center text-sm text-ink-500">无记录</div>}
+        {shown.map((t) => (
+          <div key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+            <div className="min-w-0">
+              <div>{t.kind === "loan_out" ? "🟥 借出" : "🟩 还款"} · {t.occurred_on}</div>
+              {t.note && <div className="truncate text-xs text-ink-500">{t.note}</div>}
             </div>
-          ))}
-        </div>
+            <div className={`shrink-0 tabular-nums ${t.kind === "loan_out" ? "text-rose-600" : "text-emerald-600"}`}>
+              {t.kind === "loan_out" ? "-" : "+"}{fmt(t.amount)}
+            </div>
+          </div>
+        ))}
+      </div>
+      {rows.length > shown.length && (
+        <button type="button" onClick={() => setLimit((n) => n + 100)}
+          className="mt-2 w-full rounded-md border border-ink-200 py-1.5 text-xs text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800">
+          加载更多（还有 {rows.length - shown.length} 条）
+        </button>
+      )}
+      <div className="mt-1 text-center text-[10px] text-ink-400">共 {rows.length} 条{filter !== "all" || q ? "（已筛选）" : ""}</div>
     </Modal>
+  );
+}
+
+function Sum({ label, v, tone }: { label: string; v: string; tone: "rose" | "emerald" }) {
+  return (
+    <div className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
+      <div className="text-[10px] uppercase tracking-wider text-ink-400">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone === "rose" ? "text-rose-600" : "text-emerald-600"}`}>{v}</div>
+    </div>
   );
 }
 

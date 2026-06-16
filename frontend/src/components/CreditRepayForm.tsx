@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+import DateField from "./DateField";
 import Modal from "./Modal";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
@@ -172,7 +173,7 @@ export default function CreditRepayForm({ open, onClose }: Props) {
 
               <label className="block">
                 <span className="text-xs text-ink-500">日期</span>
-                <input className="input mt-0.5" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+                <DateField value={occurredOn} onChange={setOccurredOn} className="mt-0.5" />
               </label>
 
               <label className="block">

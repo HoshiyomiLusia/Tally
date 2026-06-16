@@ -16,6 +16,12 @@ function fmt(y: number, m: number): string {
   return `${y}-${String(m).padStart(2, "0")}`;
 }
 
+function shiftMonth(v: string, delta: number): string {
+  const { y, m } = parse(v);
+  const d = new Date(y, m - 1 + delta, 1);
+  return fmt(d.getFullYear(), d.getMonth() + 1);
+}
+
 export default function MonthPicker({ value, onChange, className = "" }: Props) {
   const [open, setOpen] = useState(false);
   const [yearShown, setYearShown] = useState(() => parse(value).y);
@@ -48,8 +54,16 @@ export default function MonthPicker({ value, onChange, className = "" }: Props) 
   const thisY = today.getFullYear();
   const thisM = today.getMonth() + 1;
 
+  const atCurrent = cur.y > thisY || (cur.y === thisY && cur.m >= thisM);
+
   return (
-    <div ref={wrapRef} className={`relative ${className}`}>
+    <div ref={wrapRef} className={`relative flex items-center gap-1 ${className}`}>
+      <button
+        type="button"
+        onClick={() => onChange(shiftMonth(value, -1))}
+        aria-label="上个月"
+        className="rounded-lg border border-ink-200 p-2 text-ink-500 hover:border-ink-400 hover:text-ink-700 dark:border-ink-700 dark:hover:border-ink-500 dark:hover:text-ink-200"
+      ><ChevronLeft size={16} /></button>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -58,9 +72,16 @@ export default function MonthPicker({ value, onChange, className = "" }: Props) 
         <Calendar size={14} className="text-ink-500" />
         <span>{cur.y} 年 {cur.m} 月</span>
       </button>
+      <button
+        type="button"
+        onClick={() => { if (!atCurrent) onChange(shiftMonth(value, 1)); }}
+        disabled={atCurrent}
+        aria-label="下个月"
+        className="rounded-lg border border-ink-200 p-2 text-ink-500 hover:border-ink-400 hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-30 dark:border-ink-700 dark:hover:border-ink-500 dark:hover:text-ink-200"
+      ><ChevronRight size={16} /></button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-64 rounded-xl border border-ink-200 bg-white p-3 shadow-xl dark:border-ink-700 dark:bg-ink-800">
+        <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-xl border border-ink-200 bg-white p-3 shadow-xl dark:border-ink-700 dark:bg-ink-800">
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"

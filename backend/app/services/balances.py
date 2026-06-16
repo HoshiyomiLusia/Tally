@@ -50,6 +50,64 @@ async def loan_balances(session: AsyncSession, user_id: int) -> dict[tuple[int, 
     return {(cid, code): int(s or 0) for cid, code, s in rows if s}
 
 
+async def investment_balances(session: AsyncSession, user_id: int) -> dict[tuple[int, str], int]:
+    """每 (position_id, currency) 的剩余成本: Σinvest_buy - Σinvest_sell.
+    >0 = 还持有这么多本金; ==0 = 已清仓."""
+    signed = case(
+        (Transaction.kind == "invest_buy", Transaction.amount),
+        (Transaction.kind == "invest_sell", -Transaction.amount),
+        else_=0,
+    )
+    rows = (
+        await session.execute(
+            select(Transaction.position_id, Transaction.currency_code, func.sum(signed))
+            .where(Transaction.user_id == user_id, Transaction.position_id.is_not(None))
+            .group_by(Transaction.position_id, Transaction.currency_code)
+        )
+    ).all()
+    return {(pid, code): int(s or 0) for pid, code, s in rows if s}
+
+
+async def all_wallet_investment_summary(session: AsyncSession, user_id: int) -> dict[int, tuple[int, int]]:
+    """每钱包 (invest_buy_total, invest_sell_total) —— 投资买入像借出一样压低物理余额,
+    卖出像还款一样抬回物理余额. 不与"借出"混在一起."""
+    rows = (
+        await session.execute(
+            select(Transaction.wallet_id, Transaction.kind, func.sum(Transaction.amount))
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.kind.in_(("invest_buy", "invest_sell")),
+            )
+            .group_by(Transaction.wallet_id, Transaction.kind)
+        )
+    ).all()
+    out: dict[int, list[int]] = {}
+    for wid, kind, total in rows:
+        bucket = out.setdefault(int(wid), [0, 0])
+        if kind == "invest_buy":
+            bucket[0] = int(total or 0)
+        else:
+            bucket[1] = int(total or 0)
+    return {wid: (b[0], b[1]) for wid, b in out.items()}
+
+
+async def wallet_investment_summary(session: AsyncSession, user_id: int, wallet_id: int) -> tuple[int, int]:
+    """单钱包 (invest_buy_total, invest_sell_total)."""
+    invest_out = (await session.execute(
+        select(func.sum(Transaction.amount)).where(
+            Transaction.user_id == user_id, Transaction.wallet_id == wallet_id,
+            Transaction.kind == "invest_buy",
+        )
+    )).scalar() or 0
+    invest_in = (await session.execute(
+        select(func.sum(Transaction.amount)).where(
+            Transaction.user_id == user_id, Transaction.wallet_id == wallet_id,
+            Transaction.kind == "invest_sell",
+        )
+    )).scalar() or 0
+    return int(invest_out), int(invest_in)
+
+
 async def all_wallet_loan_summary(session: AsyncSession, user_id: int) -> dict[int, tuple[int, int]]:
     """Per-wallet (loan_out_total, loan_repayment_total) for ALL wallets at once,
     按 attributed_wallet_id (没设就用 wallet_id) 归集 —— 让"名义转移"生效."""

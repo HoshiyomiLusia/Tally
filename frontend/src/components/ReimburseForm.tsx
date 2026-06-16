@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import DateField from "./DateField";
 import Modal from "./Modal";
 
 import {
@@ -260,7 +261,7 @@ export default function ReimburseForm({ open, onClose }: Props) {
 
             <label className="block">
               <span className="text-xs text-ink-500">日期</span>
-              <input className="input mt-0.5" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+              <DateField value={occurredOn} onChange={setOccurredOn} className="mt-0.5" />
             </label>
 
             <label className="block">

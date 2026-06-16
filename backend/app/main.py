@@ -14,8 +14,8 @@ from .core.config import settings
 from .core.db import SessionLocal
 from .routers import (
     account, attachments, auth, budgets, categories, contacts, currencies,
-    dashboard, exchange_rates, io, loans, merchants, reconciliation, recurring,
-    stats, transactions, wallets,
+    dashboard, exchange_rates, investments, io, loans, merchants, reconciliation,
+    recurring, stats, transactions, wallets,
 )
 from .services.fx import refresh_rates, schedule_refresh
 from .services.seed import seed_currencies
@@ -68,6 +68,7 @@ api.include_router(merchants.router)
 api.include_router(contacts.router)
 api.include_router(transactions.router)
 api.include_router(loans.router)
+api.include_router(investments.router)
 api.include_router(reconciliation.router)
 api.include_router(budgets.router)
 api.include_router(recurring.router)

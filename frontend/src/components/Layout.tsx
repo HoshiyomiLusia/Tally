@@ -1,6 +1,6 @@
 import {
   HandCoins, LayoutDashboard, ListChecks, Moon,
-  Settings as SettingsIcon, Sun, Wallet,
+  Settings as SettingsIcon, Sun, TrendingUp, Wallet,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
@@ -11,6 +11,7 @@ const nav = [
   { to: "/transactions", label: "账单", icon: ListChecks },
   { to: "/wallets", label: "Wallet", icon: Wallet },
   { to: "/loans", label: "借贷", icon: HandCoins },
+  { to: "/investments", label: "投资", icon: TrendingUp },
   { to: "/settings", label: "设置", icon: SettingsIcon },
 ];
 

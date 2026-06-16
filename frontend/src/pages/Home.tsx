@@ -1,5 +1,7 @@
+import { BarChart3 } from "lucide-react";
 import { useState } from "react";
 
+import AllTimeAnalysis from "../components/AllTimeAnalysis";
 import MonthPicker from "../components/MonthPicker";
 import { BalanceModule, RecurringForecast } from "../components/Overview";
 import RecurringPanel from "../components/RecurringPanel";
@@ -16,6 +18,7 @@ function thisMonth(): string {
 //   ③ 周期账单 = 预测时间轴 + 本月/上月对比
 export default function Home() {
   const [month, setMonth] = useState(thisMonth());
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <div className="space-y-5 px-4 py-5 md:px-6">
@@ -28,7 +31,16 @@ export default function Home() {
       <section className="card">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold tracking-tight">仪表盘</h2>
-          <MonthPicker value={month} onChange={setMonth} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-medium hover:border-ink-400 dark:border-ink-700 dark:bg-ink-800 dark:hover:border-ink-500"
+            >
+              <BarChart3 size={14} className="text-ink-500" /> 总分析
+            </button>
+            <MonthPicker value={month} onChange={setMonth} />
+          </div>
         </div>
         <Stats embedded hideHeader month={month} onMonthChange={setMonth} />
       </section>
@@ -42,6 +54,8 @@ export default function Home() {
           <RecurringPanel month={month} />
         </div>
       </section>
+
+      {showAll && <AllTimeAnalysis onClose={() => setShowAll(false)} />}
     </div>
   );
 }

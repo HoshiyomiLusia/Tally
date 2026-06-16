@@ -3,7 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-TransactionKind = Literal["expense", "income", "transfer_out", "transfer_in", "loan_out", "loan_repayment"]
+# 必须与 models.transaction.TRANSACTION_KINDS 保持一致:
+# 漏掉 invest_buy/invest_sell 会让含投资记录的页在 TransactionRead 响应校验时 500 (账单页空白).
+TransactionKind = Literal[
+    "expense", "income", "transfer_out", "transfer_in",
+    "loan_out", "loan_repayment", "invest_buy", "invest_sell",
+]
 
 
 class TransactionCreate(BaseModel):

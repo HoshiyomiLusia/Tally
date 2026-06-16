@@ -5,7 +5,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
 
-TRANSACTION_KINDS = ("expense", "income", "transfer_out", "transfer_in", "loan_out", "loan_repayment")
+TRANSACTION_KINDS = (
+    "expense", "income", "transfer_out", "transfer_in",
+    "loan_out", "loan_repayment",
+    "invest_buy", "invest_sell",
+)
 
 
 class Transaction(Base):
@@ -17,6 +21,7 @@ class Transaction(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True)
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    position_id: Mapped[int | None] = mapped_column(ForeignKey("positions.id", ondelete="SET NULL"), nullable=True, index=True)
     amount: Mapped[int] = mapped_column(Integer)
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
     kind: Mapped[str] = mapped_column(String(16), default="expense")
