@@ -2,8 +2,11 @@ import axios, { AxiosError } from "axios";
 
 export const TOKEN_KEY = "tally.token";
 
+// 部署基路径: Vite build 时由 base 注入 (根部署 "/", 子路径如 "/tally/")
+export const BASE_PATH = import.meta.env.BASE_URL || "/";
+
 export const api = axios.create({
-  baseURL: "/api",
+  baseURL: BASE_PATH.replace(/\/+$/, "") + "/api",
 });
 
 api.interceptors.request.use((cfg) => {
@@ -17,8 +20,9 @@ api.interceptors.response.use(
   (e: AxiosError) => {
     if (e.response?.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
-      if (location.pathname !== "/login" && location.pathname !== "/register") {
-        location.href = "/login";
+      const p = location.pathname;
+      if (!p.endsWith("/login") && !p.endsWith("/register")) {
+        location.href = BASE_PATH + "login";
       }
     }
     return Promise.reject(e);

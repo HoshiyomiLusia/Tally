@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # 子路径部署: 在本机 .env 里设 VITE_BASE=/tally/ 之类 (带首尾斜杠); 默认 / 为根部署
+        VITE_BASE: "${VITE_BASE:-/}"
     container_name: tally
     restart: unless-stopped
     ports:
