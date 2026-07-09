@@ -263,9 +263,10 @@ async def unsplit(
     ).scalars().all()
     if not rows:
         raise HTTPException(404, "split group not found")
-    # 防呆: 这是借贷分摊撤销接口, 不能拿它去动投资卖出组(invest_sell + 盈亏)
-    if any(t.kind in ("invest_buy", "invest_sell") or t.position_id is not None for t in rows):
-        raise HTTPException(400, "该分组不是借贷分摊, 不能在这里撤销")
+    # 防呆: 这是借贷分摊撤销接口. AA 分摊组 = my_share 支出 + 参与人的 loan_out;
+    # 投资卖出组(invest_sell+盈亏)和坏账核销组(坏账损失+loan_repayment)不能拿它撤销, 否则会并成一笔损坏账务.
+    if any(t.kind in ("invest_buy", "invest_sell", "loan_repayment") or t.position_id is not None for t in rows):
+        raise HTTPException(400, "该分组不是借贷分摊(可能是投资卖出或坏账核销), 不能在这里撤销")
 
     base = next((t for t in rows if t.kind == "expense"), None) or rows[0]
     total = sum(t.amount for t in rows)

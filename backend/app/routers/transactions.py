@@ -333,6 +333,10 @@ async def update_transaction(
     if not t or t.user_id != user.id:
         raise HTTPException(404)
     updates = payload.model_dump(exclude_unset=True)
+    # 转账/借贷/投资各腿有配对不变量: 通用接口不允许改金额/钱包(会让配对腿失配或持仓归属错乱).
+    # 前端已对这些类型隐藏铅笔, 这里再挡一道防绕过 UI 直接 PATCH.
+    if t.kind not in ("expense", "income") and any(k in updates for k in ("amount", "wallet_id")):
+        raise HTTPException(400, "转账 / 借贷 / 投资交易请在对应功能里修改, 不能在此改金额或钱包")
     if "wallet_id" in updates:
         await _check_wallet(session, user, updates["wallet_id"])
     if "amount" in updates and updates["amount"] is not None and updates["amount"] <= 0:
@@ -378,6 +382,22 @@ async def delete_transaction(
     else:
         if t.position_id is not None:
             pos_ids.add(t.position_id)
+        # 删"期初买入(opening)"那笔时, 把与它 1:1 配套的对账注入收入一并删掉,
+        # 否则那笔收入变成孤儿(挂 opening_for_position_id 但对应买入没了) -> 净值虚高.
+        # 只删一条: 同一持仓可能有多笔同额同日同钱包的期初买入, 各配一笔收入, 不能一次全删。
+        if t.kind == "invest_buy" and t.position_id is not None:
+            opening = (await session.execute(
+                select(Transaction).where(
+                    Transaction.user_id == user.id,
+                    Transaction.opening_for_position_id == t.position_id,
+                    Transaction.wallet_id == t.wallet_id,
+                    Transaction.amount == t.amount,
+                    Transaction.currency_code == t.currency_code,
+                    Transaction.occurred_on == t.occurred_on,
+                ).limit(1)
+            )).scalars().first()
+            if opening is not None:
+                await session.delete(opening)
         await session.delete(t)
     await session.flush()
     # 删掉"清仓那笔卖出"后持仓不能卡在"已清仓": 按剩余成本重算 status

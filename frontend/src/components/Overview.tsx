@@ -22,7 +22,8 @@ interface CrossTotal {
   total_spendable: number;    // 物理余额 (非信用卡, 系统 - 借出 + 还款 - 投资 + 卖出)
   total_credit_debt: number;  // 信用卡待还
   total_invested: number;     // 投资中 (各持仓剩余成本)
-  breakdown: { currency_code: string; net: number; spendable: number; credit_debt: number; invested: number; rate: number; converted: number }[];
+  breakdown: { currency_code: string; net: number; spendable: number; credit_debt: number; invested: number; rate: number; converted: number; has_rate?: boolean }[];
+  missing_rate_currencies?: string[];  // 有余额但缺到主币种汇率的货币, 未计入 total
 }
 
 function thisMonthStr(): string {
@@ -125,6 +126,11 @@ export function BalanceModule() {
           ))}
         </div>
       </div>
+      {(cross.data?.missing_rate_currencies ?? []).length > 0 && (
+        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
+          ⚠ 缺 {(cross.data?.missing_rate_currencies ?? []).join(" / ")} → {baseCurrency} 的汇率,这些货币余额<b>未计入</b>上方总额。去「设置」录入汇率。
+        </div>
+      )}
       {/* 移动端: 折叠的次要指标 (2 列小格) */}
       <div className={`mt-3 grid-cols-2 gap-2 sm:hidden ${showDetails ? "grid" : "hidden"}`}>
         {metricItems.map((m) => (
@@ -140,11 +146,13 @@ export function BalanceModule() {
           <div key={b.currency_code} className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
             <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-ink-400">
               <span>{b.currency_code}</span>
-              {b.currency_code !== baseCurrency && <span>× {b.rate.toFixed(4)}</span>}
+              {b.currency_code !== baseCurrency && (b.has_rate === false
+                ? <span className="text-amber-600 dark:text-amber-400">缺汇率</span>
+                : <span>× {b.rate.toFixed(4)}</span>)}
             </div>
             <div className={`mt-0.5 text-sm font-semibold ${b.net < 0 ? "text-rose-600 dark:text-rose-300" : ""}`}>
               真实 {formatAmount(b.net, b.currency_code, currencies.data)}
-              {b.currency_code !== baseCurrency && (
+              {b.currency_code !== baseCurrency && b.has_rate !== false && (
                 <span className="ml-1 text-[10px] font-normal text-ink-400">≈{formatAmount(b.converted, baseCurrency, currencies.data)}</span>
               )}
             </div>

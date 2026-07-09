@@ -56,6 +56,7 @@ class CrossCurrencyTotal(BaseModel):
     total_invested: int = 0     # 投资中合计 (各持仓剩余成本)
     total_real: int = 0         # 兼容旧字段 = 真实余额
     breakdown: list[dict]
+    missing_rate_currencies: list[str] = []  # 有余额但缺到主币种汇率的货币(其贡献按 0 计, 前端需提示)
 
 
 class CurrencySummary(BaseModel):
@@ -544,13 +545,29 @@ async def cross_currency_total(
             "currency_code": code,
             "net": net, "spendable": spend, "credit_debt": credit, "invested": invested,
             "rate": rate, "converted": conv_net,
+            "has_rate": code == base or bool(rates.get((code, base))),
             # 向后兼容旧字段名
             "balance": spend, "balance_real": net, "converted_real": conv_net,
         })
+    # 有余额却没有到主币种汇率的货币: 上面按 0 折算(= 没算进 total), 单独列出让前端提示, 不要静默吞掉。
+    # 注意要看四个口径任一非零, 不能只看 net: 某货币可能 net=0(现金 +1000 与信用卡 -1000 抵消)
+    # 却仍有非零的物理/待还/投资分量, 那些分量同样会被静默折成 0。
+    missing = [
+        c for c in sorted(codes)
+        if c != base
+        and not rates.get((c, base))
+        and (
+            by_net.get(c, 0) != 0
+            or by_spend.get(c, 0) != 0
+            or by_credit.get(c, 0) != 0
+            or by_invest.get(c, 0) != 0
+        )
+    ]
     return CrossCurrencyTotal(
         base_currency=base,
         total=total, total_spendable=total_spendable, total_credit_debt=total_credit,
         total_invested=total_invested,
         total_real=total,  # 兼容旧字段: real 即真实余额
         breakdown=breakdown,
+        missing_rate_currencies=missing,
     )

@@ -34,6 +34,7 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
     budgets = (await session.execute(select(Budget).where(Budget.user_id == user.id))).scalars().all()
     positions = (await session.execute(select(Position).where(Position.user_id == user.id))).scalars().all()
     txs = (await session.execute(select(Transaction).where(Transaction.user_id == user.id))).scalars().all()
+    attachments = (await session.execute(select(Attachment).where(Attachment.user_id == user.id))).scalars().all()
 
     def row(obj, fields):
         return {f: getattr(obj, f) for f in fields}
@@ -54,6 +55,9 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
             "kind", "occurred_on", "note", "split_group_id", "is_recurring", "recurrence_period_days",
             "recurrence_group_id", "transfer_pair_id",
         ]) for t in txs],
+        # 附件只导元信息(引用磁盘上 receipts/<uid>/<stored_name> 的文件, 二进制不塞 JSON).
+        # 同机还原时文件仍在, 关联得以恢复; 跨机迁移需另行拷贝 receipts 目录.
+        "attachments": [row(a, ["id", "transaction_id", "original_name", "stored_name", "mime_type", "size"]) for a in attachments],
     }
 
 
@@ -277,5 +281,16 @@ async def import_json(
             if obj_id and pair_id:
                 obj = await session.get(Transaction, obj_id)
                 obj.transfer_pair_id = pair_id
+
+    # 附件行按新交易 id 重建(文件本身在磁盘, stored_name 不变); 交易没导入的跳过
+    for a in d.get("attachments", []):
+        tid = tx_id_map.get(a["transaction_id"])
+        if tid is None:
+            continue
+        session.add(Attachment(
+            user_id=user.id, transaction_id=tid,
+            original_name=a.get("original_name", ""), stored_name=a["stored_name"],
+            mime_type=a.get("mime_type", ""), size=a.get("size", 0),
+        ))
 
     await session.commit()
