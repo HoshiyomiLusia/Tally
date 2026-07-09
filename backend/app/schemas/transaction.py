@@ -45,6 +45,7 @@ class TransactionRead(BaseModel):
     category_id: int | None
     merchant_id: int | None
     contact_id: int | None
+    position_id: int | None
     amount: int
     currency_code: str
     kind: TransactionKind
@@ -68,5 +69,5 @@ class TransactionFilter(BaseModel):
     contact_id: int | None = None
     is_recurring: bool | None = None
     q: str | None = None
-    limit: int = Field(default=100, ge=1, le=500)
+    limit: int = Field(default=100, ge=1, le=5000)
     offset: int = 0

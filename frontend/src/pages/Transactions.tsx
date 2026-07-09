@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Pencil, Plus, Split, Trash2, TrendingUp, Zap } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Filter, Pencil, Plus, Split, Trash2, TrendingUp, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import CreditRepayForm from "../components/CreditRepayForm";
+import Modal from "../components/Modal";
 import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
 import TransferForm from "../components/TransferForm";
-import { api, type Category, type Contact, type Currency, type Merchant, type Transaction, type Wallet } from "../lib/api";
+import { api, type Category, type Contact, type Currency, type Merchant, type Position, type Transaction, type Wallet } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { useAuth } from "../lib/auth";
 import { formatAmount, todayIso } from "../lib/format";
 
@@ -31,6 +33,8 @@ const SPECIAL_TITLE: Record<string, { emoji: string; name: string }> = {
   transfer_out: { emoji: "🔁", name: "转账转出" },
   loan_out: { emoji: "💸", name: "借出" },
   loan_repayment: { emoji: "💰", name: "借贷还款" },
+  invest_buy: { emoji: "📈", name: "投资买入" },
+  invest_sell: { emoji: "📉", name: "投资卖出" },
 };
 
 const PAGE_SIZES = [25, 50, 100, 200];
@@ -54,6 +58,7 @@ export default function Transactions() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [reimburseOpen, setReimburseOpen] = useState(false);
   const [creditRepayOpen, setCreditRepayOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);  // 移动端筛选弹窗
   // 滑动时把右下角"+"收到屏幕右外侧 (不挡内容); 停下约 0.4s 后自动滑回来 (随时可点)
   const [fabTucked, setFabTucked] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -109,6 +114,7 @@ export default function Transactions() {
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts?include_archived=true")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+  const positions = useQuery({ queryKey: ["positions"], queryFn: async () => (await api.get<Position[]>("/investments/positions")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
   const frequent = useQuery({ queryKey: ["frequent"], queryFn: async () => (await api.get<FrequentItem[]>("/transactions/frequent?min_count=3&limit=12")).data });
 
@@ -140,10 +146,7 @@ export default function Transactions() {
       note: "",
     }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["frequent"] });
+      invalidateMoney(qc);
       qc.invalidateQueries({ queryKey: ["merchants"] });
     },
   });
@@ -152,6 +155,7 @@ export default function Transactions() {
   const walletName = (id: number) => wallets.data?.find((w) => w.id === id)?.name ?? "?";
   const merchantName = (id: number | null) => merchants.data?.find((m) => m.id === id)?.name ?? "";
   const contactName = (id: number | null) => contacts.data?.find((c) => c.id === id)?.name ?? "";
+  const posName = (id: number | null) => positions.data?.find((p) => p.id === id)?.name ?? "";
 
   const grouped = useMemo(() => {
     const m = new Map<string, Transaction[]>();
@@ -166,25 +170,68 @@ export default function Transactions() {
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/transactions/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      invalidateMoney(qc);
     },
   });
   const unsplit = useMutation({
     mutationFn: async (group_id: string) => api.post(`/loans/unsplit/${group_id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      invalidateMoney(qc);
     },
   });
 
   const total = totalCount.data ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasMore = page + 1 < totalPages;
+
+  const activeFilters = [walletId, currency, kind, q, parentCatId, childCatId, start, end].filter(Boolean).length;
+  const clearFilters = () => { setWalletId(""); setCurrency(""); setKind(""); setQ(""); setParentCatId(""); setChildCatId(""); setStart(""); setEnd(""); };
+  // 同一组筛选控件: 桌面平铺、移动端塞进弹窗, 两处共用
+  const renderFilters = () => (
+    <>
+      <select className="input" value={walletId} onChange={(e) => setWalletId(e.target.value)}>
+        <option value="">所有 Wallet</option>
+        {(wallets.data ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+      <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+        <option value="">所有币种</option>
+        {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+      </select>
+      <select className="input" value={kind} onChange={(e) => { setKind(e.target.value); setParentCatId(""); setChildCatId(""); }}>
+        <option value="">所有类型</option>
+        <option value="expense">支出</option>
+        <option value="income">收入</option>
+        <option value="loan_out">借出</option>
+        <option value="loan_repayment">还款</option>
+      </select>
+      <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="备注 / 商家" />
+      <select className="input" value={parentCatId} onChange={(e) => setParentCatId(e.target.value)}>
+        <option value="">所有大类</option>
+        {(kind === "" || kind === "expense") && (
+          <optgroup label="支出">
+            {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "expense").map((c) => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </optgroup>
+        )}
+        {(kind === "" || kind === "income") && (
+          <optgroup label="收入">
+            {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "income").map((c) => (
+              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      <select className="input" value={childCatId} onChange={(e) => setChildCatId(e.target.value)} disabled={!parentCatId}>
+        <option value="">{parentCatId ? "全部子分类" : "先选大类"}</option>
+        {(categories.data ?? []).filter((c) => parentCatId && c.parent_id === Number(parentCatId)).map((c) => (
+          <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+        ))}
+      </select>
+      <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} placeholder="开始" />
+      <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} placeholder="结束" />
+    </>
+  );
 
   return (
     <div className="px-4 py-5 pb-28 md:px-6">
@@ -215,58 +262,38 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="card mb-3 space-y-2">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <select className="input" value={walletId} onChange={(e) => setWalletId(e.target.value)}>
-            <option value="">所有 Wallet</option>
-            {(wallets.data ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="">所有币种</option>
-            {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-          </select>
-          <select className="input" value={kind} onChange={(e) => { setKind(e.target.value); setParentCatId(""); setChildCatId(""); }}>
-            <option value="">所有类型</option>
-            <option value="expense">支出</option>
-            <option value="income">收入</option>
-            <option value="loan_out">借出</option>
-            <option value="loan_repayment">还款</option>
-          </select>
-          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="备注关键词" />
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <select className="input" value={parentCatId} onChange={(e) => setParentCatId(e.target.value)}>
-            <option value="">所有大类</option>
-            {(kind === "" || kind === "expense") && (
-              <optgroup label="支出">
-                {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "expense").map((c) => (
-                  <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-                ))}
-              </optgroup>
-            )}
-            {(kind === "" || kind === "income") && (
-              <optgroup label="收入">
-                {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "income").map((c) => (
-                  <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <select
-            className="input"
-            value={childCatId}
-            onChange={(e) => setChildCatId(e.target.value)}
-            disabled={!parentCatId}
-          >
-            <option value="">{parentCatId ? "全部子分类" : "先选大类"}</option>
-            {(categories.data ?? []).filter((c) => parentCatId && c.parent_id === Number(parentCatId)).map((c) => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
-            ))}
-          </select>
-          <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} placeholder="开始" />
-          <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} placeholder="结束" />
-        </div>
+      {/* 桌面: 筛选控件直接平铺 */}
+      <div className="card mb-3 hidden grid-cols-4 gap-2 sm:grid">
+        {renderFilters()}
       </div>
+
+      {/* 移动端: 收成一个"筛选"按钮, 点开弹出 */}
+      <button
+        onClick={() => setFilterOpen(true)}
+        className="card mb-3 flex w-full items-center justify-between sm:hidden"
+      >
+        <span className="flex items-center gap-2 font-medium">
+          <Filter size={16} /> 筛选
+          {activeFilters > 0 && (
+            <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">{activeFilters}</span>
+          )}
+        </span>
+        <span className="text-xs text-ink-500">{activeFilters > 0 ? "已筛选 · 点击修改" : "全部 · 点击筛选"}</span>
+      </button>
+
+      {filterOpen && (
+        <Modal onClose={() => setFilterOpen(false)} title="筛选" maxW="max-w-sm">
+          <div className="grid grid-cols-1 gap-3">
+            {renderFilters()}
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button onClick={clearFilters} disabled={activeFilters === 0} className="btn-ghost flex-1 disabled:opacity-40">
+              清除{activeFilters > 0 ? `（${activeFilters}）` : ""}
+            </button>
+            <button onClick={() => setFilterOpen(false)} className="btn-primary flex-1">查看结果</button>
+          </div>
+        </Modal>
+      )}
 
       <div className="space-y-3">
         {grouped.length === 0 && <div className="card text-sm text-ink-500">没有符合条件的交易</div>}
@@ -313,11 +340,12 @@ export default function Transactions() {
                 const c = catName(t.category_id);
                 const m = merchantName(t.merchant_id);
                 const ct = contactName(t.contact_id);
-                const isPositive = t.kind === "income" || t.kind === "loan_repayment" || t.kind === "transfer_in";
+                const pn = (t.kind === "invest_buy" || t.kind === "invest_sell") ? posName(t.position_id) : "";
+                const isPositive = t.kind === "income" || t.kind === "loan_repayment" || t.kind === "transfer_in" || t.kind === "invest_sell";
                 const amtColor =
                   t.kind === "income" || t.kind === "loan_repayment" ? "text-emerald-600"
                   : t.kind === "loan_out" ? "text-amber-600"
-                  : t.kind.startsWith("transfer") ? "text-sky-600"
+                  : (t.kind.startsWith("transfer") || t.kind.startsWith("invest")) ? "text-sky-600"
                   : "text-rose-600";
                 const special = SPECIAL_TITLE[t.kind];
                 const titleEmoji = special ? special.emoji : (c?.emoji ?? "");
@@ -329,6 +357,7 @@ export default function Transactions() {
                         <span>{titleEmoji}</span>
                         <span className="font-medium">{titleName}</span>
                         {m && <span className="text-xs text-ink-500">· {m}</span>}
+                        {pn && <span className="text-xs text-ink-500">· {pn}</span>}
                         {ct && <span className="rounded bg-amber-50 px-1 text-[10px] text-amber-700">@{ct}</span>}
                         {t.split_group_id && <span className="rounded bg-purple-50 px-1 text-[10px] text-purple-700">分摊</span>}
                         {t.is_recurring && <span className="rounded bg-blue-50 px-1 text-[10px] text-blue-700">周期</span>}
@@ -348,7 +377,9 @@ export default function Transactions() {
                           title="撤销分摊"
                         ><Split size={14} /></button>
                       )}
-                      <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
+                      {(t.kind === "expense" || t.kind === "income") && (
+                        <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
+                      )}
                       <button
                         onClick={() => {
                           const msg = t.split_group_id ? "这是分摊订单，删除会一并清掉该组所有条目，确认？" : "删除这笔交易？";

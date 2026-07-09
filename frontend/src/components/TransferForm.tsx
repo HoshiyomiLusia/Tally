@@ -3,6 +3,7 @@ import { ArrowRight, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { parseAmount, todayIso } from "../lib/format";
 import DateField from "./DateField";
 import Modal from "./Modal";
@@ -120,9 +121,7 @@ export default function TransferForm({ open, onClose }: Props) {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {

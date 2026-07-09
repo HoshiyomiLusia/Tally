@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, HandCoins, TrendingUp } from "lucide-react";
+import { CalendarClock, ChevronDown, HandCoins, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
@@ -37,6 +37,7 @@ export function BalanceModule() {
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => { if (user?.primary_currency_code) setBaseCurrency(user.primary_currency_code); }, [user?.primary_currency_code]);
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
+  const [showDetails, setShowDetails] = useState(false);  // 移动端: 折叠次要指标
 
   // 余额是当前值, 与所选月份无关 —— 固定用本月查 dashboard 拿 wallet_balances
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
@@ -77,9 +78,18 @@ export function BalanceModule() {
     return Array.from(m.entries());
   }, [dash.data]);
 
+  const fmtBase = (v: number) => formatAmount(v, baseCurrency, currencies.data);
+  const metricItems: { label: string; text: string; color: string }[] = [
+    { label: "物理余额", text: fmtBase(cross.data?.total_spendable ?? 0), color: "" },
+  ];
+  if (cross.data?.total_credit_debt) metricItems.push({ label: "信用卡待还", text: fmtBase(cross.data.total_credit_debt), color: "text-rose-500 dark:text-rose-300" });
+  if (cross.data?.total_invested) metricItems.push({ label: "投资中", text: fmtBase(cross.data.total_invested), color: "text-sky-600 dark:text-sky-400" });
+  if (loanNet.receivable > 0) metricItems.push({ label: "借贷 · 应收", text: fmtBase(loanNet.receivable), color: "text-emerald-600 dark:text-emerald-400" });
+  if (loanNet.payable > 0) metricItems.push({ label: "借贷 · 应付", text: fmtBase(loanNet.payable), color: "text-rose-500 dark:text-rose-300" });
+
   return (
     <>
-      {/* 资产总览: 左=标题+真实余额主数字, 右=次要指标. 同一行顶部对齐 */}
+      {/* 资产总览: 左=标题+真实余额主数字, 右(桌面)=次要指标; 移动端次要指标折进"详情" */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
@@ -96,39 +106,36 @@ export function BalanceModule() {
           <div className="text-3xl font-semibold tracking-tight">
             {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
           </div>
+          {/* 移动端: 折叠/展开次要指标 */}
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="mt-1.5 flex items-center gap-1 text-xs text-ink-500 hover:text-ink-700 dark:hover:text-ink-300 sm:hidden"
+          >
+            {showDetails ? "收起" : "详情"}
+            <ChevronDown size={13} className={`transition-transform ${showDetails ? "rotate-180" : ""}`} />
+          </button>
         </div>
-        <div className="shrink-0 space-y-1 text-right">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-400">物理余额</div>
-            <div className="text-sm font-semibold tracking-tight">{formatAmount(cross.data?.total_spendable ?? 0, baseCurrency, currencies.data)}</div>
-          </div>
-          {!!cross.data?.total_credit_debt && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-ink-400">信用卡待还</div>
-              <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(cross.data.total_credit_debt, baseCurrency, currencies.data)}</div>
+        {/* 桌面: 右侧次要指标常驻 */}
+        <div className="hidden shrink-0 space-y-1 text-right sm:block">
+          {metricItems.map((m) => (
+            <div key={m.label}>
+              <div className="text-[10px] uppercase tracking-wider text-ink-400">{m.label}</div>
+              <div className={`text-sm font-semibold tracking-tight ${m.color}`}>{m.text}</div>
             </div>
-          )}
-          {!!cross.data?.total_invested && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-ink-400">投资中</div>
-              <div className="text-sm font-semibold tracking-tight text-sky-600 dark:text-sky-400">{formatAmount(cross.data.total_invested, baseCurrency, currencies.data)}</div>
-            </div>
-          )}
-          {loanNet.receivable > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-ink-400">借贷 · 应收</div>
-              <div className="text-sm font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatAmount(loanNet.receivable, baseCurrency, currencies.data)}</div>
-            </div>
-          )}
-          {loanNet.payable > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-ink-400">借贷 · 应付</div>
-              <div className="text-sm font-semibold tracking-tight text-rose-500 dark:text-rose-300">{formatAmount(loanNet.payable, baseCurrency, currencies.data)}</div>
-            </div>
-          )}
+          ))}
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {/* 移动端: 折叠的次要指标 (2 列小格) */}
+      <div className={`mt-3 grid-cols-2 gap-2 sm:hidden ${showDetails ? "grid" : "hidden"}`}>
+        {metricItems.map((m) => (
+          <div key={m.label} className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
+            <div className="text-[10px] uppercase tracking-wider text-ink-400">{m.label}</div>
+            <div className={`text-sm font-semibold tracking-tight ${m.color}`}>{m.text}</div>
+          </div>
+        ))}
+      </div>
+      {/* 各币种明细: 桌面常驻, 移动端并入"详情" */}
+      <div className={`mt-2 gap-2 sm:grid sm:grid-cols-3 ${showDetails ? "grid grid-cols-2" : "hidden"}`}>
         {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0 || b.invested !== 0).map((b) => (
           <div key={b.currency_code} className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
             <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-ink-400">
@@ -182,8 +189,8 @@ export function BalanceModule() {
               <span className="text-sm font-medium text-ink-700 dark:text-ink-200">{code} 账户</span>
               <div className="flex flex-wrap items-baseline gap-x-2.5 text-xs">
                 <span className="text-ink-500">物理 <span className="font-medium text-ink-700 dark:text-ink-200">{formatAmount(spendTotal, code, currencies.data)}</span></span>
-                {loanTotal !== 0 && <span className="text-emerald-600 dark:text-emerald-400">借贷 {formatAmount(loanTotal, code, currencies.data)}</span>}
-                {investTotal !== 0 && <span className="text-sky-600 dark:text-sky-400">投资 {formatAmount(investTotal, code, currencies.data)}</span>}
+                {loanTotal !== 0 && <span className="hidden text-emerald-600 dark:text-emerald-400 sm:inline">借贷 {formatAmount(loanTotal, code, currencies.data)}</span>}
+                {investTotal !== 0 && <span className="hidden text-sky-600 dark:text-sky-400 sm:inline">投资 {formatAmount(investTotal, code, currencies.data)}</span>}
                 {debtTotal !== 0 && <span className="text-rose-500">待还 {formatAmount(debtTotal, code, currencies.data)}</span>}
                 <span className="text-ink-500">真实 <span className="text-sm font-bold text-ink-900 dark:text-ink-50">{formatAmount(realTotal, code, currencies.data)}</span></span>
               </div>
@@ -246,13 +253,14 @@ interface ForecastItem {
 // 前后 7 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
   const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
+  const [back, setBack] = useState(7);  // 回看天数, 可点按钮往前扩
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({
-    queryKey: ["recurring-upcoming", "window"],
-    queryFn: async () => (await api.get<ForecastItem[]>("/recurring/upcoming?back=7&days=7")).data,
+    queryKey: ["recurring-upcoming", "window", back],
+    queryFn: async () => (await api.get<ForecastItem[]>(`/recurring/upcoming?back=${back}&days=7`)).data,
   });
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
@@ -269,8 +277,12 @@ export function RecurringForecast() {
 
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前后 7 天</h3>
+      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 7 天</h3>
       <div className="card divide-y divide-ink-100 p-0">
+        <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
+          <button onClick={() => setBack((b) => b + 7)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↑ 再往前 7 天</button>
+          {back > 7 && <button onClick={() => setBack(7)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
+        </div>
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
         )}

@@ -22,7 +22,7 @@ export default function Modal({ onClose, title, children, maxW = "max-w-lg" }: P
         downOnBackdrop.current = false;
       }}
     >
-      <div className={`anim-sheet max-h-[92vh] w-full ${maxW} overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl dark:bg-ink-900`}>
+      <div className={`anim-sheet max-h-[92dvh] w-full ${maxW} overflow-y-auto rounded-t-2xl bg-white p-5 pb-24 sm:rounded-2xl sm:pb-5 dark:bg-ink-900`}>
         {title !== undefined && (
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="text-lg font-semibold">{title}</div>

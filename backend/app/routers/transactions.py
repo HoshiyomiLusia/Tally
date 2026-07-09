@@ -2,12 +2,12 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import delete as sql_delete, func, select
+from sqlalchemy import case, delete as sql_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
+from ..models import Category, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 from .recurring import resolve_recurrence_group
 
@@ -77,7 +77,20 @@ async def _apply_filters(stmt, f: TransactionFilter, user: User, session: AsyncS
     if f.is_recurring is not None:
         stmt = stmt.where(Transaction.is_recurring == f.is_recurring)
     if f.q:
-        stmt = stmt.where(Transaction.note.ilike(f"%{f.q}%"))
+        like = f"%{f.q}%"
+        # 关键词同时匹配 备注 OR 商家(名称 / 别名)
+        merchant_ids = (
+            await session.execute(
+                select(Merchant.id).where(
+                    Merchant.user_id == user.id,
+                    or_(Merchant.name.ilike(like), Merchant.aliases.ilike(like)),
+                )
+            )
+        ).scalars().all()
+        cond = Transaction.note.ilike(like)
+        if merchant_ids:
+            cond = or_(cond, Transaction.merchant_id.in_(merchant_ids))
+        stmt = stmt.where(cond)
     return stmt
 
 
@@ -120,6 +133,9 @@ async def create_transaction(
         raise HTTPException(400, "currency must match wallet")
     if payload.amount <= 0:
         raise HTTPException(400, "amount must be positive")
+    # 通用记账只接受普通收支; 转账/借贷/投资走各自专门流程 (否则会造出没有配对/归属的悬挂行)
+    if payload.kind not in ("expense", "income"):
+        raise HTTPException(400, "该类型请用对应流程 (转账 / 借贷 / 投资)")
 
     data = payload.model_dump()
     source_id = data.pop("recurrence_source_id", None)
@@ -337,7 +353,15 @@ async def delete_transaction(
     t = await session.get(Transaction, tid)
     if not t or t.user_id != user.id:
         raise HTTPException(404)
+    pos_ids: set[int] = set()  # 删的若是投资交易, 事后要重算这些持仓的清仓状态
     if t.split_group_id:
+        rows = (await session.execute(
+            select(Transaction).where(
+                Transaction.user_id == user.id,
+                Transaction.split_group_id == t.split_group_id,
+            )
+        )).scalars().all()
+        pos_ids = {r.position_id for r in rows if r.position_id is not None}
         await session.execute(
             sql_delete(Transaction).where(
                 Transaction.user_id == user.id,
@@ -352,5 +376,21 @@ async def delete_transaction(
             )
         )
     else:
+        if t.position_id is not None:
+            pos_ids.add(t.position_id)
         await session.delete(t)
+    await session.flush()
+    # 删掉"清仓那笔卖出"后持仓不能卡在"已清仓": 按剩余成本重算 status
+    for pid in pos_ids:
+        pos = await session.get(Position, pid)
+        if pos and pos.user_id == user.id:
+            signed = case(
+                (Transaction.kind == "invest_buy", Transaction.amount),
+                (Transaction.kind == "invest_sell", -Transaction.amount),
+                else_=0,
+            )
+            remaining = int((await session.execute(
+                select(func.sum(signed)).where(Transaction.position_id == pid)
+            )).scalar() or 0)
+            pos.status = "open" if remaining > 0 else "closed"
     await session.commit()

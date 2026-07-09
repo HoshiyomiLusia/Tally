@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
+import { creditDebt } from "../lib/wallet";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 import DateField from "./DateField";
 import Modal from "./Modal";
@@ -35,8 +37,8 @@ export default function CreditRepayForm({ open, onClose }: Props) {
   );
   const card = wallets.data?.find((w) => w.id === cardId) ?? null;
   const digits = currencies.data?.find((c) => c.code === card?.currency_code)?.decimal_digits ?? 2;
-  // 信用卡待还 = -系统余额 (刷卡让余额变负)
-  const debt = card ? -card.balance : 0;
+  // 信用卡待还 = 实际刷卡额 − 已还 (含给别人垫付的分摊) —— 与 Wallet 页同一算法
+  const debt = card ? creditDebt(card) : 0;
   // 可选支付账户: 同币种, 非信用卡
   const payOptions = useMemo(
     () => (wallets.data ?? []).filter((w) => !w.archived && w.type !== "credit_card" && w.currency_code === card?.currency_code),
@@ -76,9 +78,7 @@ export default function CreditRepayForm({ open, onClose }: Props) {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {
@@ -101,7 +101,7 @@ export default function CreditRepayForm({ open, onClose }: Props) {
             <div className="flex flex-wrap gap-1.5">
               {cards.map((c) => {
                 const on = cardId === c.id;
-                const d = -c.balance;
+                const d = creditDebt(c);
                 return (
                   <button
                     key={c.id}

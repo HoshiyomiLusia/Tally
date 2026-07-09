@@ -8,6 +8,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Budget, Category, Transaction, User
 from ..schemas.budget import BudgetCreate, BudgetProgress, BudgetRead, BudgetUpdate
+from ..services.internal_cats import internal_cat_ids, not_internal
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
@@ -87,6 +88,7 @@ async def budget_progress(
     anchor = on_date or date.today()
     budgets = (await session.execute(select(Budget).where(Budget.user_id == user.id, Budget.active == True))).scalars().all()  # noqa: E712
     cats = {c.id: c for c in (await session.execute(select(Category).where(Category.user_id == user.id))).scalars().all()}
+    skip_cats = await internal_cat_ids(session, user.id)
 
     results: list[BudgetProgress] = []
     for b in budgets:
@@ -100,6 +102,7 @@ async def budget_progress(
             Transaction.currency_code == b.currency_code,
             Transaction.occurred_on >= start,
             Transaction.occurred_on < end,
+            not_internal(skip_cats),
         ]
         if b.category_id is not None:
             child_ids = [cid for cid, c in cats.items() if c.parent_id == b.category_id]

@@ -13,6 +13,7 @@ import {
   type Wallet,
   type WalletType,
 } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
@@ -115,9 +116,7 @@ export default function ReimburseForm({ open, onClose }: Props) {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {

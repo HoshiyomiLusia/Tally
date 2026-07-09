@@ -142,7 +142,7 @@ async def list_groups(
         cat = cats.get(latest.category_id) if latest.category_id else None
         period = latest.recurrence_period_days
         next_due = latest.occurred_on + timedelta(days=period) if period else None
-        name = (latest.note or cat.name if cat else None) or "未命名周期账单"
+        name = (latest.note or (cat.name if cat else None)) or "未命名周期账单"
         total = sum(t.amount for t in txs)
         avg = total // max(1, len(txs))
         out.append(RecurringGroup(

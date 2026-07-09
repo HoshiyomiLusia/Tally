@@ -13,25 +13,9 @@ from ..services.balances import (
     all_wallet_loan_summary,
     wallet_balances,
 )
+from ..services.internal_cats import internal_cat_ids, not_internal
 
 router = APIRouter(prefix="/stats", tags=["stats"])
-
-
-# 这些分类下的"花销"是内部账务调整, 不算真实消费/收入, 统计页一律剔除.
-# 加新的就在这里加名字即可.
-INTERNAL_CATEGORY_NAMES = ("对账调整",)
-
-
-async def _internal_cat_ids(session: AsyncSession, user_id: int) -> list[int]:
-    rows = (
-        await session.execute(
-            select(Category.id).where(
-                Category.user_id == user_id,
-                Category.name.in_(INTERNAL_CATEGORY_NAMES),
-            )
-        )
-    ).scalars().all()
-    return list(rows)
 
 
 class MonthlyPoint(BaseModel):
@@ -129,7 +113,7 @@ async def summary(
     anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
-    skip_cats = await _internal_cat_ids(session, user.id)
+    skip_cats = await internal_cat_ids(session, user.id)
 
     income = case((Transaction.kind == "income", Transaction.amount), else_=0)
     expense = case((Transaction.kind == "expense", Transaction.amount), else_=0)
@@ -142,7 +126,7 @@ async def summary(
                 Transaction.occurred_on >= cur_start,
                 Transaction.occurred_on < cur_end,
                 Transaction.kind.in_(("income", "expense")),
-                ~Transaction.category_id.in_(skip_cats) if skip_cats else True,
+                not_internal(skip_cats),
             )
             .group_by(Transaction.currency_code)
         )
@@ -155,7 +139,7 @@ async def summary(
                 Transaction.occurred_on >= prev_start,
                 Transaction.occurred_on < prev_end,
                 Transaction.kind.in_(("income", "expense")),
-                ~Transaction.category_id.in_(skip_cats) if skip_cats else True,
+                not_internal(skip_cats),
             )
             .group_by(Transaction.currency_code)
         )
@@ -195,7 +179,7 @@ async def category_compare(
     anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
-    skip_cats = await _internal_cat_ids(session, user.id)
+    skip_cats = await internal_cat_ids(session, user.id)
 
     async def fetch(start, end):
         rows = (
@@ -213,7 +197,7 @@ async def category_compare(
                     Transaction.kind == "expense",
                     Transaction.occurred_on >= start,
                     Transaction.occurred_on < end,
-                    ~Transaction.category_id.in_(skip_cats) if skip_cats else True,
+                    not_internal(skip_cats),
                 )
                 .group_by(Transaction.category_id, Category.name, Category.emoji, Transaction.currency_code)
             )
@@ -289,6 +273,7 @@ async def monthly_trend(
     start = _add_months(today.replace(day=1), -(months - 1))
     income_amt = case((Transaction.kind == "income", Transaction.amount), else_=0)
     expense_amt = case((Transaction.kind == "expense", Transaction.amount), else_=0)
+    skip_cats = await internal_cat_ids(session, user.id)
     rows = (
         await session.execute(
             select(
@@ -301,6 +286,7 @@ async def monthly_trend(
                 Transaction.user_id == user.id,
                 Transaction.occurred_on >= start,
                 Transaction.kind.in_(("income", "expense")),
+                not_internal(skip_cats),
             )
             .group_by("ym", Transaction.currency_code)
             .order_by("ym")
@@ -339,8 +325,8 @@ async def lifetime(
     session: AsyncSession = Depends(get_session),
 ):
     """全时段统计原料 (剔除对账调整等内部分类), 给"总分析"前端自由聚合."""
-    skip = await _internal_cat_ids(session, user.id)
-    notskip = (~Transaction.category_id.in_(skip)) if skip else True
+    skip = await internal_cat_ids(session, user.id)
+    notskip = not_internal(skip)
     income_amt = case((Transaction.kind == "income", Transaction.amount), else_=0)
     expense_amt = case((Transaction.kind == "expense", Transaction.amount), else_=0)
     ym = func.strftime("%Y-%m", Transaction.occurred_on)
@@ -403,7 +389,7 @@ async def daily(
         end = today
     if not start:
         start = end - timedelta(days=90)
-    skip_cats = await _internal_cat_ids(session, user.id)
+    skip_cats = await internal_cat_ids(session, user.id)
     rows = (
         await session.execute(
             select(Transaction.occurred_on, Transaction.currency_code, func.sum(Transaction.amount))
@@ -412,7 +398,7 @@ async def daily(
                 Transaction.kind == kind,
                 Transaction.occurred_on >= start,
                 Transaction.occurred_on <= end,
-                ~Transaction.category_id.in_(skip_cats) if skip_cats else True,
+                not_internal(skip_cats),
             )
             .group_by(Transaction.occurred_on, Transaction.currency_code)
             .order_by(Transaction.occurred_on)
@@ -429,6 +415,7 @@ async def category_trend(
 ):
     today = date.today()
     start = _add_months(today.replace(day=1), -(months - 1))
+    skip_cats = await internal_cat_ids(session, user.id)
     rows = (
         await session.execute(
             select(
@@ -443,6 +430,7 @@ async def category_trend(
                 Transaction.user_id == user.id,
                 Transaction.occurred_on >= start,
                 Transaction.kind == "expense",
+                not_internal(skip_cats),
             )
             .group_by("ym", Transaction.category_id, Category.name, Transaction.currency_code)
             .order_by("ym")
@@ -462,10 +450,11 @@ async def top_transactions(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    skip_cats = await internal_cat_ids(session, user.id)
     stmt = (
         select(Transaction.id, Transaction.occurred_on, Transaction.amount, Transaction.currency_code, Category.name, Transaction.note)
         .join(Category, Category.id == Transaction.category_id, isouter=True)
-        .where(Transaction.user_id == user.id, Transaction.kind == "expense")
+        .where(Transaction.user_id == user.id, Transaction.kind == "expense", not_internal(skip_cats))
         .order_by(Transaction.amount.desc())
         .limit(limit)
     )

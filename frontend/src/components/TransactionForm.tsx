@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calculator, ChevronLeft, ChevronRight, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
+import { Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -14,7 +14,9 @@ import {
 } from "../lib/api";
 import type { WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+import DateField from "./DateField";
 import Modal from "./Modal";
+import { invalidateMoney } from "../lib/invalidate";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
@@ -368,16 +370,8 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      invalidateMoney(qc);
       qc.invalidateQueries({ queryKey: ["merchants"] });
-      qc.invalidateQueries({ queryKey: ["frequent"] });
-      qc.invalidateQueries({ queryKey: ["recurring-upcoming"] });
-      qc.invalidateQueries({ queryKey: ["recurring-by-month"] });
-      qc.invalidateQueries({ queryKey: ["stats-summary"] });
-      qc.invalidateQueries({ queryKey: ["stats-daily"] });
       onClose();
     },
     onError: (e: unknown) => {
@@ -405,30 +399,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
-            <div className="mt-0.5 flex items-stretch gap-2">
-              <button
-                type="button"
-                onClick={() => setOccurredOn(shiftDay(occurredOn, -1))}
-                title="前一天"
-                className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <input
-                className="input flex-1"
-                type="date"
-                value={occurredOn}
-                onChange={(e) => setOccurredOn(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setOccurredOn(shiftDay(occurredOn, 1))}
-                title="后一天"
-                className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
+            <DateField value={occurredOn} onChange={setOccurredOn} className="mt-0.5" />
           </label>
 
           <div className="flex gap-1.5 border-t border-ink-100 pt-3 dark:border-ink-700">
@@ -760,13 +731,6 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
 function formatAmountInput(amount: number, digits: number): string {
   return (amount / Math.pow(10, digits)).toString();
-}
-
-function shiftDay(iso: string, delta: number): string {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + delta);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 function stripTrailingZero(n: number): string {

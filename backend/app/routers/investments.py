@@ -1,13 +1,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Position, Transaction, User, Wallet
 from ..schemas.investment import (
+    AddBuyRequest,
     BuyRequest,
     InvestEventView,
     PositionUpdate,
@@ -43,6 +44,28 @@ async def _position_remaining(session: AsyncSession, position_id: int) -> int:
     return int((await session.execute(
         select(func.sum(signed)).where(Transaction.position_id == position_id)
     )).scalar() or 0)
+
+
+async def _build_position_view(session: AsyncSession, user_id: int, pos: Position) -> PositionView:
+    """按 list_positions 同口径重算单个持仓的成本/盈亏视图."""
+    buy = func.sum(case((Transaction.kind == "invest_buy", Transaction.amount), else_=0))
+    sell = func.sum(case((Transaction.kind == "invest_sell", Transaction.amount), else_=0))
+    pnl = func.sum(case(
+        (Transaction.kind == "income", Transaction.amount),
+        (Transaction.kind == "expense", -Transaction.amount),
+        else_=0,
+    ))
+    row = (await session.execute(
+        select(buy, sell, pnl).where(
+            Transaction.user_id == user_id, Transaction.position_id == pos.id
+        )
+    )).one()
+    b, s, p = int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
+    return PositionView(
+        id=pos.id, name=pos.name, currency_code=pos.currency_code,
+        opened_on=pos.opened_on, status=pos.status,
+        cost_total=b, cost_remaining=b - s, realized_pnl=p, note=pos.note,
+    )
 
 
 @router.get("/positions", response_model=list[PositionView])
@@ -102,6 +125,7 @@ async def buy(
             user_id=user.id, wallet_id=payload.wallet_id, category_id=adj,
             amount=payload.amount, currency_code=payload.currency_code, kind="income",
             occurred_on=payload.occurred_on, note="期初持仓·额外资产(余额不变)",
+            opening_for_position_id=pos.id,
         ))
     await session.commit()
     return PositionView(
@@ -109,6 +133,38 @@ async def buy(
         opened_on=pos.opened_on, status="open",
         cost_total=payload.amount, cost_remaining=payload.amount, realized_pnl=0, note=pos.note,
     )
+
+
+@router.post("/positions/{position_id}/buy", response_model=PositionView, status_code=status.HTTP_201_CREATED)
+async def add_buy(
+    position_id: int,
+    payload: AddBuyRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """追加买入到已有持仓: 再加一笔 invest_buy (币种取持仓的). 用于"同一类型持续加仓"."""
+    pos = await session.get(Position, position_id)
+    if not pos or pos.user_id != user.id:
+        raise HTTPException(404, "position not found")
+    if pos.status != "open":
+        raise HTTPException(400, "持仓已清仓, 不能追加")
+    await _check_wallet(session, user, payload.wallet_id, pos.currency_code)
+    session.add(Transaction(
+        user_id=user.id, wallet_id=payload.wallet_id, position_id=pos.id,
+        amount=payload.amount, currency_code=pos.currency_code, kind="invest_buy",
+        occurred_on=payload.occurred_on, note=payload.note,
+    ))
+    if payload.opening:
+        # 已持有资产: 配一笔对账调整收入抵掉买入对物理的影响 (与 buy() 一致)
+        adj = await _pnl_cat(session, user, "对账调整")
+        session.add(Transaction(
+            user_id=user.id, wallet_id=payload.wallet_id, category_id=adj,
+            amount=payload.amount, currency_code=pos.currency_code, kind="income",
+            occurred_on=payload.occurred_on, note="期初持仓·额外资产(余额不变)",
+            opening_for_position_id=pos.id,
+        ))
+    await session.commit()
+    return await _build_position_view(session, user.id, pos)
 
 
 @router.post("/sell", response_model=list[TransactionRead], status_code=status.HTTP_201_CREATED)
@@ -180,37 +236,26 @@ async def update_position(
         pos.note = updates["note"]
     if updates.get("opened_on") is not None:
         pos.opened_on = updates["opened_on"]
-        # 一个持仓只有一笔 invest_buy (买入开仓), 把它的日期跟着挪
-        await session.execute(
-            update(Transaction)
-            .where(
+        # 仅当只有一笔买入时把它的日期跟着挪; 多笔追加则各买入各自保留日期
+        buy_count = (await session.execute(
+            select(func.count()).select_from(Transaction).where(
                 Transaction.user_id == user.id,
                 Transaction.position_id == pos.id,
                 Transaction.kind == "invest_buy",
             )
-            .values(occurred_on=updates["opened_on"])
-        )
+        )).scalar() or 0
+        if buy_count == 1:
+            await session.execute(
+                update(Transaction)
+                .where(
+                    Transaction.user_id == user.id,
+                    Transaction.position_id == pos.id,
+                    Transaction.kind == "invest_buy",
+                )
+                .values(occurred_on=updates["opened_on"])
+            )
     await session.commit()
-
-    # 重算该持仓的成本/盈亏, 返回最新 PositionView (与 list_positions 口径一致)
-    buy = func.sum(case((Transaction.kind == "invest_buy", Transaction.amount), else_=0))
-    sell = func.sum(case((Transaction.kind == "invest_sell", Transaction.amount), else_=0))
-    pnl = func.sum(case(
-        (Transaction.kind == "income", Transaction.amount),
-        (Transaction.kind == "expense", -Transaction.amount),
-        else_=0,
-    ))
-    row = (await session.execute(
-        select(buy, sell, pnl).where(
-            Transaction.user_id == user.id, Transaction.position_id == pos.id
-        )
-    )).one()
-    b, s, p = int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
-    return PositionView(
-        id=pos.id, name=pos.name, currency_code=pos.currency_code,
-        opened_on=pos.opened_on, status=pos.status,
-        cost_total=b, cost_remaining=b - s, realized_pnl=p, note=pos.note,
-    )
+    return await _build_position_view(session, user.id, pos)
 
 
 @router.delete("/positions/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -224,7 +269,9 @@ async def delete_position(
     if not pos or pos.user_id != user.id:
         raise HTTPException(404, "position not found")
     await session.execute(delete(Transaction).where(
-        Transaction.user_id == user.id, Transaction.position_id == position_id))
+        Transaction.user_id == user.id,
+        or_(Transaction.position_id == position_id, Transaction.opening_for_position_id == position_id),
+    ))
     await session.delete(pos)
     await session.commit()
 

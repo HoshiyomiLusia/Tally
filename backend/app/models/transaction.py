@@ -22,6 +22,8 @@ class Transaction(Base):
     merchant_id: Mapped[int | None] = mapped_column(ForeignKey("merchants.id", ondelete="SET NULL"), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
     position_id: Mapped[int | None] = mapped_column(ForeignKey("positions.id", ondelete="SET NULL"), nullable=True, index=True)
+    # 仅"期初持仓"注入的对账收入用: 关联到该持仓(但不进 position_id, 以免被当成盈亏), 删持仓时一并清掉.
+    opening_for_position_id: Mapped[int | None] = mapped_column(ForeignKey("positions.id", ondelete="SET NULL"), nullable=True)
     amount: Mapped[int] = mapped_column(Integer)
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
     kind: Mapped[str] = mapped_column(String(16), default="expense")

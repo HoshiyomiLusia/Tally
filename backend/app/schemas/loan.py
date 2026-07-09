@@ -48,3 +48,13 @@ class WriteOffRequest(BaseModel):
     amount: int = Field(gt=0)
     occurred_on: date
     note: str = ""
+
+
+class LendRequest(BaseModel):
+    """直接借出: 记一笔 loan_out (钱从某钱包借出给某联系人)."""
+    contact_id: int
+    currency_code: str
+    wallet_id: int
+    amount: int = Field(gt=0)
+    occurred_on: date
+    note: str = ""

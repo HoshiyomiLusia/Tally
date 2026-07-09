@@ -1,11 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownLeft, Pencil, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, Calculator, ChevronLeft, ChevronRight, Delete, HandCoins, Pencil, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import ContactForm from "../components/ContactForm";
+import ContactForm, { CONTACT_COLORS } from "../components/ContactForm";
 import Modal from "../components/Modal";
-import { api, type Contact, type Currency, type LoanAccount, type Transaction, type Wallet } from "../lib/api";
+import { api, type Contact, type Currency, type LoanAccount, type Transaction, type Wallet, type WalletType } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
+};
+
+function shiftDay(iso: string, delta: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + delta);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function stripTrailingZero(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(parseFloat(n.toFixed(8)));
+}
 
 export default function Loans() {
   const qc = useQueryClient();
@@ -19,6 +36,8 @@ export default function Loans() {
   const [historyFor, setHistoryFor] = useState<LoanAccount | null>(null);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [contactFormOpen, setContactFormOpen] = useState(false);
+  const [lendOpen, setLendOpen] = useState(false);
+  const [lendContact, setLendContact] = useState<Contact | null>(null);
 
   const totals = useMemo(() => {
     const m = new Map<string, number>();
@@ -54,9 +73,14 @@ export default function Loans() {
           <h1 className="text-xl font-semibold tracking-tight">借贷</h1>
           <p className="text-sm text-ink-500">每个联系人 = 一张借贷账户 · 负数 = 应收（对方未还） · 正数 = 应付（我未还）</p>
         </div>
-        <button onClick={() => { setEditingContact(null); setContactFormOpen(true); }} className="btn-primary">
-          <UserPlus size={14} /> 新建联系人
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => { setEditingContact(null); setContactFormOpen(true); }} className="btn-ghost">
+            <UserPlus size={14} /> 新建联系人
+          </button>
+          <button onClick={() => { setLendContact(null); setLendOpen(true); }} className="btn-primary">
+            <HandCoins size={14} /> 借出
+          </button>
+        </div>
       </div>
 
       {totals.length > 0 && (
@@ -90,7 +114,10 @@ export default function Loans() {
                     {c.note && <div className="text-xs text-ink-500">{c.note}</div>}
                   </div>
                 </div>
-                <div className="flex shrink-0 gap-0.5">
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button onClick={() => { setLendContact(c); setLendOpen(true); }} className="btn-ghost text-xs" title="借给Ta">
+                    <HandCoins size={12} /> 借出
+                  </button>
                   <button onClick={() => { setEditingContact(c); setContactFormOpen(true); }} className="btn-ghost p-1.5"><Pencil size={14} /></button>
                   <button
                     onClick={() => {
@@ -115,7 +142,7 @@ export default function Loans() {
                           {a.currency_code} · 借出 {formatAmount(a.loan_out_total, a.currency_code, currencies.data)} · 已还 {formatAmount(a.loan_repayment_total, a.currency_code, currencies.data)}
                         </div>
                       </div>
-                      <div className={`shrink-0 text-base font-semibold ${a.balance < 0 ? "text-rose-600" : a.balance > 0 ? "text-emerald-600" : "text-ink-500"}`}>
+                      <div className={`shrink-0 text-base font-semibold ${a.balance < 0 ? "text-emerald-600" : a.balance > 0 ? "text-rose-600" : "text-ink-500"}`}>
                         {formatAmount(a.balance, a.currency_code, currencies.data)}
                       </div>
                       <div className="flex shrink-0 gap-1">
@@ -142,7 +169,171 @@ export default function Loans() {
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
       <HistoryModal acct={historyFor} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
       <ContactForm open={contactFormOpen} onClose={() => setContactFormOpen(false)} editing={editingContact} />
+      <LendModal open={lendOpen} initialContact={lendContact} contacts={contactList} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => { setLendOpen(false); setLendContact(null); }} />
     </div>
+  );
+}
+
+function LendModal({ open, initialContact, contacts, wallets, currencies, onClose }: {
+  open: boolean; initialContact: Contact | null; contacts: Contact[]; wallets: Wallet[]; currencies: Currency[]; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [contactSel, setContactSel] = useState<string>("");   // "" 未选 / "new" 新建 / 数字=已有
+  const [newName, setNewName] = useState("");
+  const [walletId, setWalletId] = useState<number | null>(null);
+  const [amountText, setAmountText] = useState("");
+  const [padOpen, setPadOpen] = useState(false);
+  const [occurredOn, setOccurredOn] = useState(todayIso());
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+
+  const selWallet = wallets.find((w) => w.id === walletId) ?? null;
+  const effCurrency = selWallet?.currency_code ?? "";          // 借出币种 = 来源钱包的币种
+  const digits = currencies.find((c) => c.code === effCurrency)?.decimal_digits ?? 2;
+
+  const walletsByCurrency = useMemo(() => {
+    const m = new Map<string, Wallet[]>();
+    for (const w of wallets.filter((x) => !x.archived)) { const arr = m.get(w.currency_code) ?? []; arr.push(w); m.set(w.currency_code, arr); }
+    return m;
+  }, [wallets]);
+
+  useEffect(() => {
+    if (!open) return;
+    setContactSel(initialContact ? String(initialContact.id) : "");
+    setNewName(""); setAmountText(""); setPadOpen(false); setOccurredOn(todayIso()); setNote(""); setError("");
+    setWalletId(wallets.find((w) => !w.archived)?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function pressPad(key: string) {
+    setAmountText((cur) => {
+      if (key === "del") return cur.slice(0, -1);
+      if (key === ".") return cur.includes(".") ? cur : (cur || "0") + ".";
+      if (cur === "0") return key;
+      return cur + key;
+    });
+  }
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!selWallet) throw new Error("请选择来源 Wallet");
+      const amount = parseAmount(amountText, digits);
+      if (amount <= 0) throw new Error("金额需大于 0");
+      let contactId: number;
+      if (contactSel === "new") {
+        if (!newName.trim()) throw new Error("请填新联系人名称");
+        const r = await api.post<Contact>("/contacts", { name: newName.trim(), color: CONTACT_COLORS[newName.length % CONTACT_COLORS.length], note: "" });
+        contactId = r.data.id;
+        qc.invalidateQueries({ queryKey: ["contacts"] });
+      } else if (contactSel) {
+        contactId = Number(contactSel);
+      } else {
+        throw new Error("请选择借给谁");
+      }
+      await api.post("/loans/lend", {
+        contact_id: contactId, wallet_id: selWallet.id, currency_code: selWallet.currency_code,
+        amount, occurred_on: occurredOn, note,
+      });
+    },
+    onSuccess: () => { invalidateMoney(qc); onClose(); },
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      setError(r?.data?.detail ?? (e instanceof Error ? e.message : "保存失败"));
+    },
+  });
+
+  if (!open) return null;
+  return (
+    <Modal onClose={onClose} title="借出 · 记一笔借款" maxW="max-w-sm">
+      <div className="mb-3 text-xs text-ink-500">钱从选定 Wallet 借出去：物理余额↓、真实余额不变（钱还是你的，对方欠着）。</div>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="text-xs text-ink-500">借给谁</span>
+          <select className="input mt-1" value={contactSel} onChange={(e) => setContactSel(e.target.value)}>
+            <option value="">选择联系人…</option>
+            {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="new">➕ 新建联系人…</option>
+          </select>
+        </label>
+        {contactSel === "new" && (
+          <label className="block">
+            <span className="text-xs text-ink-500">新联系人名称</span>
+            <input className="input mt-1" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="如 小明" autoFocus />
+          </label>
+        )}
+
+        {/* 金额: 大输入 + 小键盘 + 倍数快捷 */}
+        <div>
+          <span className="text-xs text-ink-500">借出金额</span>
+          <div className="mt-1 flex items-stretch gap-2">
+            <input inputMode="decimal" className="input flex-1 text-2xl" placeholder="0" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
+            <button type="button" onClick={() => setPadOpen((v) => !v)} title="数字小键盘" className={`flex shrink-0 items-center rounded-md border px-2.5 ${padOpen ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"}`}><Calculator size={18} /></button>
+            <div className={`flex shrink-0 items-center rounded-md px-3 text-sm font-semibold ${effCurrency ? "bg-ink-800 text-white" : "bg-amber-50 text-amber-700"}`}>{effCurrency || "选钱包"}</div>
+          </div>
+          {padOpen && (
+            <div className="anim-drop mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/50">
+              {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "del"].map((k) => (
+                <button key={k} type="button" onClick={() => pressPad(k)} className="flex items-center justify-center rounded-md border border-ink-200 bg-white py-3 text-lg font-medium text-ink-700 hover:bg-ink-100 active:scale-95 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 dark:hover:bg-ink-800">{k === "del" ? <Delete size={18} /> : k}</button>
+              ))}
+            </div>
+          )}
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[{ label: "×10", factor: 10 }, { label: "×100", factor: 100 }, { label: "×千", factor: 1000 }, { label: "×万", factor: 10000 }].map((b) => (
+              <button key={b.label} type="button" onClick={() => { const cur = parseFloat(amountText) || 1; setAmountText(stripTrailingZero(cur * b.factor)); }} className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-700/40 dark:text-ink-200">{b.label}</button>
+            ))}
+            <button type="button" onClick={() => setAmountText("")} className="min-h-[36px] rounded-md bg-ink-50 px-3.5 py-1.5 text-sm text-ink-500 hover:bg-ink-100 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-800/40">清空</button>
+          </div>
+        </div>
+
+        {/* 来源钱包: 按币种→类型 分组的 chip, 选哪个钱包就是哪个币种 */}
+        <div>
+          <div className="mb-1.5 text-xs text-ink-500">来源 Wallet（决定币种）</div>
+          <div className="space-y-2">
+            {Array.from(walletsByCurrency.entries()).map(([code, list]) => {
+              const byType = new Map<WalletType, Wallet[]>();
+              for (const w of list) { const arr = byType.get(w.type) ?? []; arr.push(w); byType.set(w.type, arr); }
+              const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
+              return (
+                <div key={code}>
+                  {walletsByCurrency.size > 1 && <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{code}</div>}
+                  <div className="space-y-1.5">
+                    {typed.map((t) => (
+                      <div key={t} className="flex flex-wrap items-center gap-1.5">
+                        <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                        {(byType.get(t) ?? []).map((w) => {
+                          const on = walletId === w.id;
+                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{on && <span className="mr-0.5">✓</span>}{w.name}</button>;
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {walletsByCurrency.size === 0 && <div className="text-xs text-rose-600">还没有可用的 Wallet</div>}
+          </div>
+        </div>
+
+        <div>
+          <span className="text-xs text-ink-500">日期</span>
+          <div className="mt-1 flex items-stretch gap-2">
+            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, -1))} title="前一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronLeft size={18} /></button>
+            <input className="input flex-1" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, 1))} title="后一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronRight size={18} /></button>
+          </div>
+        </div>
+        <label className="block">
+          <span className="text-xs text-ink-500">备注</span>
+          <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+        </label>
+
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn-ghost">取消</button>
+          <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary">{save.isPending ? "保存中…" : "确认借出"}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -188,10 +379,7 @@ function RepaymentModal({ acct, wallets, currencies, onClose }: {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {
@@ -281,10 +469,7 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {
@@ -365,9 +550,9 @@ function HistoryModal({ acct, currencies, onClose }: {
   return (
     <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 明细`} maxW="max-w-lg">
       <div className="mb-3 grid grid-cols-3 gap-2">
-        <Sum label={`借出 · ${sums.no}笔`} v={fmt(sums.out)} tone="rose" />
-        <Sum label={`还款 · ${sums.nr}笔`} v={fmt(sums.rep)} tone="emerald" />
-        <Sum label="净额 (她欠你)" v={fmt(sums.out - sums.rep)} tone={sums.out - sums.rep >= 0 ? "rose" : "emerald"} />
+        <Sum label={`借出 · ${sums.no}笔`} v={fmt(acct.loan_out_total)} tone="rose" />
+        <Sum label={`还款 · ${sums.nr}笔`} v={fmt(acct.loan_repayment_total)} tone="emerald" />
+        <Sum label="净额 (她欠你)" v={fmt(acct.loan_out_total - acct.loan_repayment_total)} tone={acct.loan_out_total - acct.loan_repayment_total >= 0 ? "rose" : "emerald"} />
       </div>
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {([["all", "全部"], ["loan_out", "借出"], ["loan_repayment", "还款"]] as const).map(([k, lbl]) => (

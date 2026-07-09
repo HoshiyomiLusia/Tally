@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Budget, Category, Contact, Merchant, Transaction, User, Wallet
+from ..models import Attachment, Budget, Category, Contact, Merchant, Position, Transaction, User, Wallet
 
 router = APIRouter(tags=["io"])
 
-EXPORT_VERSION = "0.2"
+EXPORT_VERSION = "0.3"
+IMPORTABLE_VERSIONS = ("0.2", "0.3")  # 0.2 缺 position/attributed 字段, 按缺省(None)导入
 
 
 def _default(o):
@@ -31,6 +32,7 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
     merchants = (await session.execute(select(Merchant).where(Merchant.user_id == user.id))).scalars().all()
     contacts = (await session.execute(select(Contact).where(Contact.user_id == user.id))).scalars().all()
     budgets = (await session.execute(select(Budget).where(Budget.user_id == user.id))).scalars().all()
+    positions = (await session.execute(select(Position).where(Position.user_id == user.id))).scalars().all()
     txs = (await session.execute(select(Transaction).where(Transaction.user_id == user.id))).scalars().all()
 
     def row(obj, fields):
@@ -45,8 +47,10 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
         "merchants": [row(m, ["id", "name", "default_category_id", "region", "usage_count"]) for m in merchants],
         "contacts": [row(c, ["id", "name", "color", "note", "archived"]) for c in contacts],
         "budgets": [row(b, ["id", "category_id", "currency_code", "period", "amount", "active", "note"]) for b in budgets],
+        "positions": [row(p, ["id", "name", "currency_code", "opened_on", "status", "note"]) for p in positions],
         "transactions": [row(t, [
-            "id", "wallet_id", "category_id", "merchant_id", "contact_id", "amount", "currency_code",
+            "id", "wallet_id", "category_id", "merchant_id", "contact_id", "position_id",
+            "attributed_wallet_id", "opening_for_position_id", "amount", "currency_code",
             "kind", "occurred_on", "note", "split_group_id", "is_recurring", "recurrence_period_days",
             "recurrence_group_id", "transfer_pair_id",
         ]) for t in txs],
@@ -153,10 +157,10 @@ async def import_json(
     session: AsyncSession = Depends(get_session),
 ):
     d = payload.data
-    if d.get("version") != EXPORT_VERSION:
-        raise HTTPException(400, f"version mismatch: expect {EXPORT_VERSION}, got {d.get('version')}")
+    if d.get("version") not in IMPORTABLE_VERSIONS:
+        raise HTTPException(400, f"version mismatch: expect one of {IMPORTABLE_VERSIONS}, got {d.get('version')}")
 
-    for model in (Transaction, Budget, Contact, Merchant, Category, Wallet):
+    for model in (Attachment, Transaction, Position, Budget, Contact, Merchant, Category, Wallet):
         await session.execute(delete(model).where(model.user_id == user.id))
     await session.flush()
 
@@ -219,6 +223,17 @@ async def import_json(
         await session.flush()
         contact_map[c["id"]] = obj.id
 
+    position_map: dict[int, int] = {}
+    for p in d.get("positions", []):
+        obj = Position(
+            user_id=user.id, name=p["name"], currency_code=p["currency_code"],
+            opened_on=date.fromisoformat(p["opened_on"]) if isinstance(p["opened_on"], str) else p["opened_on"],
+            status=p.get("status", "open"), note=p.get("note", ""),
+        )
+        session.add(obj)
+        await session.flush()
+        position_map[p["id"]] = obj.id
+
     for b in d.get("budgets", []):
         obj = Budget(
             user_id=user.id,
@@ -231,12 +246,18 @@ async def import_json(
     tx_id_map: dict[int, int] = {}
     pending_tx = list(d.get("transactions", []))
     for t in pending_tx:
+        wid = wallet_map.get(t["wallet_id"])
+        if wid is None:
+            continue  # 引用了缺失的钱包 -> 跳过这笔, 不要 KeyError 中断整个导入
         obj = Transaction(
             user_id=user.id,
-            wallet_id=wallet_map[t["wallet_id"]],
+            wallet_id=wid,
             category_id=cat_map.get(t["category_id"]) if t.get("category_id") else None,
             merchant_id=merchant_map.get(t["merchant_id"]) if t.get("merchant_id") else None,
             contact_id=contact_map.get(t["contact_id"]) if t.get("contact_id") else None,
+            position_id=position_map.get(t["position_id"]) if t.get("position_id") else None,
+            attributed_wallet_id=wallet_map.get(t["attributed_wallet_id"]) if t.get("attributed_wallet_id") else None,
+            opening_for_position_id=position_map.get(t["opening_for_position_id"]) if t.get("opening_for_position_id") else None,
             amount=t["amount"], currency_code=t["currency_code"], kind=t.get("kind", "expense"),
             occurred_on=date.fromisoformat(t["occurred_on"]) if isinstance(t["occurred_on"], str) else t["occurred_on"],
             note=t.get("note", ""),

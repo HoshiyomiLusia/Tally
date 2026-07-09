@@ -19,6 +19,7 @@ from ..services.balances import (
     all_wallet_loan_summary,
     wallet_balances,
 )
+from ..services.internal_cats import internal_cat_ids, not_internal
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -67,6 +68,7 @@ async def get_dashboard(
         for w in wallets
     ]
 
+    skip_cats = await internal_cat_ids(session, user.id)
     income_amt = case((Transaction.kind == "income", Transaction.amount), else_=0)
     expense_amt = case((Transaction.kind == "expense", Transaction.amount), else_=0)
     totals_rows = (
@@ -80,6 +82,7 @@ async def get_dashboard(
                 Transaction.user_id == user.id,
                 Transaction.occurred_on >= start,
                 Transaction.occurred_on < next_m,
+                not_internal(skip_cats),
             )
             .group_by(Transaction.currency_code)
         )
@@ -109,6 +112,7 @@ async def get_dashboard(
                 Transaction.kind == "expense",
                 Transaction.occurred_on >= start,
                 Transaction.occurred_on < next_m,
+                not_internal(skip_cats),
             )
             .group_by(Transaction.category_id, Category.name, Category.emoji, Transaction.currency_code)
             .order_by(func.sum(Transaction.amount).desc())

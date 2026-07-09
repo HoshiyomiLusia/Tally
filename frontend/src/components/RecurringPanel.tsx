@@ -20,9 +20,10 @@ function prevYear(month: string): string {
   return `${y - 1}-${String(m).padStart(2, "0")}`;
 }
 
-// 同一周期项的匹配键: 商家+分类+钱包+币种
+// 同一周期项的匹配键: 商家+分类+币种.
+// 不含钱包 —— 同一笔订阅/固定账单换张卡付, 仍是同一笔, 不该算成两笔(否则本月/上月对照会错配成"上月无").
 function itemKey(it: Item): string {
-  return `${it.merchant_id ?? "x"}-${it.category_id ?? "x"}-${it.wallet_id}-${it.currency_code}`;
+  return `${it.merchant_id ?? "x"}-${it.category_id ?? "x"}-${it.currency_code}`;
 }
 
 interface Item {

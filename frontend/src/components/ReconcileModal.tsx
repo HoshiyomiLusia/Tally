@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type Currency, type ReconciliationView, type Wallet } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 import Modal from "./Modal";
 
@@ -82,10 +83,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["wallets"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["reconciliation", wallet?.id] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {

@@ -7,6 +7,8 @@ import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } f
 import Modal from "../components/Modal";
 import ReconcileModal from "../components/ReconcileModal";
 import { api, type Currency, type Wallet, type WalletType } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
+import { walletPhysical } from "../lib/wallet";
 import { formatAmount, parseAmount } from "../lib/format";
 import { WALLET_PRESETS, type WalletPreset } from "../lib/walletPresets";
 
@@ -60,7 +62,7 @@ export default function Wallets() {
 
   const deleteMut = useMutation({
     mutationFn: async (id: number) => api.delete(`/wallets/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["wallets"] }),
+    onSuccess: () => invalidateMoney(qc),
     onError: (e: unknown) => {
       const r = (e as { response?: { data?: { detail?: string } } }).response;
       alert(r?.data?.detail ?? "删除失败");
@@ -86,7 +88,7 @@ export default function Wallets() {
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
           const nonCredit = list.filter((w) => w.type !== "credit_card");
-          const physOf = (w: Wallet) => w.balance - w.loan_out_on_wallet + w.loan_repayment_on_wallet - w.invest_out_on_wallet + w.invest_in_on_wallet;
+          const physOf = walletPhysical;
           // 卡片只显物理; 借贷/投资 单独立账; 真实 = 各钱包系统余额之和
           const phys = nonCredit.reduce((s, w) => s + physOf(w), 0);
           // 借贷算上信用卡上垫付的: 不管借记卡还是信用卡, 替人垫的都是应收
@@ -232,7 +234,7 @@ function WalletForm({ open, onClose, editing }: { open: boolean; onClose: () => 
       else await api.post("/wallets", payload);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["wallets"] });
+      invalidateMoney(qc);
       onClose();
     },
     onError: (e: unknown) => {
@@ -421,7 +423,7 @@ function WalletCardItem({
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
   const isCredit = wallet.type === "credit_card";
   // 卡片只显物理余额; 借出/投资的钱已归到币种下的"借贷账户/投资账户", 不再摊在每张卡上
-  const physical = wallet.balance - wallet.loan_out_on_wallet + wallet.loan_repayment_on_wallet - wallet.invest_out_on_wallet + wallet.invest_in_on_wallet;
+  const physical = walletPhysical(wallet);
   // 信用卡: 实际欠银行 = -物理(含替人垫付的), 占用额度才对
   const debt = -physical;
   const light = isLight(color);

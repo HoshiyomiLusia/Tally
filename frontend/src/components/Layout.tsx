@@ -20,7 +20,7 @@ export default function Layout() {
   const location = useLocation();
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-56 shrink-0 border-r border-ink-100 bg-white p-4 md:flex md:flex-col">
+      <aside className="hidden w-56 shrink-0 self-start border-r border-ink-100 bg-white p-4 md:sticky md:top-0 md:flex md:h-screen md:flex-col">
         <div className="mb-6 flex items-center justify-between px-2">
           <span className="text-xl font-semibold tracking-tight">Tally</span>
           <button

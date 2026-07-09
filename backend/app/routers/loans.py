@@ -9,6 +9,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, Contact, Transaction, User, Wallet
 from ..schemas.loan import (
+    LendRequest,
     LoanAccountView,
     RepaymentRequest,
     SplitCreateRequest,
@@ -171,6 +172,31 @@ async def receive_repayment(
     return t
 
 
+@router.post("/lend", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)
+async def lend(
+    payload: LendRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """直接借出: 记一笔 loan_out. 钱从选定 Wallet 出去 -> 物理余额↓、真实余额不变 (变成应收)."""
+    await _check_contact(session, user, payload.contact_id)
+    await _check_wallet(session, user, payload.wallet_id, payload.currency_code)
+    t = Transaction(
+        user_id=user.id,
+        wallet_id=payload.wallet_id,
+        contact_id=payload.contact_id,
+        amount=payload.amount,
+        currency_code=payload.currency_code,
+        kind="loan_out",
+        occurred_on=payload.occurred_on,
+        note=payload.note,
+    )
+    session.add(t)
+    await session.commit()
+    await session.refresh(t)
+    return t
+
+
 @router.post("/write-off", response_model=list[TransactionRead], status_code=status.HTTP_201_CREATED)
 async def write_off(
     payload: WriteOffRequest,
@@ -188,6 +214,8 @@ async def write_off(
         )
     ).scalar_one_or_none()
 
+    # 两笔用同一 split_group 绑定: 从账单删任一笔会级联删掉另一笔, 不会只删一半
+    group = str(uuid.uuid4())
     loss = Transaction(
         user_id=user.id,
         wallet_id=payload.wallet_id,
@@ -198,6 +226,7 @@ async def write_off(
         kind="expense",
         occurred_on=payload.occurred_on,
         note=payload.note or "坏账核销",
+        split_group_id=group,
     )
     repay = Transaction(
         user_id=user.id,
@@ -208,6 +237,7 @@ async def write_off(
         kind="loan_repayment",
         occurred_on=payload.occurred_on,
         note=payload.note or "坏账核销",
+        split_group_id=group,
     )
     session.add(loss)
     session.add(repay)
@@ -233,6 +263,9 @@ async def unsplit(
     ).scalars().all()
     if not rows:
         raise HTTPException(404, "split group not found")
+    # 防呆: 这是借贷分摊撤销接口, 不能拿它去动投资卖出组(invest_sell + 盈亏)
+    if any(t.kind in ("invest_buy", "invest_sell") or t.position_id is not None for t in rows):
+        raise HTTPException(400, "该分组不是借贷分摊, 不能在这里撤销")
 
     base = next((t for t in rows if t.kind == "expense"), None) or rows[0]
     total = sum(t.amount for t in rows)

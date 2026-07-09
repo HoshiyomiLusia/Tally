@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import Modal from "../components/Modal";
 import { api, type Currency } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { useAuth } from "../lib/auth";
 import { todayIso } from "../lib/format";
 import { useInstallPrompt } from "../lib/useInstallPrompt";
@@ -32,7 +33,7 @@ export default function Settings() {
   const [resetConfirm, setResetConfirm] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
 
-  const rates = useQuery({ queryKey: ["rates"], queryFn: async () => (await api.get<Rate[]>("/exchange-rates")).data });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<Rate[]>("/exchange-rates")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
 
   const [d, setD] = useState(todayIso());
@@ -49,20 +50,22 @@ export default function Settings() {
   const upsert = useMutation({
     mutationFn: async () => api.post("/exchange-rates", { on_date: d, base, quote, rate: parseFloat(rate) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["rates"] });
+      invalidateMoney(qc);
+      qc.invalidateQueries({ queryKey: ["exchange-rates"] });
       setRate("");
     },
   });
 
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/exchange-rates/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rates"] }),
+    onSuccess: () => { invalidateMoney(qc); qc.invalidateQueries({ queryKey: ["exchange-rates"] }); },
   });
 
   const refresh = useMutation({
     mutationFn: async () => (await api.post<{ updated: number }>("/exchange-rates/refresh")).data,
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["rates"] });
+      invalidateMoney(qc);
+      qc.invalidateQueries({ queryKey: ["exchange-rates"] });
       alert(`已更新 ${data.updated} 条汇率（来自 frankfurter.app）`);
     },
     onError: () => alert("自动拉取失败，可能没有网络"),

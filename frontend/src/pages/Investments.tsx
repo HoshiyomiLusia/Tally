@@ -1,18 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDownLeft, Calculator, ChevronLeft, ChevronRight, Delete, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import Modal from "../components/Modal";
-import { api, type Currency, type InvestEvent, type Position, type Wallet } from "../lib/api";
+import { api, type Currency, type InvestEvent, type Position, type Wallet, type WalletType } from "../lib/api";
+import { invalidateMoney } from "../lib/invalidate";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 
+const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
+const WALLET_TYPE_LABEL: Record<WalletType, string> = {
+  bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
+};
+
+function shiftDay(iso: string, delta: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + delta);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function stripTrailingZero(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return String(parseFloat(n.toFixed(8)));
+}
+
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ["positions"] });
-  qc.invalidateQueries({ queryKey: ["invest-events"] });
-  qc.invalidateQueries({ queryKey: ["wallets"] });
-  qc.invalidateQueries({ queryKey: ["dashboard"] });
-  qc.invalidateQueries({ queryKey: ["cross-currency-total"] });
-  qc.invalidateQueries({ queryKey: ["transactions"] });
+  invalidateMoney(qc);
 }
 
 export default function Investments() {
@@ -27,6 +39,7 @@ export default function Investments() {
   });
 
   const [buyOpen, setBuyOpen] = useState(false);
+  const [buyTarget, setBuyTarget] = useState<Position | null>(null);  // 非空 = 追加到该持仓
   const [sellFor, setSellFor] = useState<Position | null>(null);
   const [editFor, setEditFor] = useState<Position | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -56,7 +69,7 @@ export default function Investments() {
         </div>
         <div className="flex gap-2">
           <button onClick={() => setHistoryOpen(true)} className="btn-ghost">历史</button>
-          <button onClick={() => setBuyOpen(true)} className="btn-primary"><Plus size={14} /> 买入</button>
+          <button onClick={() => { setBuyTarget(null); setBuyOpen(true); }} className="btn-primary"><Plus size={14} /> 买入</button>
         </div>
       </div>
 
@@ -108,6 +121,11 @@ export default function Investments() {
                 </div>
                 <div className="flex shrink-0 gap-0.5">
                   {!closed && (
+                    <button onClick={() => { setBuyTarget(p); setBuyOpen(true); }} className="btn-ghost text-xs" title="追加买入">
+                      <Plus size={12} /> 追加
+                    </button>
+                  )}
+                  {!closed && (
                     <button onClick={() => setSellFor(p)} className="btn-ghost text-xs" title="卖出结算">
                       <ArrowDownLeft size={12} /> 卖出
                     </button>
@@ -131,7 +149,7 @@ export default function Investments() {
         )}
       </div>
 
-      <BuyModal open={buyOpen} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setBuyOpen(false)} />
+      <BuyModal open={buyOpen} initialTarget={buyTarget} positions={positions.data ?? []} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => { setBuyOpen(false); setBuyTarget(null); }} />
       <SellModal pos={sellFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setSellFor(null)} />
       <EditModal pos={editFor} onClose={() => setEditFor(null)} />
       <HistoryModal open={historyOpen} currencies={currencies.data ?? []} onClose={() => setHistoryOpen(false)} />
@@ -143,40 +161,69 @@ function fmtInput(amount: number, digits: number): string {
   return (amount / Math.pow(10, digits)).toString();
 }
 
-function BuyModal({ open, wallets, currencies, onClose }: {
-  open: boolean; wallets: Wallet[]; currencies: Currency[]; onClose: () => void;
+function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose }: {
+  open: boolean; initialTarget: Position | null; positions: Position[]; wallets: Wallet[]; currencies: Currency[]; onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [targetId, setTargetId] = useState<number | null>(null);  // null = 新建持仓; 否则追加到该持仓
   const [name, setName] = useState("");
-  const [currency, setCurrency] = useState("");
   const [walletId, setWalletId] = useState<number | null>(null);
   const [amountText, setAmountText] = useState("");
+  const [padOpen, setPadOpen] = useState(false);
   const [occurredOn, setOccurredOn] = useState(todayIso());
   const [note, setNote] = useState("");
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
 
+  const openPositions = positions.filter((p) => p.status === "open");
+  const target = targetId != null ? positions.find((p) => p.id === targetId) ?? null : null;
+  const selWallet = wallets.find((w) => w.id === walletId) ?? null;
+  // 新建: 币种跟随所选钱包; 追加: 锁定持仓币种
+  const effCurrency = target ? target.currency_code : (selWallet?.currency_code ?? "");
+  const digits = currencies.find((c) => c.code === effCurrency)?.decimal_digits ?? 2;
+
+  // 可选钱包: 追加→只列持仓币种; 新建→全部活跃钱包 (选哪个就用哪个币种)
+  const walletsByCurrency = useMemo(() => {
+    const pool = target
+      ? wallets.filter((w) => !w.archived && w.currency_code === target.currency_code)
+      : wallets.filter((w) => !w.archived);
+    const m = new Map<string, Wallet[]>();
+    for (const w of pool) { const arr = m.get(w.currency_code) ?? []; arr.push(w); m.set(w.currency_code, arr); }
+    return m;
+  }, [wallets, target?.currency_code]);
+
   useEffect(() => {
     if (!open) return;
-    const cur = currencies[0]?.code ?? "JPY";
-    setName(""); setCurrency(cur); setAmountText(""); setOccurredOn(todayIso()); setNote(""); setOpening(false); setError("");
-    setWalletId(wallets.find((w) => w.currency_code === cur && !w.archived)?.id ?? null);
+    setTargetId(initialTarget?.id ?? null);
+    setName(""); setAmountText(""); setPadOpen(false); setOccurredOn(todayIso()); setNote(""); setOpening(false); setError("");
+    const pool = initialTarget
+      ? wallets.filter((w) => !w.archived && w.currency_code === initialTarget.currency_code)
+      : wallets.filter((w) => !w.archived);
+    setWalletId(pool[0]?.id ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const matchingWallets = wallets.filter((w) => w.currency_code === currency && !w.archived);
-  const digits = currencies.find((c) => c.code === currency)?.decimal_digits ?? 2;
+  function pressPad(key: string) {
+    setAmountText((cur) => {
+      if (key === "del") return cur.slice(0, -1);
+      if (key === ".") return cur.includes(".") ? cur : (cur || "0") + ".";
+      if (cur === "0") return key;
+      return cur + key;
+    });
+  }
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!name.trim()) throw new Error("请填标的名称");
-      if (!walletId) throw new Error("请选择买入资金来源 Wallet");
       const amount = parseAmount(amountText, digits);
       if (amount <= 0) throw new Error("金额需大于 0");
-      await api.post("/investments/buy", {
-        name: name.trim(), currency_code: currency, wallet_id: walletId,
-        amount, occurred_on: occurredOn, note, opening,
-      });
+      if (target) {
+        if (!walletId) throw new Error("请选择资金来源 Wallet");
+        await api.post(`/investments/positions/${target.id}/buy`, { wallet_id: walletId, amount, occurred_on: occurredOn, note, opening });
+      } else {
+        if (!name.trim()) throw new Error("请填持仓类型名称");
+        if (!selWallet) throw new Error("请选择资金来源 Wallet");
+        await api.post("/investments/buy", { name: name.trim(), currency_code: selWallet.currency_code, wallet_id: selWallet.id, amount, occurred_on: occurredOn, note, opening });
+      }
     },
     onSuccess: () => { invalidateAll(qc); onClose(); },
     onError: (e: unknown) => {
@@ -187,55 +234,117 @@ function BuyModal({ open, wallets, currencies, onClose }: {
 
   if (!open) return null;
   return (
-    <Modal onClose={onClose} title="买入 · 开一个持仓" maxW="max-w-sm">
-      <div className="mb-2 text-xs text-ink-500">
+    <Modal onClose={onClose} title={target ? `追加买入 · ${target.name}` : "买入 · 新建持仓"} maxW="max-w-sm">
+      <div className="mb-3 text-xs text-ink-500">
         {opening
           ? "已持有资产：不扣钱包，净资产 +本金、投资中 +本金（适合补录之前没记、钱已花出去的持仓）。"
           : "资金从选定 Wallet 转进持仓：物理余额↓、真实余额不变（钱还是你的，押在投资里）。"}
       </div>
       <div className="space-y-3">
+        {/* 买入到: 新建 / 追加到已有持仓 */}
         <label className="block">
-          <span className="text-xs text-ink-500">标的名称</span>
-          <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 股票 / 某基金 / BTC" autoFocus />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-xs text-ink-500">币种</span>
-            <select className="input mt-1" value={currency} onChange={(e) => { setCurrency(e.target.value); setWalletId(wallets.find((w) => w.currency_code === e.target.value && !w.archived)?.id ?? null); }}>
-              {currencies.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs text-ink-500">买入金额</span>
-            <input className="input mt-1" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} />
-          </label>
-        </div>
-        <label className="block">
-          <span className="text-xs text-ink-500">{opening ? `记在哪个 Wallet 名下（不扣款）(${currency})` : `资金来源 Wallet (${currency})`}</span>
-          <select className="input mt-1" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value) || null)}>
-            <option value="">选择…</option>
-            {matchingWallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          <span className="text-xs text-ink-500">买入到</span>
+          <select
+            className="input mt-1"
+            value={targetId ?? ""}
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : null;
+              setTargetId(v);
+              const p = v != null ? positions.find((x) => x.id === v) : null;
+              const pool = p ? wallets.filter((w) => !w.archived && w.currency_code === p.currency_code) : wallets.filter((w) => !w.archived);
+              setWalletId((cur) => (pool.some((w) => w.id === cur) ? cur : (pool[0]?.id ?? null)));
+            }}
+          >
+            <option value="">➕ 新建持仓（按类型，如 基金 / 股票 / 加密货币）</option>
+            {openPositions.map((p) => (
+              <option key={p.id} value={p.id}>追加到 {p.name}（{p.currency_code}）· 持有 {formatAmount(p.cost_remaining, p.currency_code, currencies)}</option>
+            ))}
           </select>
-          {matchingWallets.length === 0 && <div className="mt-1 text-xs text-rose-600">该币种下还没有 Wallet</div>}
         </label>
+
+        {!target && (
+          <label className="block">
+            <span className="text-xs text-ink-500">类型名称</span>
+            <input className="input mt-1" list="pos-type-suggestions" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 基金 / 股票 / 加密货币" autoFocus />
+            <datalist id="pos-type-suggestions">
+              <option value="基金" /><option value="股票" /><option value="加密货币" /><option value="债券" /><option value="其他投资" />
+            </datalist>
+          </label>
+        )}
+
+        {/* 金额: 大输入 + 小键盘 + 倍数快捷 (跟"添加账单"一致) */}
+        <div>
+          <span className="text-xs text-ink-500">买入金额</span>
+          <div className="mt-1 flex items-stretch gap-2">
+            <input inputMode="decimal" className="input flex-1 text-2xl" placeholder="0" value={amountText} onChange={(e) => setAmountText(e.target.value)} autoFocus={!!target} />
+            <button type="button" onClick={() => setPadOpen((v) => !v)} title="数字小键盘" className={`flex shrink-0 items-center rounded-md border px-2.5 ${padOpen ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"}`}><Calculator size={18} /></button>
+            <div className={`flex shrink-0 items-center rounded-md px-3 text-sm font-semibold ${effCurrency ? "bg-ink-800 text-white" : "bg-amber-50 text-amber-700"}`}>{effCurrency || "选钱包"}</div>
+          </div>
+          {padOpen && (
+            <div className="anim-drop mt-2 grid grid-cols-3 gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/50">
+              {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "del"].map((k) => (
+                <button key={k} type="button" onClick={() => pressPad(k)} className="flex items-center justify-center rounded-md border border-ink-200 bg-white py-3 text-lg font-medium text-ink-700 hover:bg-ink-100 active:scale-95 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 dark:hover:bg-ink-800">{k === "del" ? <Delete size={18} /> : k}</button>
+              ))}
+            </div>
+          )}
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[{ label: "×10", factor: 10 }, { label: "×100", factor: 100 }, { label: "×千", factor: 1000 }, { label: "×万", factor: 10000 }].map((b) => (
+              <button key={b.label} type="button" onClick={() => { const cur = parseFloat(amountText) || 1; setAmountText(stripTrailingZero(cur * b.factor)); }} className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-700/40 dark:text-ink-200">{b.label}</button>
+            ))}
+            <button type="button" onClick={() => setAmountText("")} className="min-h-[36px] rounded-md bg-ink-50 px-3.5 py-1.5 text-sm text-ink-500 hover:bg-ink-100 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-800/40">清空</button>
+          </div>
+        </div>
+
+        {/* 资金来源 Wallet: 按币种→类型 分组的 chip (跟"添加账单"一致) */}
+        <div>
+          <div className="mb-1.5 text-xs text-ink-500">{opening ? "记在哪个 Wallet 名下（不扣款）" : "资金来源 Wallet"}</div>
+          <div className="space-y-2">
+            {Array.from(walletsByCurrency.entries()).map(([code, list]) => {
+              const byType = new Map<WalletType, Wallet[]>();
+              for (const w of list) { const arr = byType.get(w.type) ?? []; arr.push(w); byType.set(w.type, arr); }
+              const typed = WALLET_TYPE_ORDER.filter((t) => byType.has(t));
+              return (
+                <div key={code}>
+                  {walletsByCurrency.size > 1 && <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{code}</div>}
+                  <div className="space-y-1.5">
+                    {typed.map((t) => (
+                      <div key={t} className="flex flex-wrap items-center gap-1.5">
+                        <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
+                        {(byType.get(t) ?? []).map((w) => {
+                          const on = walletId === w.id;
+                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{on && <span className="mr-0.5">✓</span>}{w.name}</button>;
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {walletsByCurrency.size === 0 && <div className="text-xs text-rose-600">还没有可用的 Wallet</div>}
+          </div>
+        </div>
+
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={opening} onChange={(e) => setOpening(e.target.checked)} className="h-4 w-4" />
           <span>已持有资产（不扣钱包，作为额外资产计入）</span>
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-xs text-ink-500">日期</span>
-            <input type="date" className="input mt-1" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="text-xs text-ink-500">备注</span>
-            <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
-          </label>
+
+        <div>
+          <span className="text-xs text-ink-500">日期</span>
+          <div className="mt-1 flex items-stretch gap-2">
+            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, -1))} title="前一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronLeft size={18} /></button>
+            <input className="input flex-1" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, 1))} title="后一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronRight size={18} /></button>
+          </div>
         </div>
+        <label className="block">
+          <span className="text-xs text-ink-500">备注</span>
+          <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+        </label>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="btn-ghost">取消</button>
-          <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary">{save.isPending ? "保存中…" : "确认买入"}</button>
+          <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary">{save.isPending ? "保存中…" : (target ? "确认追加" : "确认买入")}</button>
         </div>
       </div>
     </Modal>
