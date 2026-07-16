@@ -33,6 +33,12 @@ def _run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 安全 fail-closed: 拒绝用默认密钥启动 —— 公开仓库里众所周知的 change-me 可伪造任意用户令牌。
+    if settings.secret_key == "change-me":
+        raise RuntimeError(
+            "SECRET_KEY 仍是默认值 'change-me',拒绝启动。请在 .env 或环境变量设置一个随机密钥,"
+            "例如: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
     Path(settings.sync_database_url.split("///", 1)[-1]).parent.mkdir(parents=True, exist_ok=True)
     _run_migrations()
     async with SessionLocal() as session:

@@ -2,6 +2,7 @@ import csv
 import io
 import json
 from datetime import datetime, date
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -289,7 +290,8 @@ async def import_json(
             continue
         session.add(Attachment(
             user_id=user.id, transaction_id=tid,
-            original_name=a.get("original_name", ""), stored_name=a["stored_name"],
+            original_name=a.get("original_name", ""),
+            stored_name=Path(a["stored_name"]).name,  # 防穿越: 落库前去掉任何目录部分(不信任备份 JSON)
             mime_type=a.get("mime_type", ""), size=a.get("size", 0),
         ))
 

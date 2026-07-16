@@ -32,6 +32,15 @@ def _user_dir(user_id: int) -> Path:
     return p
 
 
+def _safe_stored_name(stored_name: str) -> str:
+    """只取文件名部分, 挡掉 import 注入的 ../ 路径穿越 (stored_name 可能来自不可信备份 JSON)。
+    Path(x).name 永远只返回最后一段, 不含分隔符或 .., 故 udir / name 必然落在 udir 内。"""
+    name = Path(stored_name).name
+    if not name or name in (".", ".."):
+        raise HTTPException(404, "file missing")
+    return name
+
+
 @router.post("/transactions/{tid}/attachments", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
 async def upload_attachment(
     tid: int,
@@ -106,13 +115,14 @@ async def download_attachment(
     if not att or att.user_id != user.id:
         raise HTTPException(404)
     udir = _user_dir(user.id)
+    name = _safe_stored_name(att.stored_name)  # 防路径穿越
     if thumb:
-        path = udir / f"{Path(att.stored_name).stem}_thumb.jpg"
+        path = udir / f"{Path(name).stem}_thumb.jpg"
         if not path.exists():
-            path = udir / att.stored_name
+            path = udir / name
         media = "image/jpeg" if path.suffix == ".jpg" else att.mime_type
     else:
-        path = udir / att.stored_name
+        path = udir / name
         media = att.mime_type
     if not path.exists():
         raise HTTPException(404, "file missing")
@@ -129,7 +139,9 @@ async def delete_attachment(
     if not att or att.user_id != user.id:
         raise HTTPException(404)
     udir = _user_dir(user.id)
-    (udir / att.stored_name).unlink(missing_ok=True)
-    (udir / f"{Path(att.stored_name).stem}_thumb.jpg").unlink(missing_ok=True)
+    name = Path(att.stored_name).name  # 防路径穿越: 只在确认是纯文件名时才动磁盘
+    if name and name not in (".", ".."):
+        (udir / name).unlink(missing_ok=True)
+        (udir / f"{Path(name).stem}_thumb.jpg").unlink(missing_ok=True)
     await session.delete(att)
     await session.commit()

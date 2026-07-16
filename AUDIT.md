@@ -115,11 +115,11 @@
 
 ## P0(新)
 
-- [ ] **65** 🔴🔐 **附件 `stored_name` 路径穿越 → 任意文件读/删(可读走全体用户共享库 + `.env` 密钥、可删库)** — 上传时 `stored_name` 由 `uuid4().hex` 生成(安全),但 **import 把备份 JSON 里的 `stored_name` 原样落库**(`io.py:292`,零校验);下载 `attachments.py:115` `path = udir / att.stored_name` 后 `FileResponse`、删除 `:132` `(udir / att.stored_name).unlink()`,都**不做 `../` 归一/限定**,而归属校验(`:106/:129`)只校验 Attachment **行**的 user_id、不校验解析后的路径。→ 任一注册用户(`allow_registration` 默认 True)import 一条 `stored_name:"../../tally.db"`(或 `"../../../.env"`)的附件 → `GET /attachments/{aid}` 读走全体用户共享的 SQLite 库 / `.env`;`DELETE` 则直接删库。**已代码级确认机制成立(未实跑穿越,避免碰真实密钥/库)**。修:落库/使用前 `Path(stored_name).name`(去目录)或 `resolve()` 后确认仍在 `udir` 内。
+- [x] **65** ✅🔐 **附件 `stored_name` 路径穿越 → 任意文件读/删(已修)** — 曾:import 把备份 JSON 的 `stored_name` 原样落库(`io.py`),下载/删除 `udir / att.stored_name` 不做 `../` 限定、归属校验只看行 user_id 不看解析路径 → 任一注册用户 import `stored_name:"../../tally.db"`/`"../../../.env"` 即可读走全体共享库/密钥或删库。**已修(2026-07-16)**:import 落库前 `Path(x).name` 去目录;下载走新 `_safe_stored_name`、删除走 basename,均限定在 `udir` 内。dry-run 验证:`stored_name="../../tally.db"` 的下载从「服务 DB」变为 **HTTP 404**;`../`、`/etc/passwd`、`....//` 一律归一到 udir 内纯文件名,`..`/空名 404。
 
 ## P1(新)
 
-- [ ] **66** 🔐 **JWT 默认密钥 `change-me` 可用 + 无 fail-closed + 开放注册** — `config.py:8` `secret_key: str = "change-me"`、`:9` `allow_registration=True`,`docker-compose.yml:14` `SECRET_KEY: ${SECRET_KEY:-change-me}`,全仓无"默认值即拒启"守卫。→ 部署者若没设 `SECRET_KEY`,公开仓库里众所周知的 `change-me` 即可伪造任意 user_id 的令牌全站接管(**未设则应升 P0**)。且即便设了强密钥,也能被 **#65** 读 `.env` 偷走 → 两条叠加 = 任一注册用户必然可接管。修:启动时若 secret 为 `change-me` 直接拒启。
+- [x] **66** ✅🔐 **JWT 默认密钥 `change-me` + fail-closed(已修)** — 曾:`config.py:8` 默认 `secret_key="change-me"`、`docker-compose.yml:14` `${SECRET_KEY:-change-me}`、无拒启守卫 → 未设 `SECRET_KEY` 时公开仓库众所周知的默认密钥可伪造任意用户令牌。**已修(2026-07-16)**:`main.py` lifespan 启动时若 `secret_key=="change-me"` 直接 `raise` 拒启并提示生成随机密钥。实测本机(已设 64 位随机密钥,走 gitignored `.env`)照常启动、不受影响;仅挡住裸默认部署。注:`allow_registration=True` 仍默认开放(未在本次范围,留观察)。
 - [ ] **67** 新建账单保存多步非原子 → 重复计钱 — `TransactionForm.tsx:357` 的 save mutationFn 串了 建商家→建交易(`POST /transactions` 后端即时 commit 落库)→ 逐个传附件,三步无补偿;`onError`(:377)只 `setError`,**不 invalidateMoney、不 onClose、不撤销已建交易**。→ 交易已落库但附件上传失败(超 8MB / 截断图触发 #68 的 500 / 网络抖动)时,表单原样留着、首页不刷新,用户看不到交易已进库 → 再点保存 → **第二笔重复交易**,当月支出算两遍。修:交易与附件同事务,或失败时刷新+提示"交易已建、附件失败"。
 
 ## P2(新)
