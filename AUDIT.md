@@ -106,3 +106,28 @@
 - [ ] **62** cross-currency 折算用 `int()` 截断而非四舍五入 → 与后端 `fx_preview`(`transactions.py:264` 用 `int(round(...))`)及**全部前端折算**(Overview/Stats/AllTime/Transactions/RecurringPanel 均 `Math.round`)不一致 → 首页 total/physical/credit/invested 四总额恒向零偏小(每外币每口径 ≤1 个 base 最小单位,不落库、有界)。修:`stats.py:524` 改 `int(round(...))` 对齐全站。
 - [ ] **63** 同用户**并发 read-check-write 跨 await 无锁**(TOCTOU) — `reconciliation.py:66` 先连续 await 读 expected、到末尾才建 diff 调整并 commit:两个并发对账各读到同一 expected → 各建一笔 diff,钱包定格在 `actual+diff`;`investments.py:180` sell 先读 remaining 再 `cost<=remaining` 检查、之后才写 → 两笔并发卖出都过检、剩余成本变负 + 物理多入账。aiosqlite 无行锁、每个 await 都是切换点,窗口真实;单用户 Pi 并发少见故 P2。(与 #40 删 invest_buy 变负是**不同触发路径**:TOCTOU 而非删除无守卫。)
 - [ ] **64** env.py 启动跑迁移时 `fileConfig(disable_existing_loggers=True)` 关掉全部既有 logger — `alembic/env.py:14` 用默认参数,而 `_run_migrations()` 在 lifespan 里触发它,`alembic.ini` 的 logger 名单只含 root/sqlalchemy/alembic → uvicorn/uvicorn.access/tally 全被 `.disabled=True` 且无人复启(**实测该容器 6 天 0 条访问日志**)。修:`fileConfig(..., disable_existing_loggers=False)`。运维可观测性问题,非钱账。
+
+---
+
+# 第四轮审计(2026-07-16 · /loop · 错误处理/输入校验/配置部署)
+
+代码仍未变,换 3 个此前未做的横切角度(错误处理与异常吞没 / 输入校验与边界 / 配置部署与死代码),自证式精简巡检。挖出一条**安全 P0**(附件路径穿越)+ 与之叠加的默认密钥 P1。
+
+## P0(新)
+
+- [ ] **65** 🔴🔐 **附件 `stored_name` 路径穿越 → 任意文件读/删(可读走全体用户共享库 + `.env` 密钥、可删库)** — 上传时 `stored_name` 由 `uuid4().hex` 生成(安全),但 **import 把备份 JSON 里的 `stored_name` 原样落库**(`io.py:292`,零校验);下载 `attachments.py:115` `path = udir / att.stored_name` 后 `FileResponse`、删除 `:132` `(udir / att.stored_name).unlink()`,都**不做 `../` 归一/限定**,而归属校验(`:106/:129`)只校验 Attachment **行**的 user_id、不校验解析后的路径。→ 任一注册用户(`allow_registration` 默认 True)import 一条 `stored_name:"../../tally.db"`(或 `"../../../.env"`)的附件 → `GET /attachments/{aid}` 读走全体用户共享的 SQLite 库 / `.env`;`DELETE` 则直接删库。**已代码级确认机制成立(未实跑穿越,避免碰真实密钥/库)**。修:落库/使用前 `Path(stored_name).name`(去目录)或 `resolve()` 后确认仍在 `udir` 内。
+
+## P1(新)
+
+- [ ] **66** 🔐 **JWT 默认密钥 `change-me` 可用 + 无 fail-closed + 开放注册** — `config.py:8` `secret_key: str = "change-me"`、`:9` `allow_registration=True`,`docker-compose.yml:14` `SECRET_KEY: ${SECRET_KEY:-change-me}`,全仓无"默认值即拒启"守卫。→ 部署者若没设 `SECRET_KEY`,公开仓库里众所周知的 `change-me` 即可伪造任意 user_id 的令牌全站接管(**未设则应升 P0**)。且即便设了强密钥,也能被 **#65** 读 `.env` 偷走 → 两条叠加 = 任一注册用户必然可接管。修:启动时若 secret 为 `change-me` 直接拒启。
+- [ ] **67** 新建账单保存多步非原子 → 重复计钱 — `TransactionForm.tsx:357` 的 save mutationFn 串了 建商家→建交易(`POST /transactions` 后端即时 commit 落库)→ 逐个传附件,三步无补偿;`onError`(:377)只 `setError`,**不 invalidateMoney、不 onClose、不撤销已建交易**。→ 交易已落库但附件上传失败(超 8MB / 截断图触发 #68 的 500 / 网络抖动)时,表单原样留着、首页不刷新,用户看不到交易已进库 → 再点保存 → **第二笔重复交易**,当月支出算两遍。修:交易与附件同事务,或失败时刷新+提示"交易已建、附件失败"。
+
+## P2(新)
+
+- [ ] **68** 附件缩略图 `except` 只兜 `UnidentifiedImageError`(`attachments.py:64`)— 截断图(`OSError: image file is truncated`)/超大图(`DecompressionBombError`)在 `thumbnail()` 的惰性 `.load()` 抛出、逃逸 → 整个上传 500,而原图 `:55` 已写盘、Attachment 行 `:67` 未建 → **孤儿文件**。缩略图本可选,应 `except Exception` 吞掉、保住原图与入库。
+- [ ] **69** 多个直接写钱/附件的前端 mutation 无 `onError` → 失败静默 — `Transactions.tsx` 的 `quickAdd(:137)`/`del(:170)`/`unsplit(:176)`、`TransactionForm.tsx` 的 `upload(:818)`/`del(:829)` 只有 onSuccess;react-query 把 rejection 内部吞掉、调用点也不渲染 isError。→ quickAdd 失败无任何提示且不刷新(用户以为记上了,实则少记;或以为没成功再点→重复记)。对照 ReconcileModal/save/Wallets 都有 onError,属遗漏。
+- [ ] **70** Update schema 丢弃 Create 的约束 + 路由盲 `setattr` — `BudgetUpdate.amount`(`budget.py:17`)无 `gt=0`(Create 有)→ PATCH 负预算使 `budget_progress` 的 percent/remaining 全成垃圾值不报错;`Category/Merchant/Contact/Wallet Update.name` 均无 `max_length`(Create 限 64/64/64/128)→ 可写超长名。系统性"建档校验、改档放行"(`categories.py:52`/`merchants.py:85`/`contacts.py:48`/`wallets.py:75` 均盲 setattr)。与 #23/#60(transaction 缺字段被吞)不同根:此为"字段在但约束缺失"。
+- [ ] **71** 金额整型无上限 `le` — `TransactionCreate.amount`(`transaction.py:18`)等仅 `gt=0`,无上界 → 单笔 ≥2⁶³ insert 触发 SQLite INTEGER 越界 500;巨额多笔累加使 `SUM` 溢出、stats/balances 500。加固:合理 `le`。
+- [ ] **72** 构建不可复现 — 前端依赖全 `^` 浮动、仓库无 lockfile、`Dockerfile:4` 用 `npm install`(非 `npm ci`)→ 每次 `--build` 拉到的次版本可能不同,某天上游发版即可能构建出不一致产物。修:提交 lockfile + 改 `npm ci`。
+- [ ] **73** `.env.example` 的 `DATABASE_URL` 缺 `+aiosqlite` 驱动(`.env.example:1`)→ 照抄到裸机/开发直跑,`create_async_engine` 处启动即崩(需 async 驱动)。修:示例写全 `sqlite+aiosqlite:///./data/tally.db`。
+- [ ] **74** **项目无任何自动化测试** — 全仓无 `test_*.py`/`*.test.ts`/pytest/vitest 配置。这么多涉及钱的分支(配对/折算/删除级联/对账)全靠手测与本清单,回归风险高。建议至少给"账务不变量"(净值=物理±借贷投资、删配对腿、折算口径)补一批后端 pytest。
