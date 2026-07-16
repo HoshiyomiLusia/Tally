@@ -85,3 +85,24 @@
 - [ ] **56** TransactionForm 按「陈旧缓存里的商家名」判断是否新建 → 抢跑窗口内重复创建同名商家(`TransactionForm.tsx:309`)。
 - [ ] **57** GET `/exchange-rates` 返回全量历史(线上 3024 行 / 307KB,98% 前端丢弃,每年 +2MB),首页每次全拉(`exchange_rates.py:20`)。
 - [ ] **58** **性能优化组**(均非错但值得做):① 缺 `(user_id, occurred_on)` 复合索引,按月统计退化成全用户全表扫(实测 36×)`transaction.py:30`;② 账单搜索框无防抖,每敲一键发 2 请求且各触发 LIKE 全表扫 `Transactions.tsx:207`;③ `cross-currency-total` 每次读整张汇率表拼 dict `stats.py:507`;④ `fx.refresh_rates` 循环内逐条 SELECT(~240 次串行,卡在启动流程)`fx.py:54`;⑤ `budgets/progress` N+1,每预算一次全表聚合 `budgets.py:111`;⑥ `Stats.tsx` `fxTo` 未 memo 化,废掉 4 个 useMemo `Stats.tsx:104`;⑦ RecurringPanel 发 3 次 by-month、2 次扫同年,拉整年只用一月 `RecurringPanel.tsx:117`。
+
+---
+
+# 第三轮审计(2026-07-16 · /loop · 深度算法/精度角度)
+
+代码自第二轮以来未变,故换 6 个错误类型视角(精度取整 / 日期时区 / 多步原子性 / 迁移一致性 / 前后端契约 / 核心算法)复查。复核员双否决(不成立 / 已在 #1-#58),仅 6 条通过、0 条与旧项重复、1 条判不成立。**清单趋于收敛。**
+
+## P0(新)
+
+- [ ] **59** 🔴 **删「期初对账收入」那条腿不连带删买入 —— #2 守卫只做了单向** — `transactions.py:388` 的连带删只处理 `kind=="invest_buy"`(删买入→删配套收入),**反向没做**:从账单删掉那笔 `income`(期初持仓·额外资产,`opening_for_position_id` 非空、`position_id`=NULL)时,买入腿仍在。→ 收入的 +本金抵消没了、买入的 -本金还在,净值与物理余额**各静默少算一整笔本金**。修法:删除时若是 opening 收入腿,同样连带删/或禁止单独删。(症状与 #28 相反:#28 留幽灵收入虚高,本条留裸买入虚低。)
+
+## P1(新)
+
+- [ ] **60** 编辑交易切换 **支出↔收入被静默丢弃** — `TransactionUpdate`(`schemas/transaction.py:29`)没有 `kind` 字段,前端编辑表单若发 `kind`,被 Pydantic `extra=ignore` 吞掉(与 **#23** 同根:currency_code 同样被吞)。→ 用户把一笔支出改成收入、保存后仍是支出,无报错。应在 schema 显式接收并走校验,或前端禁用该切换。
+- [ ] **61** **账号重置非原子** — `account.py:37` `reset_my_data` 分三步跨两次已提交事务:先 `commit` 清空 8 张表 → `shutil.rmtree` 删 receipts(文件系统不可回滚)→ 再调 `seed_user_defaults`(内部又一次独立 `commit`)。中途断电/OOM/seed 抛错 → 账号停在空状态,连系统分类(对账调整/坏账损失/投资收益/投资亏损)一起没了,此后对账/卖出因按名查不到而落 `category_id=NULL`(接 #24/#38)。对比 `io.py` import 是单事务、异常整体回滚 —— reset 应同样单事务。
+
+## P2(新)
+
+- [ ] **62** cross-currency 折算用 `int()` 截断而非四舍五入 → 与后端 `fx_preview`(`transactions.py:264` 用 `int(round(...))`)及**全部前端折算**(Overview/Stats/AllTime/Transactions/RecurringPanel 均 `Math.round`)不一致 → 首页 total/physical/credit/invested 四总额恒向零偏小(每外币每口径 ≤1 个 base 最小单位,不落库、有界)。修:`stats.py:524` 改 `int(round(...))` 对齐全站。
+- [ ] **63** 同用户**并发 read-check-write 跨 await 无锁**(TOCTOU) — `reconciliation.py:66` 先连续 await 读 expected、到末尾才建 diff 调整并 commit:两个并发对账各读到同一 expected → 各建一笔 diff,钱包定格在 `actual+diff`;`investments.py:180` sell 先读 remaining 再 `cost<=remaining` 检查、之后才写 → 两笔并发卖出都过检、剩余成本变负 + 物理多入账。aiosqlite 无行锁、每个 await 都是切换点,窗口真实;单用户 Pi 并发少见故 P2。(与 #40 删 invest_buy 变负是**不同触发路径**:TOCTOU 而非删除无守卫。)
+- [ ] **64** env.py 启动跑迁移时 `fileConfig(disable_existing_loggers=True)` 关掉全部既有 logger — `alembic/env.py:14` 用默认参数,而 `_run_migrations()` 在 lifespan 里触发它,`alembic.ini` 的 logger 名单只含 root/sqlalchemy/alembic → uvicorn/uvicorn.access/tally 全被 `.disabled=True` 且无人复启(**实测该容器 6 天 0 条访问日志**)。修:`fileConfig(..., disable_existing_loggers=False)`。运维可观测性问题,非钱账。
