@@ -131,3 +131,11 @@
 - [ ] **72** 构建不可复现 — 前端依赖全 `^` 浮动、仓库无 lockfile、`Dockerfile:4` 用 `npm install`(非 `npm ci`)→ 每次 `--build` 拉到的次版本可能不同,某天上游发版即可能构建出不一致产物。修:提交 lockfile + 改 `npm ci`。
 - [ ] **73** `.env.example` 的 `DATABASE_URL` 缺 `+aiosqlite` 驱动(`.env.example:1`)→ 照抄到裸机/开发直跑,`create_async_engine` 处启动即崩(需 async 驱动)。修:示例写全 `sqlite+aiosqlite:///./data/tally.db`。
 - [ ] **74** **项目无任何自动化测试** — 全仓无 `test_*.py`/`*.test.ts`/pytest/vitest 配置。这么多涉及钱的分支(配对/折算/删除级联/对账)全靠手测与本清单,回归风险高。建议至少给"账务不变量"(净值=物理±借贷投资、删配对腿、折算口径)补一批后端 pytest。
+
+---
+
+# 第五轮审计(2026-07-16 · /loop · 深度业务逻辑数学)
+
+代码仅含 #65/#66 安全修复的改动。3 个深度逻辑角度(周期账单/预测数学、投资成本basis、预算周期)精简巡检,**投资与预算两路核对无新问题(公式正确/已覆盖),仅周期账单 1 条**。审计已强收敛。
+
+- [ ] **75** 周期账单 `next_due` 用「上次 `occurred_on` + `period_days`」且月度=30 天(非按自然月)— `recurring.py:81`(及 `:144`)`next_due = occurred_on + timedelta(days=period_days)`,UI 月度 chip 硬编码 30(`TransactionForm.tsx:619`,库里 distinct periods={30,365})。→ 每逢 31 天月,下一期预测日相对日历系统性前漂;而「确认扣款」把漂移预测日直接预填成新交易 `occurred_on`(`Overview.tsx:347` `occurred_on: it.due`),一键确认(该按钮主用途)即落库。下游 by-month(`recurring.py:254`)与首页月度收支(`dashboard.py:83`)都按 `occurred_on` 归自然月 → 真实月账单被错分到相邻自然月:某自然月漏记(合计偏低)、某自然月重复(翻倍)。已脚本复现:period=30、首笔 2026-01-31 一键确认序列 → 2026-02 记 ¥0、2026-05 记 ¥2000(应各 ¥1000)。**当前潜伏**:真实用户手填真实扣款日、未漂,但一键确认路径必然触发;全跨度净额守恒(错分非幻影)。修:按自然月/年推进 `next_due`(月+1 归一),或确认扣款不拿漂移预测日做默认日期。
