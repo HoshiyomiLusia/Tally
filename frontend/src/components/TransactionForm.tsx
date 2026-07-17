@@ -287,6 +287,16 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     setParticipants(participants.map((p, i) => ({ ...p, share_text: formatAmountInput(each + (i === 0 ? rem : 0), digits) })));
   };
 
+  // 纯代付: 我一分不摊(我=0), 全款均摊到其他参与人头上 -> 全额都是别人欠我的
+  const advanceAll = () => {
+    if (totalAmount <= 0 || !participants.length) return;
+    const n = participants.length;
+    const each = Math.floor(totalAmount / n);
+    const rem = totalAmount - each * n;
+    setMyShareText("0");  // 非空字符串, 同时压制自动均摊 effect
+    setParticipants(participants.map((p, i) => ({ ...p, share_text: formatAmountInput(each + (i === 0 ? rem : 0), digits) })));
+  };
+
   function onMerchantPick(m: Merchant) {
     setMerchantInput(m.name);
     if (merchantInputRef.current) merchantInputRef.current.value = m.name;
@@ -677,6 +687,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                   {participants.length > 0 && (
                     <>
                       <div className="flex justify-end gap-3">
+                        <button type="button" onClick={advanceAll} className="text-xs text-ink-600 underline" title="我不摊, 出全款代付, 全额均摊给其他人 -> 别人全欠我">纯代付</button>
                         <button type="button" onClick={splitRemainder} className="text-xs text-ink-600 underline" title="保留我填的金额, 把剩下的均摊给其他人">我付完余下AA</button>
                         <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline">全部均摊</button>
                       </div>
