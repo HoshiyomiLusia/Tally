@@ -55,11 +55,13 @@ export function BalanceModule() {
     const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
     const rateMap = new Map<string, number>();
     for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    const missing = new Set<string>();
     const fold = (amt: number, from: string): number => {
       if (from === baseCurrency) return amt;
       const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
       let rate = rateMap.get(`${from}->${baseCurrency}`);
       if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      if (rate === 0 && amt !== 0) missing.add(from);  // 借贷折算缺汇率: 记下该币种, 让上方黄条提示(否则静默折 0 漏算)
       return Math.round(amt * rate * Math.pow(10, td - fd));
     };
     let receivable = 0, payable = 0;
@@ -68,7 +70,7 @@ export function BalanceModule() {
       if (v < 0) receivable += -v;
       else payable += v;
     }
-    return { receivable, payable };
+    return { receivable, payable, missing: [...missing] };
   }, [loans.data, rates.data, currencies.data, baseCurrency]);
 
   const groupedWallets = useMemo(() => {
@@ -129,11 +131,16 @@ export function BalanceModule() {
           ))}
         </div>
       </div>
-      {(cross.data?.missing_rate_currencies ?? []).length > 0 && (
-        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
-          ⚠ 缺 {(cross.data?.missing_rate_currencies ?? []).join(" / ")} → {baseCurrency} 的汇率,这些货币余额<b>未计入</b>上方总额。去「设置」录入汇率。
-        </div>
-      )}
+      {(() => {
+        // 合并"钱包口径缺汇率"(后端 cross)与"借贷折算缺汇率"(前端 loanNet) —— 后者含借贷-only/归档钱包币种,
+        // 后端 cross 看不到, 不并进来就会静默漏算借贷应收/应付(审计 #90)。
+        const missingAll = [...new Set([...(cross.data?.missing_rate_currencies ?? []), ...loanNet.missing])];
+        return missingAll.length > 0 ? (
+          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
+            ⚠ 缺 {missingAll.join(" / ")} → {baseCurrency} 的汇率,这些货币的余额/借贷<b>未计入</b>上方总额。去「设置」录入汇率。
+          </div>
+        ) : null;
+      })()}
       {/* 移动端: 折叠的次要指标 (2 列小格) */}
       <div className={`mt-3 grid-cols-2 gap-2 sm:hidden ${showDetails ? "grid" : "hidden"}`}>
         {metricItems.map((m) => (

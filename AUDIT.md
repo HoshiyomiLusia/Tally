@@ -202,3 +202,13 @@
 - [x] **89** ✅ **系统性根治(替代逐个加守卫)** — 币种是无写接口的 9 条种子表。在 `main.tsx` 用 `setQueryDefaults(["currencies"], { initialData: SEED_CURRENCIES })` 把标准币种小数位烘焙成所有 `["currencies"]` 查询的初始数据 → `currencies.data` **永不为 undefined**,`decimal_digits ?? 2` 对任何钱包币种都取到正确小数位,即使 `/currencies` GET 失败也不再兜底 2。**一处修复覆盖全部 14 个查询点 / 所有写路径**(含 #77/#79/#81/#85/#86/#87 及本轮新发现的对账/新建钱包/借出/还款/核销/信用卡还款/报销)。`initialDataUpdatedAt:0` 保证挂载时仍立即拉服务器最新全量币种。前端构建通过。之前各 save 的 fail-closed 守卫保留作纵深防御(现基本不会触发)。
 
 > 教训: 同一根因散落在 14 处时, 逐点加守卫必漏(我漏了 2 次);应从数据源头(让 currencies 永远有值)一次根治。
+
+---
+
+# 第十轮(2026-07-17 · #89 复查 + 同类隐患扫尾)
+
+**#89 复查结论: 可靠、无回归** —— setQueryDefaults 的 initialData 确实让 14 个 currencies 查询点的 `.data` 从挂载起即为种子表, 不破坏 isLoading/prefill 逻辑, 烘焙的 9 条与后端 seed_data.py 完全一致, 挂载仍 refetch。系统性搜"缺值静默兜底"同类隐患, **仅 1 条窄 P2**, 已强收敛。
+
+- [x] **90** ✅ **P2: 首页借贷·应收/应付折算缺汇率时静默折 0 且不进黄条** — `Overview.tsx` 的 `loanNet.fold` 缺汇率时 `rate=0` → 该币种借贷余额静默折成 0 漏算;顶部黄条只读后端 `cross.missing_rate_currencies`(仅钱包口径、且排除归档钱包), 看不到"借贷-only 或归档钱包"的缺汇率币种。修:`loanNet` 记下折算缺汇率的币种并入黄条(与 cross 的合并去重),文案改为"余额/借贷未计入"。构建通过。
+
+> 十轮下来两条系统性根因(系统分类按名识别、decimal_digits 缺省)已根治, 交互层写路径全覆盖, 本轮扫尾只剩窄展示 P2。审计趋于收敛。
