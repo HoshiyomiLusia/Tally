@@ -349,6 +349,10 @@ async def update_transaction(
     if "kind" in updates and updates["kind"] != t.kind:
         if t.kind not in ("expense", "income") or updates["kind"] not in ("expense", "income"):
             raise HTTPException(400, "只能在 支出 / 收入 之间改类型; 转账 / 借贷 / 投资请用对应功能")
+    # 期初对账收入(挂 opening_for_position_id)改金额/钱包/日期会和配套买入的指纹错位,
+    # 日后删买入/收入就漏删配对腿 -> 幽灵收入或裸买入(审计 #28/#59 指纹脆弱性)。禁止在此改这些字段。
+    if t.opening_for_position_id is not None and any(k in updates for k in ("amount", "wallet_id", "occurred_on")):
+        raise HTTPException(400, "期初对账收入不能在此改金额 / 钱包 / 日期(请在投资功能里操作)")
     if "wallet_id" in updates:
         nw = await _check_wallet(session, user, updates["wallet_id"])
         # 防跨币种脱钩: TransactionUpdate 无 currency_code 字段, 换到异币种钱包会让交易币种与钱包币种不一致
@@ -447,6 +451,18 @@ async def delete_transaction(
                 ).limit(1)
             )).scalars().first()
             if buy is not None:
+                # 与 #40 一致的守卫: 连带删这笔买入若使剩余成本变负(卖出已超过剩余买入), 拒绝整个删除,
+                # 否则这条反向路径会绕过 #40 把"投资中"做成负数(回归审查发现)。
+                signed = case(
+                    (Transaction.kind == "invest_buy", Transaction.amount),
+                    (Transaction.kind == "invest_sell", -Transaction.amount),
+                    else_=0,
+                )
+                cur = int((await session.execute(
+                    select(func.sum(signed)).where(Transaction.position_id == buy.position_id)
+                )).scalar() or 0)
+                if cur - buy.amount < 0:
+                    raise HTTPException(400, "该期初收入对应的买入已被卖出, 不能删除(会让持仓剩余成本为负); 请先删相关卖出")
                 pos_ids.add(buy.position_id)
                 await session.delete(buy)
         await session.delete(t)

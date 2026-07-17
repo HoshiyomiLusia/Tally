@@ -308,10 +308,13 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       let mid = merchantId;
       const trimmed = merchantInput.trim();
       if (trimmed) {
-        // 审计#56: 保存前重新拉一次最新商家列表核对 (而非用可能陈旧的缓存),
-        // 收窄抢跑窗口, 避免同名商家被重复创建. 后端无 get-or-create, 只能前端兜.
-        const latest = (await api.get<Merchant[]>("/merchants")).data;
-        const matched = latest.find((m) => m.name === trimmed);
+        // 审计#56: 尽量拉一次最新商家列表核对(收窄重复创建窗口); GET 失败则退回缓存,
+        // 不因这次辅助请求失败而阻断整笔交易保存(回归修正)。后端无 get-or-create, 只能前端兜。
+        let list = merchants.data ?? [];
+        try {
+          list = (await api.get<Merchant[]>("/merchants")).data;
+        } catch { /* 网络抖动: 用缓存兜底, 保存照常进行 */ }
+        const matched = list.find((m) => m.name === trimmed);
         if (matched) {
           mid = matched.id;
         } else {

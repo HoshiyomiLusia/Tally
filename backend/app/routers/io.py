@@ -196,13 +196,24 @@ async def import_json(
         user.primary_currency_code = imported_user["primary_currency_code"]
 
     # 审计 #33: 全局汇率表清空重建(仅当备份含该键, 旧版备份不动现有汇率), 保持幂等
-    if "exchange_rates" in d:
-        await session.execute(delete(ExchangeRate))
-        for r in d["exchange_rates"]:
+    # 汇率是全局共享表(无 user_id): 只 upsert 备份里的每条, 绝不整表清空 ——
+    # 否则某个用户还原备份会抹掉其他用户手录 + 调度器自动抓取的全部汇率(回归审查 P0)。
+    for r in d.get("exchange_rates", []):
+        on_date = date.fromisoformat(r["on_date"]) if isinstance(r["on_date"], str) else r["on_date"]
+        existing = (await session.execute(
+            select(ExchangeRate).where(
+                ExchangeRate.on_date == on_date,
+                ExchangeRate.base == r["base"],
+                ExchangeRate.quote == r["quote"],
+            )
+        )).scalar_one_or_none()
+        if existing:
+            existing.rate = r["rate"]
+            existing.source = r.get("source", "manual")
+        else:
             session.add(ExchangeRate(
-                on_date=date.fromisoformat(r["on_date"]) if isinstance(r["on_date"], str) else r["on_date"],
-                base=r["base"], quote=r["quote"], rate=r["rate"],
-                source=r.get("source", "manual"),
+                on_date=on_date, base=r["base"], quote=r["quote"],
+                rate=r["rate"], source=r.get("source", "manual"),
             ))
 
     wallet_map: dict[int, int] = {}

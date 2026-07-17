@@ -28,6 +28,8 @@ export default function Contacts() {
       qc.invalidateQueries({ queryKey: ["loan-accounts"] });
       qc.invalidateQueries({ queryKey: ["loan-history"] });
     },
+    // 后端对有借贷往来的联系人会 409 拒删(审计#27), 必须提示, 否则用户以为删了其实没删
+    onError: (e: any) => alert(e?.response?.data?.detail ?? "删除失败"),
   });
 
   return (
@@ -63,7 +65,7 @@ export default function Contacts() {
               <button onClick={() => archive.mutate(c)} className="btn-ghost p-1.5" title={c.archived ? "取消归档" : "归档"}>
                 {c.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
               </button>
-              <button onClick={() => { if (confirm(`删除联系人"${c.name}"？相关贷款记录的联系人会清空`)) del.mutate(c.id); }} className="btn-danger p-1.5"><Trash2 size={14} /></button>
+              <button onClick={() => { if (confirm(`删除联系人"${c.name}"？(有借贷往来的联系人不能删, 需先结清)`)) del.mutate(c.id);}} className="btn-danger p-1.5"><Trash2 size={14} /></button>
             </div>
           </div>
         ))}

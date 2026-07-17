@@ -57,6 +57,9 @@ async def update_category(
     # 系统分类靠"名字"被对账/投资/坏账核销反查, 禁止改名(改了那些功能会静默落"未分类")
     if c.name in SYSTEM_CATEGORY_NAMES and updates.get("name") not in (None, c.name):
         raise HTTPException(400, f"系统分类「{c.name}」不能改名(对账 / 投资结算 / 坏账核销按名字识别它)")
+    # 反向也要挡: 不许把普通分类改成系统保留名, 否则又造出重名系统分类 -> 坏账核销等 500(回归审查发现)
+    if updates.get("name") in SYSTEM_CATEGORY_NAMES and updates["name"] != c.name:
+        raise HTTPException(400, f"「{updates['name']}」是系统保留分类名, 不能改成它")
     for k, v in updates.items():
         setattr(c, k, v)
     await session.commit()

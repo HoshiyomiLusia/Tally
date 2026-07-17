@@ -229,9 +229,9 @@ async def write_off(
             select(Category.id).where(
                 Category.user_id == user.id,
                 Category.name == "坏账损失",
-            )
+            ).order_by(Category.id).limit(1)  # #48: first 而非 one_or_none, 防历史重名 500
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
     # 两笔用同一 split_group 绑定: 从账单删任一笔会级联删掉另一笔, 不会只删一半
     group = str(uuid.uuid4())
