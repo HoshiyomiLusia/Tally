@@ -192,3 +192,13 @@
 - [x] **86** ✅ **P1: 投资买入/追加金额 100 倍落库** — `Investments.tsx` BuyModal save 无守卫, JPY 买入 ¥698 → 存 ¥69,800(物理/投资中各错 100 倍)。修:save 前 currencies 未就绪拒绝。
 - [x] **87** ✅ **P1: 投资卖出 proceeds 100 倍 + 成本预填 digit 陈旧** — `Investments.tsx` SellModal:(A)proceeds 兜底 2 位 → 幽灵投资收益;(B)预填 effect 缺 digits 依赖 → currencies 到货后成本从 ¥698 缩成 ¥7、只卖 ¥7 不清仓。修:save fail-closed + 预填 effect 加 `digits` 依赖。
 - [x] **88** ✅ **P2: `TransferCreate` 金额无上界** — #71 只加固了 `TransactionCreate/Update`, 漏了转账 schema。修:`from_amount/to_amount` 加 `Field(gt=0, le=1e12)`(dry-run: 1e13 与 -5 均 422)。
+
+---
+
+# 第九轮(2026-07-17 · decimal_digits 根因系统性根治)
+
+复查发现我第八轮"已覆盖所有写路径"的断言**是错的**:`decimal_digits ?? 2` 根因还漏了 **7 条会落库的写路径**——新建钱包初始余额/额度(默认币种就是 JPY!)、借出、收到还款、坏账核销、信用卡还款、**对账**(P1: 直接污染钱包真实余额)、报销。逐个 save 加守卫是打地鼠,已漏两次。
+
+- [x] **89** ✅ **系统性根治(替代逐个加守卫)** — 币种是无写接口的 9 条种子表。在 `main.tsx` 用 `setQueryDefaults(["currencies"], { initialData: SEED_CURRENCIES })` 把标准币种小数位烘焙成所有 `["currencies"]` 查询的初始数据 → `currencies.data` **永不为 undefined**,`decimal_digits ?? 2` 对任何钱包币种都取到正确小数位,即使 `/currencies` GET 失败也不再兜底 2。**一处修复覆盖全部 14 个查询点 / 所有写路径**(含 #77/#79/#81/#85/#86/#87 及本轮新发现的对账/新建钱包/借出/还款/核销/信用卡还款/报销)。`initialDataUpdatedAt:0` 保证挂载时仍立即拉服务器最新全量币种。前端构建通过。之前各 save 的 fail-closed 守卫保留作纵深防御(现基本不会触发)。
+
+> 教训: 同一根因散落在 14 处时, 逐点加守卫必漏(我漏了 2 次);应从数据源头(让 currencies 永远有值)一次根治。
