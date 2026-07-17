@@ -143,6 +143,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     setStagedFiles([]);
     setError("");
     setPadOpen(false);
+    setMyShareText("");  // 重开表单要清"我的分摊额", 否则陈旧值会抑制自动均摊(审计: 唯一漏重置的字段)
     setTimeout(() => amountRef.current?.focus(), 50);
   }, [open, editing, prefill, recurrenceSourceId, merchants.data, currencies.data]);
 
@@ -306,6 +307,11 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const save = useMutation({
     mutationFn: async () => {
       if (!wallet) throw new Error("请选择 Wallet");
+      // 币种小数位没加载出来时, digits 会兜底成 2, 对 JPY/KRW(0 位)会把金额放大 100 倍落库。
+      // 宁可拦下也不能记错: currencies 未就绪就不许保存(审计发现的 100 倍落库根因)。
+      if (!currencies.data?.some((c) => c.code === wallet.currency_code)) {
+        throw new Error("货币信息未加载完成, 请稍候重试");
+      }
       if (totalAmount <= 0) throw new Error("金额需大于 0");
 
       let mid = merchantId;

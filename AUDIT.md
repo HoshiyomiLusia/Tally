@@ -159,3 +159,15 @@
 # 用户实测发现(2026-07-17)
 
 - [x] **76** ✅ **确认扣款弹窗把钱包错设成默认三菱UFJ(而非源账单的钱包)** — `TransactionForm.tsx` 的"默认钱包" effect(154-160)与 prefill effect(85)在同一渲染里竞态:prefill 先 `setWalletId(农行)`,但后定义的默认 effect 读到旧的 `null` 闭包又 `setWalletId(三菱UFJ)`,末次写入胜出 → 从历史周期账单(农行/CNY)确认扣款时,弹窗错误选中三菱UFJ/JPY。**#23 挡不住**:币种跟随被错选的钱包(→JPY),create_transaction 的 `currency==wallet` 校验反而通过,会静默把 ¥25 CNY 农行订阅记成 ¥25 JPY 三菱UFJ。修:默认钱包 effect 加 `if (editing || prefill) return;`,编辑/确认自带钱包不被覆盖。前端构建通过。
+
+---
+
+# 第七轮审计(2026-07-17 · 前端状态竞态 / 币种小数位)
+
+由 #76(用户实测)引出的盲区专审:前端 effect 竞态、prefill 被默认值覆盖、以及 **`decimal_digits ?? 2` 在 currencies 未加载时对 0 位币种(JPY/KRW)造成 100 倍缩放**这一系统性根因。
+
+- [x] **77** ✅ **P1: 新建交易金额在 currencies 未就绪时按 2 位兜底 → JPY/KRW 静默 100 倍落库** — `TransactionForm.tsx:150` `decimal_digits ?? 2`,而 save 路径(不同于 editing/prefill 在 :92 有 currencies 门闩)无守卫。currencies GET 失败(retry 用尽→本会话恒 undefined)或首屏竞态时,JPY 输 698 → 存 69800(¥69,800)。修:save 前若该钱包币种的 `decimal_digits` 未加载出来,直接拒绝保存(fail-closed)。构建通过。
+- [x] **78** ✅ **P2: 首页「折算到」下拉选择不 stick** — `Overview.tsx:39` 的 `primary_currency_code` effect 每次刷新无条件覆盖 localStorage 持久化的手选币种(#76 同类:持久值被后写默认 effect 顶掉)。修:用 ref 记挂载时是否已有手选值,只在从没手选过时才用账户默认币种。
+- [x] **79** ✅ **P2: 借贷收款/坏账核销/信用卡还款弹窗预填额用陈旧 digits** — `Loans.tsx:365`/`:457`、`CreditRepayForm.tsx:67` 的预填 effect 只依赖 `[acct]`/`[cardId]`,currencies 冷缓存时 digits 兜底 2 → JPY 预填缩小 100 倍且可被直接提交(落库)。修:effect 依赖加 `digits`,currencies 到货后按正确小数位重算。
+- [x] **80** ✅ **P2: `myShareText` 是唯一未被 init 重置的字段** — 跨「关闭→重开」残留上一笔的"我的分摊额",抑制自动均摊。修:init effect 补 `setMyShareText("")`。
+- [ ] **81** **P2: Stats `fxTo` 的 `digits ?? 2` 在 currencies 缺失时对 JPY 折算差 100 倍** — 同 #77 根,但纯展示、currencies 到货即自愈,不落库。暂留(低优先)。

@@ -63,8 +63,9 @@ export default function CreditRepayForm({ open, onClose }: Props) {
     if (card && debt > 0) setAmountText((debt / Math.pow(10, digits)).toString());
     else setAmountText("");
     setPayId(null);
+    // 加 digits: currencies 到货后按正确小数位重算预填待还额, 否则 JPY 卡缩小 100 倍(审计发现)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId]);
+  }, [cardId, digits]);
 
   const save = useMutation({
     mutationFn: async () => {

@@ -361,8 +361,10 @@ function RepaymentModal({ acct, wallets, currencies, onClose }: {
     setOccurredOn(todayIso());
     setNote("");
     setError("");
+    // 加 digits: currencies 冷缓存时 digits 先兜底成 2, 到货后要按正确小数位重算预填额,
+    // 否则 JPY(0 位)预填被缩小 100 倍并可能被直接提交(审计发现)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acct]);
+  }, [acct, digits]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -451,8 +453,9 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
     setAmountText(formatAmountInput(-acct.balance, digits));
     setNote("");
     setError("");
+    // 加 digits: currencies 到货后按正确小数位重算预填额, 否则 JPY 缩小 100 倍(审计发现)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acct]);
+  }, [acct, digits]);
 
   const save = useMutation({
     mutationFn: async () => {

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, ChevronDown, HandCoins, TrendingUp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -35,8 +35,11 @@ function thisMonthStr(): string {
 // 资产总览 (真实余额为主) + Wallet 余额 (按账户类型分组)
 export function BalanceModule() {
   const { user } = useAuth();
+  const hadSavedBase = useRef(localStorage.getItem("tally.baseCurrency") != null);
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
-  useEffect(() => { if (user?.primary_currency_code) setBaseCurrency(user.primary_currency_code); }, [user?.primary_currency_code]);
+  // 只在用户从没手选过折算币种(挂载时 localStorage 无值)才用账户默认币种做初值;
+  // 手选过就别用 primary_currency_code 覆盖, 否则下拉选择每次刷新被顶回、永不生效(审计发现)。
+  useEffect(() => { if (!hadSavedBase.current && user?.primary_currency_code) setBaseCurrency(user.primary_currency_code); }, [user?.primary_currency_code]);
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
   const [showDetails, setShowDetails] = useState(false);  // 移动端: 折叠次要指标
 
