@@ -494,7 +494,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                   key={b.label}
                   type="button"
                   onClick={() => {
-                    const cur = parseFloat(amountText) || 1;
+                    const cur = parseFloat(amountText.replace(/,/g, "")) || 1;  // 审计#92: 剥千分位逗号, 与 parseAmount 一致
                     setAmountText(stripTrailingZero(cur * b.factor));
                   }}
                   className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs"

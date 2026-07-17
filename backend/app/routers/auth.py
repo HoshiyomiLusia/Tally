@@ -24,9 +24,9 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
         raise HTTPException(409, "username already taken")
     user = User(username=payload.username, hashed_password=hash_password(payload.password))
     session.add(user)
-    await session.commit()
+    await session.flush()  # 拿到 user.id 但先不提交, 让 seed 的提交把 user + 默认数据一起落库(原子, 审计 #93)
+    await seed_user_defaults(session, user.id)  # 内部 commit; 若 seed 中途失败, 未提交的 user 一并回滚, 不留坏账号
     await session.refresh(user)
-    await seed_user_defaults(session, user.id)
     return user
 
 

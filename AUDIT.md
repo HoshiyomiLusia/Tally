@@ -212,3 +212,14 @@
 - [x] **90** ✅ **P2: 首页借贷·应收/应付折算缺汇率时静默折 0 且不进黄条** — `Overview.tsx` 的 `loanNet.fold` 缺汇率时 `rate=0` → 该币种借贷余额静默折成 0 漏算;顶部黄条只读后端 `cross.missing_rate_currencies`(仅钱包口径、且排除归档钱包), 看不到"借贷-only 或归档钱包"的缺汇率币种。修:`loanNet` 记下折算缺汇率的币种并入黄条(与 cross 的合并去重),文案改为"余额/借贷未计入"。构建通过。
 
 > 十轮下来两条系统性根因(系统分类按名识别、decimal_digits 缺省)已根治, 交互层写路径全覆盖, 本轮扫尾只剩窄展示 P2。审计趋于收敛。
+
+---
+
+# 第十一轮(2026-07-17 · 从未审的 auth/settings + 数字键盘)
+
+补审两块从没审过的区域(上轮 DateField agent 报错未跑;auth/settings 从未审)。DateField 日期数学核对无新问题;auth 里挖到一个真 P1。
+
+- [x] **91** ✅ **P1: 登出/登录不清 React Query 缓存 → 同浏览器切账号看到上一用户的余额/交易/持仓** — `auth.tsx` 的 login/logout 只动 token,不碰 qc;所有理财 query key 不带 user 维度 + staleTime 30s → B 登录后 30s 内组件直接渲染 A 的缓存数据(还不发请求)。家用共享浏览器的跨用户财务数据泄露。修:`AuthProvider` 用 `useQueryClient()`,login 与 logout 都 `qc.clear()`。
+- [x] **92** ✅ **P2: ×10/×100/×千/×万 用 `parseFloat`(不剥逗号)** — 与落库的 `parseAmount`(先剥 `,`)不一致 → 手输"1,000"点×倍数被打成 1,少两个数量级。修:三处(`TransactionForm`/`Loans`/`Investments`)`parseFloat(amountText.replace(/,/g,""))`。
+- [x] **93** ✅ **P2: 注册非原子(#61 的 register 版)** — `auth.py` 先 commit User 再 seed(seed 内部再 commit),seed 失败留下无默认/系统分类的坏账号。修:改 `flush` 拿 id、让 seed 的提交把 User+默认数据一起落库(dry-run: 注册建 67 分类含 4 系统分类)。
+- [x] **94** ✅ **P2: Settings 导出/重置无错误反馈** — `downloadExport` 裸 async 无 try/catch、reset mutation 无 onError → 500 时静默无提示(用户以为已导出/已重置)。修:加 try/catch + onError alert。

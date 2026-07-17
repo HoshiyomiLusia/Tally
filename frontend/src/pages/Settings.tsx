@@ -79,17 +79,22 @@ export default function Settings() {
       setResetConfirm("");
       navigate("/", { replace: true });
     },
+    onError: () => alert("重置失败，请重试"),  // 审计#94: 原本无反馈, 500 时弹窗静默停留
   });
 
   async function downloadExport(kind: "json" | "csv" | "xlsx") {
-    const r = await api.get(`/export/${kind}`, { responseType: "blob" });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    const ext = kind === "xlsx" ? "xlsx" : kind;
-    a.download = `tally-${user?.username}-${todayIso()}.${ext}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try {
+      const r = await api.get(`/export/${kind}`, { responseType: "blob" });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = kind === "xlsx" ? "xlsx" : kind;
+      a.download = `tally-${user?.username}-${todayIso()}.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      alert("导出失败，请重试");  // 审计#94: 原本裸 async 无 try/catch, 失败静默无下载
+    }
   }
 
   const importMut = useMutation({

@@ -291,7 +291,7 @@ function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose
           )}
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {[{ label: "×10", factor: 10 }, { label: "×100", factor: 100 }, { label: "×千", factor: 1000 }, { label: "×万", factor: 10000 }].map((b) => (
-              <button key={b.label} type="button" onClick={() => { const cur = parseFloat(amountText) || 1; setAmountText(stripTrailingZero(cur * b.factor)); }} className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-700/40 dark:text-ink-200">{b.label}</button>
+              <button key={b.label} type="button" onClick={() => { const cur = parseFloat(amountText.replace(/,/g, "")) || 1; setAmountText(stripTrailingZero(cur * b.factor)); }} className="min-h-[36px] rounded-md bg-ink-100 px-3.5 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-700/40 dark:text-ink-200">{b.label}</button>
             ))}
             <button type="button" onClick={() => setAmountText("")} className="min-h-[36px] rounded-md bg-ink-50 px-3.5 py-1.5 text-sm text-ink-500 hover:bg-ink-100 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs dark:bg-ink-800/40">清空</button>
           </div>

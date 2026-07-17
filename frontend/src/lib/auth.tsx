@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { api, TOKEN_KEY } from "./api";
@@ -21,6 +22,7 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,8 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     localStorage.setItem(TOKEN_KEY, r.data.access_token);
+    qc.clear();  // 清掉上一会话的所有缓存, 防同浏览器切账号时看到上一用户的余额/交易/持仓(审计 #91)
     await fetchMe();
-  }, [fetchMe]);
+  }, [fetchMe, qc]);
 
   const register = useCallback(async (username: string, password: string) => {
     await api.post("/auth/register", { username, password });
@@ -64,7 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
-  }, []);
+    qc.clear();  // 登出即清缓存, 防下一用户在 staleTime 窗口内看到上一用户数据(审计 #91)
+  }, [qc]);
 
   const value = useMemo(() => ({ user, loading, login, register, logout, refresh: fetchMe }), [user, loading, login, register, logout, fetchMe]);
 
