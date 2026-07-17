@@ -54,36 +54,36 @@
 
 ## P1(新)— 真 bug,触发面较窄或后果可自愈
 
-- [ ] **31** 备份导出漏 `wallets.credit_limit` → 还原后所有信用卡额度清空,「按可用额度」对账全废(`io.py:46`)。[账务+备份 2 命中]
-- [ ] **32** 备份导出漏 `merchants.aliases` → 商家别名(线上 1026 条)还原后全清空(`io.py:48`)。
-- [ ] **33** 备份导出**不含 exchange_rates** → 手动录入的汇率还原后永久丢失(`io.py:15`,同 #26 根)。
-- [ ] **34** 备份导出 user 漏 `primary_currency_code` → 跨机还原后折算基准静默变回 JPY(`io.py:45`)。
-- [ ] **35** CSV/XLSX 导出直接吐最小单位原始整数,未按币种 `decimal_digits` 缩放 → 金额放大 10^digits 倍(`io.py:99`)。
+- [x] **31** ✅[07-17] 备份导出漏 `wallets.credit_limit` → 还原后所有信用卡额度清空,「按可用额度」对账全废(`io.py:46`)。[账务+备份 2 命中]
+- [x] **32** ✅[07-17] 备份导出漏 `merchants.aliases` → 商家别名(线上 1026 条)还原后全清空(`io.py:48`)。
+- [x] **33** ✅[07-17] 备份导出**不含 exchange_rates** → 手动录入的汇率还原后永久丢失(`io.py:15`,同 #26 根)。
+- [x] **34** ✅[07-17] 备份导出 user 漏 `primary_currency_code` → 跨机还原后折算基准静默变回 JPY(`io.py:45`)。
+- [x] **35** ✅[07-17] CSV/XLSX 导出直接吐最小单位原始整数,未按币种 `decimal_digits` 缩放 → 金额放大 10^digits 倍(`io.py:99`)。
 - [ ] **36** **SQLite 外键从未开启**(`db.py` 无 `PRAGMA foreign_keys` 监听)+ 删交易不清 Attachment + rowid 复用 → 已删交易的小票挂到新交易上(`transactions.py:401`)。[交易+备份 2 命中]
 - [ ] **37** `delete_category` 无级联无守卫,叠加 FK 关闭 → 子分类被孤立,UI 承诺的「级联删」是假的(`categories.py:68`,同 #36 根)。
-- [ ] **38** `_pnl_cat` 找不到分类静默返回 None → 期初注入/盈亏分录写成「未分类」直接进收入统计(`investments.py:123`,同 #24 根)。
-- [ ] **39** 坏账核销不校验未收余额上限 → 超额核销静默压低净资产 + 造出不存在的「应付」(`loans.py:206`)。
-- [ ] **40** 从账单删单笔 `invest_buy` 无守卫 → 持仓剩余成本可做成负数,首页「投资中」变负(`transactions.py:401`)。
-- [ ] **41** 倒数汇率抢占字典槽位 → 手动录入的正向汇率被静默忽略,前后端用两个不同汇率(`stats.py:517`,同 #26 根)。
+- [x] **38** ✅[07-17] `_pnl_cat` 找不到分类静默返回 None → 期初注入/盈亏分录写成「未分类」直接进收入统计(`investments.py:123`,同 #24 根)。
+- [x] **39** ✅[07-17] 坏账核销不校验未收余额上限 → 超额核销静默压低净资产 + 造出不存在的「应付」(`loans.py:206`)。
+- [x] **40** ✅[07-17] 从账单删单笔 `invest_buy` 无守卫 → 持仓剩余成本可做成负数,首页「投资中」变负(`transactions.py:401`)。
+- [x] **41** ✅[07-17] 倒数汇率抢占字典槽位 → 手动录入的正向汇率被静默忽略,前后端用两个不同汇率(`stats.py:517`,同 #26 根)。
 - [x] **42** ✅[已修 07-17, 随 #26 一起] 汇率无正数校验 → 负汇率静默翻转折算符号且不报警(`exchange_rate.py:10`,同 #26 根)。
-- [ ] **43** 信用卡待还:后端不夹 0(预存卡可负、冲抵总额)、前端每卡 `max(0,·)` → 首页同一张卡并排显示两个不同「待还」(`stats.py:503` + `Overview.tsx:184`)。[账务+前端 2 命中]
+- [x] **43** ✅[07-17] 信用卡待还:后端不夹 0(预存卡可负、冲抵总额)、前端每卡 `max(0,·)` → 首页同一张卡并排显示两个不同「待还」(`stats.py:503` + `Overview.tsx:184`)。[账务+前端 2 命中]
 - [ ] **44** Top 商家跨币种按「最小单位整数」排序 + 截断,前端再筛币种 → 拿到残缺榜(`Stats.tsx:234`)。
 - [ ] **45** Stats「全部」/ 总分析「汇总」/ 账单每日「≈JPY」缺汇率时静默按 0 折算无提示(**#11 只修了首页**)(`Stats.tsx:111`)。
-- [ ] **46** Contacts 页删联系人未失效 `["loan-accounts"]` → 首页「借贷·应收」残留已删债权(`Contacts.tsx:25`,#27 的前端侧)。
-- [ ] **47** query key `["wallets"]`/`["contacts"]` 被「含/不含归档」两个 URL 共用 → 谁先挂载谁的数据赢,30s 内互相污染、合计漏算归档(`Wallets.tsx:48`、`Transactions.tsx:112`)。
-- [ ] **48** `reconciliation`/`investments`/`write-off` 三处按分类名 `scalar_one_or_none()` 查系统分类 → 用户建一个重名分类就让对账/投资/坏账核销全部 500(`reconciliation.py:64`,同 #24 根)。
-- [ ] **49** 交易 `category_id`/`merchant_id` 不校验归属 + 统计 join 不带 user 过滤 → 可枚举出别的用户的分类名/商家名(IDOR 读)(`transactions.py:143`)。
-- [ ] **50** 附件上传先 `read()` 整个文件进内存再判大小 → 8MB 上限形同虚设,一次大上传即可 OOM 掉整台树莓派(`attachments.py:47`)。
+- [x] **46** ✅[07-17] Contacts 页删联系人未失效 `["loan-accounts"]` → 首页「借贷·应收」残留已删债权(`Contacts.tsx:25`,#27 的前端侧)。
+- [x] **47** ✅[07-17] query key `["wallets"]`/`["contacts"]` 被「含/不含归档」两个 URL 共用 → 谁先挂载谁的数据赢,30s 内互相污染、合计漏算归档(`Wallets.tsx:48`、`Transactions.tsx:112`)。
+- [x] **48** ✅[07-17] `reconciliation`/`investments`/`write-off` 三处按分类名 `scalar_one_or_none()` 查系统分类 → 用户建一个重名分类就让对账/投资/坏账核销全部 500(`reconciliation.py:64`,同 #24 根)。
+- [x] **49** ✅[07-17] 交易 `category_id`/`merchant_id` 不校验归属 + 统计 join 不带 user 过滤 → 可枚举出别的用户的分类名/商家名(IDOR 读)(`transactions.py:143`)。
+- [x] **50** ✅[07-17] 附件上传先 `read()` 整个文件进内存再判大小 → 8MB 上限形同虚设,一次大上传即可 OOM 掉整台树莓派(`attachments.py:47`)。
 
 ## P2(新)— 边角 / 一致性 / 优化
 
 - [ ] **51** 删持仓唯一一笔买入后剩余=0 被判「已清仓」,既不能追加也无法复原(`transactions.py:415`,#9 的边角)。
-- [ ] **52** Wallets 页币种汇总含归档钱包,首页/后端都不含 → 同一「真实/物理」两页对不上(`Wallets.tsx:90`,同 #47 根)。
-- [ ] **53** 信用卡还款切到「待还=0」的卡时不重置金额,沿用上一张卡的金额(可能还是另一币种)(`CreditRepayForm.tsx:61`)。
+- [x] **52** ✅[07-17] Wallets 页币种汇总含归档钱包,首页/后端都不含 → 同一「真实/物理」两页对不上(`Wallets.tsx:90`,同 #47 根)。
+- [x] **53** ✅[07-17] 信用卡还款切到「待还=0」的卡时不重置金额,沿用上一张卡的金额(可能还是另一币种)(`CreditRepayForm.tsx:61`)。
 - [ ] **54** 借贷「明细」弹窗净额颜色与 #7 定的约定相反(列表绿、弹窗红)(`Loans.tsx:555`)。
-- [ ] **55** 支出节奏图 `new Date("YYYY-MM-DD")` 按 UTC 解析再取本地日期 → 负时区每日桶整体前移一天(`Stats.tsx:207`)。
-- [ ] **56** TransactionForm 按「陈旧缓存里的商家名」判断是否新建 → 抢跑窗口内重复创建同名商家(`TransactionForm.tsx:309`)。
-- [ ] **57** GET `/exchange-rates` 返回全量历史(线上 3024 行 / 307KB,98% 前端丢弃,每年 +2MB),首页每次全拉(`exchange_rates.py:20`)。
+- [x] **55** ✅[07-17] 支出节奏图 `new Date("YYYY-MM-DD")` 按 UTC 解析再取本地日期 → 负时区每日桶整体前移一天(`Stats.tsx:207`)。
+- [x] **56** ✅[07-17] TransactionForm 按「陈旧缓存里的商家名」判断是否新建 → 抢跑窗口内重复创建同名商家(`TransactionForm.tsx:309`)。
+- [x] **57** ✅[07-17] GET `/exchange-rates` 返回全量历史(线上 3024 行 / 307KB,98% 前端丢弃,每年 +2MB),首页每次全拉(`exchange_rates.py:20`)。
 - [ ] **58** **性能优化组**(均非错但值得做):① 缺 `(user_id, occurred_on)` 复合索引,按月统计退化成全用户全表扫(实测 36×)`transaction.py:30`;② 账单搜索框无防抖,每敲一键发 2 请求且各触发 LIKE 全表扫 `Transactions.tsx:207`;③ `cross-currency-total` 每次读整张汇率表拼 dict `stats.py:507`;④ `fx.refresh_rates` 循环内逐条 SELECT(~240 次串行,卡在启动流程)`fx.py:54`;⑤ `budgets/progress` N+1,每预算一次全表聚合 `budgets.py:111`;⑥ `Stats.tsx` `fxTo` 未 memo 化,废掉 4 个 useMemo `Stats.tsx:104`;⑦ RecurringPanel 发 3 次 by-month、2 次扫同年,拉整年只用一月 `RecurringPanel.tsx:117`。
 
 ---
@@ -98,14 +98,14 @@
 
 ## P1(新)
 
-- [ ] **60** 编辑交易切换 **支出↔收入被静默丢弃** — `TransactionUpdate`(`schemas/transaction.py:29`)没有 `kind` 字段,前端编辑表单若发 `kind`,被 Pydantic `extra=ignore` 吞掉(与 **#23** 同根:currency_code 同样被吞)。→ 用户把一笔支出改成收入、保存后仍是支出,无报错。应在 schema 显式接收并走校验,或前端禁用该切换。
-- [ ] **61** **账号重置非原子** — `account.py:37` `reset_my_data` 分三步跨两次已提交事务:先 `commit` 清空 8 张表 → `shutil.rmtree` 删 receipts(文件系统不可回滚)→ 再调 `seed_user_defaults`(内部又一次独立 `commit`)。中途断电/OOM/seed 抛错 → 账号停在空状态,连系统分类(对账调整/坏账损失/投资收益/投资亏损)一起没了,此后对账/卖出因按名查不到而落 `category_id=NULL`(接 #24/#38)。对比 `io.py` import 是单事务、异常整体回滚 —— reset 应同样单事务。
+- [x] **60** ✅[07-17] 编辑交易切换 **支出↔收入被静默丢弃** — `TransactionUpdate`(`schemas/transaction.py:29`)没有 `kind` 字段,前端编辑表单若发 `kind`,被 Pydantic `extra=ignore` 吞掉(与 **#23** 同根:currency_code 同样被吞)。→ 用户把一笔支出改成收入、保存后仍是支出,无报错。应在 schema 显式接收并走校验,或前端禁用该切换。
+- [x] **61** ✅[07-17] **账号重置非原子** — `account.py:37` `reset_my_data` 分三步跨两次已提交事务:先 `commit` 清空 8 张表 → `shutil.rmtree` 删 receipts(文件系统不可回滚)→ 再调 `seed_user_defaults`(内部又一次独立 `commit`)。中途断电/OOM/seed 抛错 → 账号停在空状态,连系统分类(对账调整/坏账损失/投资收益/投资亏损)一起没了,此后对账/卖出因按名查不到而落 `category_id=NULL`(接 #24/#38)。对比 `io.py` import 是单事务、异常整体回滚 —— reset 应同样单事务。
 
 ## P2(新)
 
-- [ ] **62** cross-currency 折算用 `int()` 截断而非四舍五入 → 与后端 `fx_preview`(`transactions.py:264` 用 `int(round(...))`)及**全部前端折算**(Overview/Stats/AllTime/Transactions/RecurringPanel 均 `Math.round`)不一致 → 首页 total/physical/credit/invested 四总额恒向零偏小(每外币每口径 ≤1 个 base 最小单位,不落库、有界)。修:`stats.py:524` 改 `int(round(...))` 对齐全站。
+- [x] **62** ✅[07-17] cross-currency 折算用 `int()` 截断而非四舍五入 → 与后端 `fx_preview`(`transactions.py:264` 用 `int(round(...))`)及**全部前端折算**(Overview/Stats/AllTime/Transactions/RecurringPanel 均 `Math.round`)不一致 → 首页 total/physical/credit/invested 四总额恒向零偏小(每外币每口径 ≤1 个 base 最小单位,不落库、有界)。修:`stats.py:524` 改 `int(round(...))` 对齐全站。
 - [ ] **63** 同用户**并发 read-check-write 跨 await 无锁**(TOCTOU) — `reconciliation.py:66` 先连续 await 读 expected、到末尾才建 diff 调整并 commit:两个并发对账各读到同一 expected → 各建一笔 diff,钱包定格在 `actual+diff`;`investments.py:180` sell 先读 remaining 再 `cost<=remaining` 检查、之后才写 → 两笔并发卖出都过检、剩余成本变负 + 物理多入账。aiosqlite 无行锁、每个 await 都是切换点,窗口真实;单用户 Pi 并发少见故 P2。(与 #40 删 invest_buy 变负是**不同触发路径**:TOCTOU 而非删除无守卫。)
-- [ ] **64** env.py 启动跑迁移时 `fileConfig(disable_existing_loggers=True)` 关掉全部既有 logger — `alembic/env.py:14` 用默认参数,而 `_run_migrations()` 在 lifespan 里触发它,`alembic.ini` 的 logger 名单只含 root/sqlalchemy/alembic → uvicorn/uvicorn.access/tally 全被 `.disabled=True` 且无人复启(**实测该容器 6 天 0 条访问日志**)。修:`fileConfig(..., disable_existing_loggers=False)`。运维可观测性问题,非钱账。
+- [x] **64** ✅[07-17] env.py 启动跑迁移时 `fileConfig(disable_existing_loggers=True)` 关掉全部既有 logger — `alembic/env.py:14` 用默认参数,而 `_run_migrations()` 在 lifespan 里触发它,`alembic.ini` 的 logger 名单只含 root/sqlalchemy/alembic → uvicorn/uvicorn.access/tally 全被 `.disabled=True` 且无人复启(**实测该容器 6 天 0 条访问日志**)。修:`fileConfig(..., disable_existing_loggers=False)`。运维可观测性问题,非钱账。
 
 ---
 
@@ -124,12 +124,12 @@
 
 ## P2(新)
 
-- [ ] **68** 附件缩略图 `except` 只兜 `UnidentifiedImageError`(`attachments.py:64`)— 截断图(`OSError: image file is truncated`)/超大图(`DecompressionBombError`)在 `thumbnail()` 的惰性 `.load()` 抛出、逃逸 → 整个上传 500,而原图 `:55` 已写盘、Attachment 行 `:67` 未建 → **孤儿文件**。缩略图本可选,应 `except Exception` 吞掉、保住原图与入库。
-- [ ] **69** 多个直接写钱/附件的前端 mutation 无 `onError` → 失败静默 — `Transactions.tsx` 的 `quickAdd(:137)`/`del(:170)`/`unsplit(:176)`、`TransactionForm.tsx` 的 `upload(:818)`/`del(:829)` 只有 onSuccess;react-query 把 rejection 内部吞掉、调用点也不渲染 isError。→ quickAdd 失败无任何提示且不刷新(用户以为记上了,实则少记;或以为没成功再点→重复记)。对照 ReconcileModal/save/Wallets 都有 onError,属遗漏。
-- [ ] **70** Update schema 丢弃 Create 的约束 + 路由盲 `setattr` — `BudgetUpdate.amount`(`budget.py:17`)无 `gt=0`(Create 有)→ PATCH 负预算使 `budget_progress` 的 percent/remaining 全成垃圾值不报错;`Category/Merchant/Contact/Wallet Update.name` 均无 `max_length`(Create 限 64/64/64/128)→ 可写超长名。系统性"建档校验、改档放行"(`categories.py:52`/`merchants.py:85`/`contacts.py:48`/`wallets.py:75` 均盲 setattr)。与 #23/#60(transaction 缺字段被吞)不同根:此为"字段在但约束缺失"。
-- [ ] **71** 金额整型无上限 `le` — `TransactionCreate.amount`(`transaction.py:18`)等仅 `gt=0`,无上界 → 单笔 ≥2⁶³ insert 触发 SQLite INTEGER 越界 500;巨额多笔累加使 `SUM` 溢出、stats/balances 500。加固:合理 `le`。
+- [x] **68** ✅[07-17] 附件缩略图 `except` 只兜 `UnidentifiedImageError`(`attachments.py:64`)— 截断图(`OSError: image file is truncated`)/超大图(`DecompressionBombError`)在 `thumbnail()` 的惰性 `.load()` 抛出、逃逸 → 整个上传 500,而原图 `:55` 已写盘、Attachment 行 `:67` 未建 → **孤儿文件**。缩略图本可选,应 `except Exception` 吞掉、保住原图与入库。
+- [x] **69** ✅[07-17] 多个直接写钱/附件的前端 mutation 无 `onError` → 失败静默 — `Transactions.tsx` 的 `quickAdd(:137)`/`del(:170)`/`unsplit(:176)`、`TransactionForm.tsx` 的 `upload(:818)`/`del(:829)` 只有 onSuccess;react-query 把 rejection 内部吞掉、调用点也不渲染 isError。→ quickAdd 失败无任何提示且不刷新(用户以为记上了,实则少记;或以为没成功再点→重复记)。对照 ReconcileModal/save/Wallets 都有 onError,属遗漏。
+- [x] **70** ✅[07-17] Update schema 丢弃 Create 的约束 + 路由盲 `setattr` — `BudgetUpdate.amount`(`budget.py:17`)无 `gt=0`(Create 有)→ PATCH 负预算使 `budget_progress` 的 percent/remaining 全成垃圾值不报错;`Category/Merchant/Contact/Wallet Update.name` 均无 `max_length`(Create 限 64/64/64/128)→ 可写超长名。系统性"建档校验、改档放行"(`categories.py:52`/`merchants.py:85`/`contacts.py:48`/`wallets.py:75` 均盲 setattr)。与 #23/#60(transaction 缺字段被吞)不同根:此为"字段在但约束缺失"。
+- [x] **71** ✅[07-17] 金额整型无上限 `le` — `TransactionCreate.amount`(`transaction.py:18`)等仅 `gt=0`,无上界 → 单笔 ≥2⁶³ insert 触发 SQLite INTEGER 越界 500;巨额多笔累加使 `SUM` 溢出、stats/balances 500。加固:合理 `le`。
 - [ ] **72** 构建不可复现 — 前端依赖全 `^` 浮动、仓库无 lockfile、`Dockerfile:4` 用 `npm install`(非 `npm ci`)→ 每次 `--build` 拉到的次版本可能不同,某天上游发版即可能构建出不一致产物。修:提交 lockfile + 改 `npm ci`。
-- [ ] **73** `.env.example` 的 `DATABASE_URL` 缺 `+aiosqlite` 驱动(`.env.example:1`)→ 照抄到裸机/开发直跑,`create_async_engine` 处启动即崩(需 async 驱动)。修:示例写全 `sqlite+aiosqlite:///./data/tally.db`。
+- [x] **73** ✅[07-17] `.env.example` 的 `DATABASE_URL` 缺 `+aiosqlite` 驱动(`.env.example:1`)→ 照抄到裸机/开发直跑,`create_async_engine` 处启动即崩(需 async 驱动)。修:示例写全 `sqlite+aiosqlite:///./data/tally.db`。
 - [ ] **74** **项目无任何自动化测试** — 全仓无 `test_*.py`/`*.test.ts`/pytest/vitest 配置。这么多涉及钱的分支(配对/折算/删除级联/对账)全靠手测与本清单,回归风险高。建议至少给"账务不变量"(净值=物理±借贷投资、删配对腿、折算口径)补一批后端 pytest。
 
 ---
@@ -138,4 +138,4 @@
 
 代码仅含 #65/#66 安全修复的改动。3 个深度逻辑角度(周期账单/预测数学、投资成本basis、预算周期)精简巡检,**投资与预算两路核对无新问题(公式正确/已覆盖),仅周期账单 1 条**。审计已强收敛。
 
-- [ ] **75** 周期账单 `next_due` 用「上次 `occurred_on` + `period_days`」且月度=30 天(非按自然月)— `recurring.py:81`(及 `:144`)`next_due = occurred_on + timedelta(days=period_days)`,UI 月度 chip 硬编码 30(`TransactionForm.tsx:619`,库里 distinct periods={30,365})。→ 每逢 31 天月,下一期预测日相对日历系统性前漂;而「确认扣款」把漂移预测日直接预填成新交易 `occurred_on`(`Overview.tsx:347` `occurred_on: it.due`),一键确认(该按钮主用途)即落库。下游 by-month(`recurring.py:254`)与首页月度收支(`dashboard.py:83`)都按 `occurred_on` 归自然月 → 真实月账单被错分到相邻自然月:某自然月漏记(合计偏低)、某自然月重复(翻倍)。已脚本复现:period=30、首笔 2026-01-31 一键确认序列 → 2026-02 记 ¥0、2026-05 记 ¥2000(应各 ¥1000)。**当前潜伏**:真实用户手填真实扣款日、未漂,但一键确认路径必然触发;全跨度净额守恒(错分非幻影)。修:按自然月/年推进 `next_due`(月+1 归一),或确认扣款不拿漂移预测日做默认日期。
+- [x] **75** ✅[07-17] 周期账单 `next_due` 用「上次 `occurred_on` + `period_days`」且月度=30 天(非按自然月)— `recurring.py:81`(及 `:144`)`next_due = occurred_on + timedelta(days=period_days)`,UI 月度 chip 硬编码 30(`TransactionForm.tsx:619`,库里 distinct periods={30,365})。→ 每逢 31 天月,下一期预测日相对日历系统性前漂;而「确认扣款」把漂移预测日直接预填成新交易 `occurred_on`(`Overview.tsx:347` `occurred_on: it.due`),一键确认(该按钮主用途)即落库。下游 by-month(`recurring.py:254`)与首页月度收支(`dashboard.py:83`)都按 `occurred_on` 归自然月 → 真实月账单被错分到相邻自然月:某自然月漏记(合计偏低)、某自然月重复(翻倍)。已脚本复现:period=30、首笔 2026-01-31 一键确认序列 → 2026-02 记 ¥0、2026-05 记 ¥2000(应各 ¥1000)。**当前潜伏**:真实用户手填真实扣款日、未漂,但一键确认路径必然触发;全跨度净额守恒(错分非幻影)。修:按自然月/年推进 `next_due`(月+1 归一),或确认扣款不拿漂移预测日做默认日期。

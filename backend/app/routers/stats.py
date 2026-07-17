@@ -499,8 +499,9 @@ async def cross_currency_total(
         by_net[w.currency_code] = by_net.get(w.currency_code, 0) + sys_bal
         by_invest[w.currency_code] = by_invest.get(w.currency_code, 0) + (io - ii)
         if w.type == "credit_card":
-            # 待还 = 实际刷卡额(含替人垫付的 loan_out) = -物理余额, 占用的额度才对得上
-            by_credit[w.currency_code] = by_credit.get(w.currency_code, 0) - physical
+            # 待还 = 实际刷卡额(含替人垫付的 loan_out) = -物理余额, 占用的额度才对得上。
+            # 每卡夹 0(与前端 max(0,·) 一致): 预存/多还使物理为正的卡不能把待还算成负、冲抵别的卡(审计 #43)。
+            by_credit[w.currency_code] = by_credit.get(w.currency_code, 0) + max(0, -physical)
         else:
             by_spend[w.currency_code] = by_spend.get(w.currency_code, 0) + physical
 
@@ -511,17 +512,22 @@ async def cross_currency_total(
         )
     ).all()
     rates: dict[tuple[str, str], float] = {}
+    # 第一遍: 显式录入的正向汇率优先(按 on_date desc, 每对取最新的)
     for b, q, r, d in rate_rows:
         if (b, q) not in rates:
             rates[(b, q)] = r
-        if (q, b) not in rates:
-            rates[(q, b)] = 1.0 / r if r else 0.0
+    # 第二遍: 只给缺失的反方向用倒数补, 不覆盖已显式录入的方向
+    # (审计 #41: 否则先处理到的反向报价的倒数会抢占槽位, 让用户手动录入的正向汇率被静默忽略)
+    for b, q, r, d in rate_rows:
+        if r and (q, b) not in rates:
+            rates[(q, b)] = 1.0 / r
 
     def conv_to_base(amt: int, code: str) -> int:
         if code == base:
             return amt
         rate = rates.get((code, base)) or 0.0
-        return int(amt * rate * (10 ** (base_d - digits.get(code, 2))))
+        # 四舍五入而非截断, 与后端 fx_preview 及全部前端折算(Math.round)对齐(审计 #62)
+        return int(round(amt * rate * (10 ** (base_d - digits.get(code, 2)))))
 
     codes = set(by_net) | set(by_spend) | set(by_credit) | set(by_invest)
     total = 0          # 真实余额

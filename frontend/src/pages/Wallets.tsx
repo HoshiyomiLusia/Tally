@@ -45,7 +45,9 @@ export default function Wallets() {
   const [reconcileFor, setReconcileFor] = useState<Wallet | null>(null);
 
   const wallets = useQuery({
-    queryKey: ["wallets"],
+    // 审计#47: 含归档用独立 key ["wallets","all"], 与不含归档的 ["wallets"] 分开缓存避免互相污染;
+    // invalidateMoney 失效 ["wallets"] 会按前缀连带失效本 key, 刷新不受影响
+    queryKey: ["wallets", "all"],
     queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data,
   });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
@@ -87,16 +89,18 @@ export default function Wallets() {
 
       <div className="space-y-6">
         {grouped.map(([code, list], idx) => {
-          const nonCredit = list.filter((w) => w.type !== "credit_card");
+          // 审计#52: 币种汇总排除归档钱包, 与首页/后端净值口径一致 (归档卡仍作卡片展示, 只是不计入合计)
+          const active = list.filter((w) => !w.archived);
+          const nonCredit = active.filter((w) => w.type !== "credit_card");
           const physOf = walletPhysical;
           // 卡片只显物理; 借贷/投资 单独立账; 真实 = 各钱包系统余额之和
           const phys = nonCredit.reduce((s, w) => s + physOf(w), 0);
           // 借贷算上信用卡上垫付的: 不管借记卡还是信用卡, 替人垫的都是应收
-          const loan = list.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
-          const invest = list.reduce((s, w) => s + w.invest_out_on_wallet - w.invest_in_on_wallet, 0);
+          const loan = active.reduce((s, w) => s + w.loan_out_on_wallet - w.loan_repayment_on_wallet, 0);
+          const invest = active.reduce((s, w) => s + w.invest_out_on_wallet - w.invest_in_on_wallet, 0);
           // 信用卡待还按实际刷卡额(含垫付)= -物理余额, 这样占用的额度才对得上
-          const debt = list.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -physOf(w)), 0);
-          const real = list.reduce((s, w) => s + w.balance, 0);
+          const debt = active.filter((w) => w.type === "credit_card").reduce((s, w) => s + Math.max(0, -physOf(w)), 0);
+          const real = active.reduce((s, w) => s + w.balance, 0);
           const byType = new Map<WalletType, Wallet[]>();
           for (const w of list) {
             const arr = byType.get(w.type) ?? [];

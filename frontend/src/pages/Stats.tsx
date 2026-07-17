@@ -204,7 +204,9 @@ export default function Stats({
     for (const d of src) {
       if (!isAll && d.currency_code !== activeCurrency) continue;
       const v = isAll ? fxTo(d.amount, d.currency_code, baseCurrency) : d.amount;
-      const dt = new Date(d.on_date);
+      // 审计#55: 手动 split 按本地时区解析 YYYY-MM-DD (避免 new Date(str) 按 UTC 解析, 负时区每日桶前移一天)
+      const [yd, md, dd] = d.on_date.split("-").map(Number);
+      const dt = new Date(yd, md - 1, dd);
       const y = dt.getFullYear(), m = dt.getMonth() + 1, day = dt.getDate();
       if (y === yr && m === mn) { cur[day - 1] += v; continue; }
       for (const h of hist) if (y === h.y && m === h.m) { buckets[h.key][day - 1] += v; break; }

@@ -1,9 +1,10 @@
+import logging
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,8 @@ from ..core.config import settings
 from ..core.db import get_session
 from ..models import Attachment, Transaction, User
 from ..schemas.attachment import AttachmentRead
+
+logger = logging.getLogger("tally.attachments")
 
 router = APIRouter(tags=["attachments"])
 
@@ -53,15 +56,30 @@ async def upload_attachment(
         raise HTTPException(404, "transaction not found")
     if file.content_type not in ALLOWED_MIME:
         raise HTTPException(400, f"unsupported mime: {file.content_type}")
-    data = await file.read()
-    if len(data) > MAX_BYTES:
-        raise HTTPException(400, f"file too large (max {MAX_BYTES // 1024 // 1024} MB)")
 
     ext = Path(file.filename or "").suffix.lower() or ".bin"
     stored_name = f"{uuid.uuid4().hex}{ext}"
     udir = _user_dir(user.id)
     path = udir / stored_name
-    path.write_bytes(data)
+
+    # 审计#50: 不再整体 read() 进内存, 避免超大文件 OOM 掉树莓派。
+    # 先用 UploadFile.size (若客户端提供) 快速拦截, 再分块写盘, 累计超过上限即中止并清理半文件。
+    if file.size is not None and file.size > MAX_BYTES:
+        raise HTTPException(400, f"file too large (max {MAX_BYTES // 1024 // 1024} MB)")
+    total = 0
+    try:
+        with path.open("wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_BYTES:
+                    raise HTTPException(400, f"file too large (max {MAX_BYTES // 1024 // 1024} MB)")
+                f.write(chunk)
+    except BaseException:
+        path.unlink(missing_ok=True)  # 中止/出错时清理已写入的部分文件, 不留孤儿
+        raise
 
     if file.content_type.startswith("image/"):
         try:
@@ -70,8 +88,9 @@ async def upload_attachment(
                 if img.mode in ("RGBA", "P"):
                     img = img.convert("RGB")
                 img.save(udir / f"{Path(stored_name).stem}_thumb.jpg", "JPEG", quality=80, optimize=True)
-        except UnidentifiedImageError:
-            pass
+        except Exception:
+            # 审计#68: 缩略图是可选的, 截断图(OSError)/超大图(DecompressionBombError)等失败就跳过, 保住原图与入库。
+            logger.warning("thumbnail generation failed for %s", stored_name, exc_info=True)
 
     att = Attachment(
         user_id=user.id,
@@ -79,7 +98,7 @@ async def upload_attachment(
         original_name=file.filename or stored_name,
         stored_name=stored_name,
         mime_type=file.content_type,
-        size=len(data),
+        size=total,
     )
     session.add(att)
     await session.commit()

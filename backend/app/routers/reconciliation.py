@@ -60,8 +60,9 @@ async def reconcile(
     cat_id = (
         await session.execute(
             select(Category.id).where(Category.user_id == user.id, Category.name == "对账调整")
+            .order_by(Category.id).limit(1)  # #48: 用 first 而非 one_or_none, 万一有历史重名也不 500
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
     t = Transaction(
         user_id=user.id,

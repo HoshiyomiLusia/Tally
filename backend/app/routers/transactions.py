@@ -136,6 +136,13 @@ async def create_transaction(
     # 通用记账只接受普通收支; 转账/借贷/投资走各自专门流程 (否则会造出没有配对/归属的悬挂行)
     if payload.kind not in ("expense", "income"):
         raise HTTPException(400, "该类型请用对应流程 (转账 / 借贷 / 投资)")
+    # 归属校验: 分类/商家必须是本人的, 否则能挂上别人的 id, 统计 join 会读出别人的分类名/商家名(审计 #49 IDOR)
+    for fk, model in (("category_id", Category), ("merchant_id", Merchant)):
+        fid = getattr(payload, fk, None)
+        if fid is not None:
+            obj = await session.get(model, fid)
+            if not obj or obj.user_id != user.id:
+                raise HTTPException(400, f"invalid {fk}")
 
     data = payload.model_dump()
     source_id = data.pop("recurrence_source_id", None)
@@ -337,6 +344,11 @@ async def update_transaction(
     # 前端已对这些类型隐藏铅笔, 这里再挡一道防绕过 UI 直接 PATCH.
     if t.kind not in ("expense", "income") and any(k in updates for k in ("amount", "wallet_id")):
         raise HTTPException(400, "转账 / 借贷 / 投资交易请在对应功能里修改, 不能在此改金额或钱包")
+    # 审计#60: 允许在 支出<->收入 之间改类型(它们无配对腿, 是合理的记错订正),
+    # 但不许改成/改自 转账/借贷/投资(会造出没有配对腿或归属的悬挂交易)。
+    if "kind" in updates and updates["kind"] != t.kind:
+        if t.kind not in ("expense", "income") or updates["kind"] not in ("expense", "income"):
+            raise HTTPException(400, "只能在 支出 / 收入 之间改类型; 转账 / 借贷 / 投资请用对应功能")
     if "wallet_id" in updates:
         nw = await _check_wallet(session, user, updates["wallet_id"])
         # 防跨币种脱钩: TransactionUpdate 无 currency_code 字段, 换到异币种钱包会让交易币种与钱包币种不一致
@@ -345,6 +357,12 @@ async def update_transaction(
             raise HTTPException(400, "目标钱包币种与交易币种不一致, 不能在此换到异币种钱包(口径会错乱); 请删除后在新钱包重记")
     if "amount" in updates and updates["amount"] is not None and updates["amount"] <= 0:
         raise HTTPException(400, "amount must be positive")
+    # 归属校验: 改到别人的分类/商家 id 会经统计 join 读出别人的名字(审计 #49 IDOR)
+    for fk, model in (("category_id", Category), ("merchant_id", Merchant)):
+        if fk in updates and updates[fk] is not None:
+            obj = await session.get(model, updates[fk])
+            if not obj or obj.user_id != user.id:
+                raise HTTPException(400, f"invalid {fk}")
     for k, v in updates.items():
         setattr(t, k, v)
     await session.commit()
@@ -386,6 +404,18 @@ async def delete_transaction(
     else:
         if t.position_id is not None:
             pos_ids.add(t.position_id)
+        # #40: 删这笔买入若使持仓剩余成本变负(卖出已超过剩下的买入), 拒绝, 否则首页"投资中"变负
+        if t.kind == "invest_buy" and t.position_id is not None:
+            signed = case(
+                (Transaction.kind == "invest_buy", Transaction.amount),
+                (Transaction.kind == "invest_sell", -Transaction.amount),
+                else_=0,
+            )
+            cur = int((await session.execute(
+                select(func.sum(signed)).where(Transaction.position_id == t.position_id)
+            )).scalar() or 0)
+            if cur - t.amount < 0:
+                raise HTTPException(400, "删除这笔买入会让持仓剩余成本为负(卖出已超过剩余买入); 请先删相关卖出")
         # 删"期初买入(opening)"那笔时, 把与它 1:1 配套的对账注入收入一并删掉,
         # 否则那笔收入变成孤儿(挂 opening_for_position_id 但对应买入没了) -> 净值虚高.
         # 只删一条: 同一持仓可能有多笔同额同日同钱包的期初买入, 各配一笔收入, 不能一次全删。

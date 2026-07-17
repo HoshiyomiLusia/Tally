@@ -17,8 +17,15 @@ async def list_rates(
     _: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    # 审计#57: 只返回每个 (base,quote) 对的最新一条(按 on_date desc 取首条),
+    # 避免全量历史(线上 3000+ 行)被前端拉取后 98% 丢弃。
     rows = (await session.execute(select(ExchangeRate).order_by(ExchangeRate.on_date.desc()))).scalars().all()
-    return rows
+    latest: dict[tuple[str, str], ExchangeRate] = {}
+    for r in rows:
+        key = (r.base, r.quote)
+        if key not in latest:
+            latest[key] = r
+    return list(latest.values())
 
 
 @router.post("", response_model=ExchangeRateRead, status_code=status.HTTP_201_CREATED)

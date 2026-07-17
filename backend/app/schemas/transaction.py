@@ -15,7 +15,8 @@ class TransactionCreate(BaseModel):
     wallet_id: int
     category_id: int | None = None
     merchant_id: int | None = None
-    amount: int
+    # 审计#71: 金额需 >0 且加上界, 防单笔 >=2^63 触发 SQLite INTEGER 越界 / 多笔 SUM 溢出 500
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     currency_code: str
     kind: TransactionKind = "expense"
     occurred_on: date
@@ -30,9 +31,11 @@ class TransactionUpdate(BaseModel):
     wallet_id: int | None = None
     category_id: int | None = None
     merchant_id: int | None = None
-    amount: int | None = None
+    # 审计#71: 与 Create 对齐, 编辑金额同样约束 >0 且加上界防溢出
+    amount: int | None = Field(default=None, gt=0, le=1_000_000_000_000)
     occurred_on: date | None = None
     note: str | None = None
+    kind: str | None = None  # 审计#60: 允许编辑时切换, 但路由只放行 expense<->income(见 update_transaction 守卫)
     is_recurring: bool | None = None
     recurrence_period_days: int | None = None
 

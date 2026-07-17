@@ -205,6 +205,25 @@ async def write_off(
 ):
     await _check_contact(session, user, payload.contact_id)
     await _check_wallet(session, user, payload.wallet_id, payload.currency_code)
+
+    # 审计#39: 校验核销金额上限, 不能超过该联系人该币种的未收余额 (loan_out 合计 - loan_repayment 合计),
+    # 否则会核销出不存在的应付、压低净值.
+    loan_out_sum = func.sum(case((Transaction.kind == "loan_out", Transaction.amount), else_=0))
+    loan_in_sum = func.sum(case((Transaction.kind == "loan_repayment", Transaction.amount), else_=0))
+    out_total, in_total = (
+        await session.execute(
+            select(loan_out_sum, loan_in_sum).where(
+                Transaction.user_id == user.id,
+                Transaction.contact_id == payload.contact_id,
+                Transaction.currency_code == payload.currency_code,
+                Transaction.kind.in_(("loan_out", "loan_repayment")),
+            )
+        )
+    ).one()
+    outstanding = int(out_total or 0) - int(in_total or 0)
+    if payload.amount > outstanding:
+        raise HTTPException(400, f"核销金额 {payload.amount} 超过未收余额 {outstanding}")
+
     writeoff_cat_id = (
         await session.execute(
             select(Category.id).where(

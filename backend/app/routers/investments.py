@@ -30,9 +30,13 @@ async def _check_wallet(session: AsyncSession, user: User, wallet_id: int, curre
 
 
 async def _pnl_cat(session: AsyncSession, user: User, name: str) -> int | None:
+    # #48: order+limit+first, 万一有历史重名分类也不会 scalar_one_or_none 抛 500
     return (
-        await session.execute(select(Category.id).where(Category.user_id == user.id, Category.name == name))
-    ).scalar_one_or_none()
+        await session.execute(
+            select(Category.id).where(Category.user_id == user.id, Category.name == name)
+            .order_by(Category.id).limit(1)
+        )
+    ).scalars().first()
 
 
 async def _position_remaining(session: AsyncSession, position_id: int) -> int:

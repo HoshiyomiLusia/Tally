@@ -22,7 +22,12 @@ export default function Contacts() {
   });
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/contacts/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["contacts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      // 审计#46: 删联系人会连带清空其名下借贷记录归属, 需失效借贷账户/历史, 否则首页"借贷·应收"残留已删债权
+      qc.invalidateQueries({ queryKey: ["loan-accounts"] });
+      qc.invalidateQueries({ queryKey: ["loan-history"] });
+    },
   });
 
   return (

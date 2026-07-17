@@ -10,7 +10,8 @@ class ContactCreate(BaseModel):
 
 
 class ContactUpdate(BaseModel):
-    name: str | None = None
+    # 审计#70: 对齐 Create 的 max_length=64, 防改档时写入超长名
+    name: str | None = Field(default=None, max_length=64)
     color: str | None = None
     note: str | None = None
     archived: bool | None = None

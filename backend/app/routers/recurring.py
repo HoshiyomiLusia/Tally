@@ -1,3 +1,4 @@
+import calendar
 import uuid
 from datetime import date, timedelta
 
@@ -12,6 +13,23 @@ from ..models import Category, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionRead
 
 router = APIRouter(prefix="/recurring", tags=["recurring"])
+
+
+def _add_months(d: date, months: int) -> date:
+    m = d.month - 1 + months
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))  # 月末日按目标月长度夹住
+
+
+def _next_due(d: date, period_days: int) -> date:
+    """按周期推进下次扣款日。月度(≈30)/年度(≈365)按自然月/年推进, 不把"月"当固定 30 天,
+    否则每逢 31 天月就使预测日跨月漂移、连带"确认扣款"落库到错误自然月(审计 #75)。其余按字面天数。"""
+    if 28 <= period_days <= 31:
+        return _add_months(d, 1)
+    if 360 <= period_days <= 366:
+        return _add_months(d, 12)
+    return d + timedelta(days=period_days)
 
 
 class RecurringGroup(BaseModel):
@@ -78,7 +96,7 @@ async def upcoming(
         if floor <= t.occurred_on <= today:
             items.append(ForecastItem(transaction=t, due=t.occurred_on, status="confirmed"))
         # 下一期预测
-        next_due = t.occurred_on + timedelta(days=t.recurrence_period_days)
+        next_due = _next_due(t.occurred_on, t.recurrence_period_days)
         if floor <= next_due <= horizon:
             items.append(ForecastItem(
                 transaction=t, due=next_due,
@@ -141,7 +159,7 @@ async def list_groups(
         wallet = wallets.get(latest.wallet_id)
         cat = cats.get(latest.category_id) if latest.category_id else None
         period = latest.recurrence_period_days
-        next_due = latest.occurred_on + timedelta(days=period) if period else None
+        next_due = _next_due(latest.occurred_on, period) if period else None
         name = (latest.note or (cat.name if cat else None)) or "未命名周期账单"
         total = sum(t.amount for t in txs)
         avg = total // max(1, len(txs))

@@ -58,7 +58,10 @@ export default function CreditRepayForm({ open, onClose }: Props) {
 
   // 选了卡之后默认带出待还金额, 并清空支付账户(币种可能变)
   useEffect(() => {
+    // 审计#53: 切卡时无条件重置金额 —— 待还>0 带出待还额, 待还=0 则清空,
+    // 否则会沿用上一张卡(可能异币种)的金额
     if (card && debt > 0) setAmountText((debt / Math.pow(10, digits)).toString());
+    else setAmountText("");
     setPayId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId]);

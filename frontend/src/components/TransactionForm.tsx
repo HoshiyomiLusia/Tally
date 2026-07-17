@@ -306,13 +306,19 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       if (totalAmount <= 0) throw new Error("金额需大于 0");
 
       let mid = merchantId;
-      const matched = merchants.data?.find((m) => m.name === merchantInput.trim());
-      if (merchantInput.trim() && !matched) {
-        const r = await api.post<Merchant>("/merchants", { name: merchantInput.trim() });
-        mid = r.data.id;
-        qc.invalidateQueries({ queryKey: ["merchants"] });
-      } else if (matched) {
-        mid = matched.id;
+      const trimmed = merchantInput.trim();
+      if (trimmed) {
+        // 审计#56: 保存前重新拉一次最新商家列表核对 (而非用可能陈旧的缓存),
+        // 收窄抢跑窗口, 避免同名商家被重复创建. 后端无 get-or-create, 只能前端兜.
+        const latest = (await api.get<Merchant[]>("/merchants")).data;
+        const matched = latest.find((m) => m.name === trimmed);
+        if (matched) {
+          mid = matched.id;
+        } else {
+          const r = await api.post<Merchant>("/merchants", { name: trimmed });
+          mid = r.data.id;
+          qc.invalidateQueries({ queryKey: ["merchants"] });
+        }
       } else {
         mid = null;
       }
@@ -824,11 +830,21 @@ function AttachmentsSection({ transactionId }: { transactionId: number }) {
       });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["attachments", transactionId] }),
+    // 审计#69: 上传失败别静默 (超大/截断图会 500)
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "上传失败");
+    },
   });
 
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/attachments/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["attachments", transactionId] }),
+    // 审计#69: 删除附件失败别静默
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "删除附件失败");
+    },
   });
 
   return (

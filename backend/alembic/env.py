@@ -11,7 +11,8 @@ config = context.config
 config.set_main_option("sqlalchemy.url", settings.sync_database_url)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # 审计#64: 关闭 disable_existing_loggers, 避免跑迁移时把 uvicorn/tally 已有日志器关掉
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

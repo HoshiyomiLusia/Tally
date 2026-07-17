@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Attachment, Budget, Category, Contact, Merchant, Position, Transaction, User, Wallet
+from ..models import Attachment, Budget, Category, Contact, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
 
 router = APIRouter(tags=["io"])
 
@@ -27,6 +27,16 @@ def _default(o):
     raise TypeError
 
 
+# 审计 #35: 最小单位整数按币种小数位缩放成人类可读金额(JPY 0 位保持整数, CNY/USD 2 位除以 100)
+def _scale_amount(minor, code: str, digits: dict[str, int]):
+    if minor is None:
+        return ""
+    d = digits.get(code, 2)
+    if d <= 0:
+        return minor
+    return minor / (10 ** d)
+
+
 async def _full_export(session: AsyncSession, user: User) -> dict:
     wallets = (await session.execute(select(Wallet).where(Wallet.user_id == user.id))).scalars().all()
     cats = (await session.execute(select(Category).where(Category.user_id == user.id))).scalars().all()
@@ -36,6 +46,8 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
     positions = (await session.execute(select(Position).where(Position.user_id == user.id))).scalars().all()
     txs = (await session.execute(select(Transaction).where(Transaction.user_id == user.id))).scalars().all()
     attachments = (await session.execute(select(Attachment).where(Attachment.user_id == user.id))).scalars().all()
+    # 汇率是全局共享表(无 user_id, 审计 #26/#33), 备份时导全表
+    rates = (await session.execute(select(ExchangeRate))).scalars().all()
 
     def row(obj, fields):
         return {f: getattr(obj, f) for f in fields}
@@ -43,10 +55,13 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
     return {
         "version": EXPORT_VERSION,
         "exported_at": datetime.utcnow(),
-        "user": {"username": user.username},
-        "wallets": [row(w, ["id", "name", "type", "currency_code", "initial_balance", "icon", "color", "archived", "sort_order"]) for w in wallets],
+        # 审计 #34: 补 primary_currency_code, 还原时写回
+        "user": {"username": user.username, "primary_currency_code": user.primary_currency_code},
+        # 审计 #31: wallets 补 credit_limit
+        "wallets": [row(w, ["id", "name", "type", "currency_code", "initial_balance", "credit_limit", "icon", "color", "archived", "sort_order"]) for w in wallets],
         "categories": [row(c, ["id", "parent_id", "name", "kind", "emoji", "color", "sort_order"]) for c in cats],
-        "merchants": [row(m, ["id", "name", "default_category_id", "region", "usage_count"]) for m in merchants],
+        # 审计 #32: merchants 补 aliases
+        "merchants": [row(m, ["id", "name", "default_category_id", "region", "usage_count", "aliases"]) for m in merchants],
         "contacts": [row(c, ["id", "name", "color", "note", "archived"]) for c in contacts],
         "budgets": [row(b, ["id", "category_id", "currency_code", "period", "amount", "active", "note"]) for b in budgets],
         "positions": [row(p, ["id", "name", "currency_code", "opened_on", "status", "note"]) for p in positions],
@@ -59,6 +74,8 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
         # 附件只导元信息(引用磁盘上 receipts/<uid>/<stored_name> 的文件, 二进制不塞 JSON).
         # 同机还原时文件仍在, 关联得以恢复; 跨机迁移需另行拷贝 receipts 目录.
         "attachments": [row(a, ["id", "transaction_id", "original_name", "stored_name", "mime_type", "size"]) for a in attachments],
+        # 审计 #33: 全局汇率表(无 user_id), id 不导, 靠 (on_date,base,quote) 唯一约束重建
+        "exchange_rates": [row(r, ["on_date", "base", "quote", "rate", "source"]) for r in rates],
     }
 
 
@@ -86,6 +103,8 @@ async def export_csv(
     wallets = {w["id"]: w["name"] for w in data["wallets"]}
     merchants = {m["id"]: m["name"] for m in data["merchants"]}
     contacts = {c["id"]: c["name"] for c in data["contacts"]}
+    # 审计 #35: 各币种小数位, 用于把最小单位整数缩放成可读金额
+    digits = {c.code: c.decimal_digits for c in (await session.execute(select(Currency))).scalars().all()}
 
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -97,7 +116,7 @@ async def export_csv(
             cats.get(t["category_id"], ""),
             merchants.get(t["merchant_id"], ""),
             contacts.get(t["contact_id"], ""),
-            t["amount"], t["currency_code"], t["note"],
+            _scale_amount(t["amount"], t["currency_code"], digits), t["currency_code"], t["note"],
         ])
     return StreamingResponse(
         iter([buf.getvalue()]),
@@ -116,6 +135,8 @@ async def export_xlsx(
     wallets = {w["id"]: w["name"] for w in data["wallets"]}
     merchants = {m["id"]: m["name"] for m in data["merchants"]}
     contacts = {c["id"]: c["name"] for c in data["contacts"]}
+    # 审计 #35: 各币种小数位, 用于把最小单位整数缩放成可读金额
+    digits = {c.code: c.decimal_digits for c in (await session.execute(select(Currency))).scalars().all()}
 
     wb = Workbook()
     ws = wb.active
@@ -128,7 +149,7 @@ async def export_xlsx(
             cats.get(t["category_id"], ""),
             merchants.get(t["merchant_id"], ""),
             contacts.get(t["contact_id"], ""),
-            t["amount"], t["currency_code"], t["note"],
+            _scale_amount(t["amount"], t["currency_code"], digits), t["currency_code"], t["note"],
         ])
 
     for sheet_name, rows in (("Wallets", data["wallets"]), ("Categories", data["categories"]),
@@ -169,6 +190,21 @@ async def import_json(
         await session.execute(delete(model).where(model.user_id == user.id))
     await session.flush()
 
+    # 审计 #34: 还原用户主币种(仅当备份含该字段, 免得旧版备份把已有设置覆盖成 None)
+    imported_user = d.get("user", {})
+    if "primary_currency_code" in imported_user:
+        user.primary_currency_code = imported_user["primary_currency_code"]
+
+    # 审计 #33: 全局汇率表清空重建(仅当备份含该键, 旧版备份不动现有汇率), 保持幂等
+    if "exchange_rates" in d:
+        await session.execute(delete(ExchangeRate))
+        for r in d["exchange_rates"]:
+            session.add(ExchangeRate(
+                on_date=date.fromisoformat(r["on_date"]) if isinstance(r["on_date"], str) else r["on_date"],
+                base=r["base"], quote=r["quote"], rate=r["rate"],
+                source=r.get("source", "manual"),
+            ))
+
     wallet_map: dict[int, int] = {}
     cat_map: dict[int, int] = {}
     merchant_map: dict[int, int] = {}
@@ -178,7 +214,9 @@ async def import_json(
         obj = Wallet(
             user_id=user.id,
             name=w["name"], type=w["type"], currency_code=w["currency_code"],
-            initial_balance=w["initial_balance"], icon=w.get("icon", ""), color=w.get("color", ""),
+            initial_balance=w["initial_balance"],
+            credit_limit=w.get("credit_limit"),  # 审计 #31: 还原信用卡额度(旧版备份无则 None)
+            icon=w.get("icon", ""), color=w.get("color", ""),
             archived=w.get("archived", False), sort_order=w.get("sort_order", 0),
         )
         session.add(obj)
@@ -225,6 +263,7 @@ async def import_json(
             name=m["name"],
             default_category_id=cat_map.get(m["default_category_id"]) if m.get("default_category_id") else None,
             region=m.get("region", ""), usage_count=m.get("usage_count", 0),
+            aliases=m.get("aliases", ""),  # 审计 #32: 还原商家别名
         )
         session.add(obj)
         await session.flush()

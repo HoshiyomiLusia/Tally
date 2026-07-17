@@ -29,6 +29,9 @@ async def create_category(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    # 不许新建与系统分类同名的分类, 否则按名反查会撞出多条 -> 对账/投资/坏账核销 500(审计 #48)
+    if payload.name in SYSTEM_CATEGORY_NAMES:
+        raise HTTPException(400, f"「{payload.name}」是系统保留分类名, 不能新建同名分类")
     if payload.parent_id is not None:
         parent = await session.get(Category, payload.parent_id)
         if not parent or parent.user_id != user.id:

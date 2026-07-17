@@ -109,10 +109,12 @@ export default function Transactions() {
     queryKey: ["transactions", "count", countParams],
     queryFn: async () => (await api.get<{ total: number }>(`/transactions/count?${countParams}`)).data.total,
   });
-  const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data });
+  // 审计#47: 含归档的 wallets/contacts 用独立 key (…,"all"), 与不含归档的 ["wallets"]/["contacts"] 分开缓存;
+  // invalidateMoney/联系人失效按前缀连带命中, 刷新不受影响
+  const wallets = useQuery({ queryKey: ["wallets", "all"], queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
-  const contacts = useQuery({ queryKey: ["contacts"], queryFn: async () => (await api.get<Contact[]>("/contacts?include_archived=true")).data });
+  const contacts = useQuery({ queryKey: ["contacts", "all"], queryFn: async () => (await api.get<Contact[]>("/contacts?include_archived=true")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const positions = useQuery({ queryKey: ["positions"], queryFn: async () => (await api.get<Position[]>("/investments/positions")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
@@ -149,6 +151,11 @@ export default function Transactions() {
       invalidateMoney(qc);
       qc.invalidateQueries({ queryKey: ["merchants"] });
     },
+    // 审计#69: 失败别静默, 否则用户以为记上了实则少记 (或再点一次→重复记)
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "快速添加失败");
+    },
   });
 
   const catName = (id: number | null) => categories.data?.find((c) => c.id === id);
@@ -172,11 +179,21 @@ export default function Transactions() {
     onSuccess: () => {
       invalidateMoney(qc);
     },
+    // 审计#69: 删除失败别静默
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "删除失败");
+    },
   });
   const unsplit = useMutation({
     mutationFn: async (group_id: string) => api.post(`/loans/unsplit/${group_id}`),
     onSuccess: () => {
       invalidateMoney(qc);
+    },
+    // 审计#69: 撤销分摊失败别静默
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "撤销分摊失败");
     },
   });
 
