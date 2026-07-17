@@ -348,6 +348,10 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       let attachTo: number | null = null;
       if (splitOn && !editing) {
         if (participants.length === 0) throw new Error("请至少选择 1 个分摊参与人");
+        // 挡住"份额=0 的参与人": 后端会 continue 跳过他, 但 shareDiff 仍为 0 显示✓,
+        // 用户以为把人加进了 AA、对方却一分不欠(均摊后又加人常触发)。让用户先分配或移除。
+        if (participants.some((p) => parseAmount(p.share_text || "0", digits) <= 0))
+          throw new Error("有参与人份额为 0, 请点「全部均摊」重新分配, 或移除该参与人");
         if (shareDiff !== 0) throw new Error(`分摊金额合计差 ${formatAmount(shareDiff, wallet.currency_code, currencies.data)}`);
         const payload = {
           wallet_id: wallet.id,

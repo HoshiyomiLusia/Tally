@@ -171,3 +171,13 @@
 - [x] **79** ✅ **P2: 借贷收款/坏账核销/信用卡还款弹窗预填额用陈旧 digits** — `Loans.tsx:365`/`:457`、`CreditRepayForm.tsx:67` 的预填 effect 只依赖 `[acct]`/`[cardId]`,currencies 冷缓存时 digits 兜底 2 → JPY 预填缩小 100 倍且可被直接提交(落库)。修:effect 依赖加 `digits`,currencies 到货后按正确小数位重算。
 - [x] **80** ✅ **P2: `myShareText` 是唯一未被 init 重置的字段** — 跨「关闭→重开」残留上一笔的"我的分摊额",抑制自动均摊。修:init effect 补 `setMyShareText("")`。
 - [ ] **81** **P2: Stats `fxTo` 的 `digits ?? 2` 在 currencies 缺失时对 JPY 折算差 100 倍** — 同 #77 根,但纯展示、currencies 到货即自愈,不落库。暂留(低优先)。
+
+---
+
+# 分摊流程复查(2026-07-17 · 纯代付上线后)
+
+2 审查员对新加的"纯代付" + 整个分摊流程 + #77-81 delta 做对抗性复查:**纯代付核心无 P0/P1**(数学/状态压制/后端配平三层一致)。3 个 P2 边角:
+
+- [x] **82** ✅ **纯代付(my_share=0)+ 标记周期账单 → 周期设定被静默丢弃** — `loans.py` 的周期字段只挂在 `my_share>0` 的支出腿上,纯代付无支出腿故整张周期账单不进 `/recurring/upcoming`。修:my_share=0 时把周期挂到第一条 loan_out 腿(dry-run 验证 loan_out 带 is_recurring/period/rec_group)。确认扣款的完整分摊语义仍归 #29。
+- [x] **83** ✅ **均摊后再加参与人 → 新人份额=0 却显示「✓合计正好」,保存后不产生应收** — 自动均摊被非空 myShareText 压制,新人 share=0,shareDiff 仍=0,后端 `continue` 跳过他。修:前端 save 前挡住"任一参与人份额≤0",提示先重新均摊或移除。
+- [ ] **84** **P2(#79 引入的窄回归·可接受)** — 给 RepaymentModal/WriteOffModal/CreditRepayForm 的预填 effect 加 `digits` 依赖后,JPY/KRW 在 currencies 冷缓存迟到时会二次触发 effect、清掉用户在 <1s 窗口内的编辑(重置值正确、不 misrecord)。用一个"金额小数位窄体验回归"换掉了原来的"预填缩小 100 倍可提交"的钱错,净收益为正,暂留。
