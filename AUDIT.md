@@ -153,3 +153,9 @@
 - [x] **R-P2b** ✅ 前端: Contacts 删除补 `onError`(否则 #27 的 409 静默)+ 修正误导性 confirm 文案; TransactionForm #56 的商家核对 GET 失败改为退回缓存, 不阻断整笔保存(回归修正)。
 
 (未修 P2: XLSX 辅助 sheet 的钱列未按小数位缩放 —— 纯展示不一致, 留清单。)
+
+---
+
+# 用户实测发现(2026-07-17)
+
+- [x] **76** ✅ **确认扣款弹窗把钱包错设成默认三菱UFJ(而非源账单的钱包)** — `TransactionForm.tsx` 的"默认钱包" effect(154-160)与 prefill effect(85)在同一渲染里竞态:prefill 先 `setWalletId(农行)`,但后定义的默认 effect 读到旧的 `null` 闭包又 `setWalletId(三菱UFJ)`,末次写入胜出 → 从历史周期账单(农行/CNY)确认扣款时,弹窗错误选中三菱UFJ/JPY。**#23 挡不住**:币种跟随被错选的钱包(→JPY),create_transaction 的 `currency==wallet` 校验反而通过,会静默把 ¥25 CNY 农行订阅记成 ¥25 JPY 三菱UFJ。修:默认钱包 effect 加 `if (editing || prefill) return;`,编辑/确认自带钱包不被覆盖。前端构建通过。

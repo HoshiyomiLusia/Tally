@@ -153,11 +153,14 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
   useEffect(() => {
     if (!open) return;
+    // 编辑/预填(确认扣款)自带钱包, 绝不能用"默认钱包"覆盖 —— 否则与 prefill 的 setWalletId 同一渲染里
+    // 竞态、后定义的本 effect 读到旧的 null 闭包再写默认钱包, 把农行的确认单错设成三菱UFJ(会记错币种/钱包)。
+    if (editing || prefill) return;
     if (walletId == null && wallets.data?.length) {
       const active = wallets.data.find((w) => !w.archived) ?? wallets.data[0];
       setWalletId(active.id);
     }
-  }, [open, wallets.data, walletId]);
+  }, [open, wallets.data, walletId, editing, prefill]);
 
   const filteredCategories = useMemo(
     () => (categories.data ?? []).filter((c) => c.kind === kind),
