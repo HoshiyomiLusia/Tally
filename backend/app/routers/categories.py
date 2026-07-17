@@ -6,6 +6,7 @@ from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Category, User
 from ..schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
+from ..services.internal_cats import SYSTEM_CATEGORY_NAMES
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -49,7 +50,11 @@ async def update_category(
     c = await session.get(Category, cat_id)
     if not c or c.user_id != user.id:
         raise HTTPException(404)
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    # 系统分类靠"名字"被对账/投资/坏账核销反查, 禁止改名(改了那些功能会静默落"未分类")
+    if c.name in SYSTEM_CATEGORY_NAMES and updates.get("name") not in (None, c.name):
+        raise HTTPException(400, f"系统分类「{c.name}」不能改名(对账 / 投资结算 / 坏账核销按名字识别它)")
+    for k, v in updates.items():
         setattr(c, k, v)
     await session.commit()
     await session.refresh(c)
@@ -65,5 +70,7 @@ async def delete_category(
     c = await session.get(Category, cat_id)
     if not c or c.user_id != user.id:
         raise HTTPException(404)
+    if c.name in SYSTEM_CATEGORY_NAMES:
+        raise HTTPException(400, f"系统分类「{c.name}」不能删除(对账 / 投资结算 / 坏账核销依赖它)")
     await session.delete(c)
     await session.commit()

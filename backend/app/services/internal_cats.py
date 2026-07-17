@@ -7,6 +7,11 @@ from ..models import Category, Transaction
 # 统计 / 预算 / 首页月度收支一律剔除. 加新的内部分类就在这里加名字.
 INTERNAL_CATEGORY_NAMES = ("对账调整",)
 
+# 系统分类: 被 reconcile / 投资结算 / 坏账核销按"名字"反查 id(_pnl_cat 等).
+# 一旦被改名或删除, 那些查找会静默返回 None、分录落成"未分类"并污染统计(见审计 #24/#38/#48),
+# 且删除后 not_internal 因查不到而 fail-open. 故禁止用户改这些分类的名字或删除它们.
+SYSTEM_CATEGORY_NAMES = ("对账调整", "坏账损失", "投资收益", "投资亏损")
+
 
 async def internal_cat_ids(session: AsyncSession, user_id: int) -> list[int]:
     rows = (

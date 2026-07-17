@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import func, select, update as sql_update
+from sqlalchemy import func, or_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
@@ -144,13 +144,19 @@ async def delete_wallet(
     w = await session.get(Wallet, wallet_id)
     if not w or w.user_id != user.id:
         raise HTTPException(404)
+    # 占用检查要同时看 wallet_id 和 attributed_wallet_id: 后者是借贷调整的"名义归属"钱包,
+    # 漏检就能删掉它, 让那笔金额从所有按归属聚合的视图静默蒸发(审计 #25).
     has_tx = (
-        await session.execute(select(Transaction.id).where(Transaction.wallet_id == wallet_id).limit(1))
+        await session.execute(
+            select(Transaction.id).where(
+                or_(Transaction.wallet_id == wallet_id, Transaction.attributed_wallet_id == wallet_id)
+            ).limit(1)
+        )
     ).scalar_one_or_none()
     if has_tx is not None:
         raise HTTPException(
             status_code=409,
-            detail="Wallet has transactions; archive it instead of deleting",
+            detail="钱包仍有交易或借贷归属记录; 请改为归档而不是删除",
         )
     await session.delete(w)
     await session.commit()

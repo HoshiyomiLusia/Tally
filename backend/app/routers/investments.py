@@ -254,6 +254,16 @@ async def update_position(
                 )
                 .values(occurred_on=updates["opened_on"])
             )
+            # 同步挪配套的期初对账收入日期, 否则指纹(钱包+金额+币种+日期)错位,
+            # 日后从账单删该买入时漏删这笔收入 -> 幽灵收入虚高净值(审计 #28).
+            await session.execute(
+                update(Transaction)
+                .where(
+                    Transaction.user_id == user.id,
+                    Transaction.opening_for_position_id == pos.id,
+                )
+                .values(occurred_on=updates["opened_on"])
+            )
     await session.commit()
     return await _build_position_view(session, user.id, pos)
 

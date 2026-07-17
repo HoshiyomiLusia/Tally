@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Contact, User
+from ..models import Contact, Transaction, User
 from ..schemas.contact import ContactCreate, ContactRead, ContactUpdate
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -61,5 +61,17 @@ async def delete_contact(
     c = await session.get(Contact, cid)
     if not c or c.user_id != user.id:
         raise HTTPException(404)
+    # 有借贷往来就不许删: 否则借出/还款记录失去归属, 借贷账户整条从视图消失、应收静默蒸发(审计 #27)
+    has_loan = (
+        await session.execute(
+            select(Transaction.id).where(
+                Transaction.user_id == user.id,
+                Transaction.contact_id == cid,
+                Transaction.kind.in_(("loan_out", "loan_repayment")),
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if has_loan is not None:
+        raise HTTPException(409, "该联系人还有借贷往来记录, 不能删除(会让应收/应付凭空消失); 请先结清")
     await session.delete(c)
     await session.commit()

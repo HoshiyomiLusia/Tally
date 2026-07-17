@@ -207,6 +207,18 @@ async def import_json(
         pending_cats = next_batch
         iterations += 1
 
+    # 循环没解析出父级的(深链 >10 / 父级引用不存在 / 成环): 挂到根而不是静默丢弃,
+    # 否则该分类连同引用它的交易/商家一起变"未分类"(审计 #30).
+    for c in pending_cats:
+        obj = Category(
+            user_id=user.id, parent_id=None,
+            name=c["name"], kind=c.get("kind", "expense"),
+            emoji=c.get("emoji", ""), color=c.get("color", ""), sort_order=c.get("sort_order", 0),
+        )
+        session.add(obj)
+        await session.flush()
+        cat_map[c["id"]] = obj.id
+
     for m in d.get("merchants", []):
         obj = Merchant(
             user_id=user.id,

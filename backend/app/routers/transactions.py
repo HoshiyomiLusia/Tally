@@ -338,7 +338,11 @@ async def update_transaction(
     if t.kind not in ("expense", "income") and any(k in updates for k in ("amount", "wallet_id")):
         raise HTTPException(400, "转账 / 借贷 / 投资交易请在对应功能里修改, 不能在此改金额或钱包")
     if "wallet_id" in updates:
-        await _check_wallet(session, user, updates["wallet_id"])
+        nw = await _check_wallet(session, user, updates["wallet_id"])
+        # 防跨币种脱钩: TransactionUpdate 无 currency_code 字段, 换到异币种钱包会让交易币种与钱包币种不一致
+        # (余额按钱包币种、统计按交易币种, 同一笔进两种货币, 金额还按 10^Δdigits 漂移). 直接拒绝换到异币种钱包.
+        if nw.currency_code != t.currency_code:
+            raise HTTPException(400, "目标钱包币种与交易币种不一致, 不能在此换到异币种钱包(口径会错乱); 请删除后在新钱包重记")
     if "amount" in updates and updates["amount"] is not None and updates["amount"] <= 0:
         raise HTTPException(400, "amount must be positive")
     for k, v in updates.items():
@@ -398,6 +402,23 @@ async def delete_transaction(
             )).scalars().first()
             if opening is not None:
                 await session.delete(opening)
+        # 反向: 删"期初对账收入"那条腿时, 连带删它配套的期初买入,
+        # 否则裸买入没了收入抵消 -> 净值/物理各静默少算一整笔本金(审计 #59).
+        if t.kind == "income" and t.opening_for_position_id is not None:
+            buy = (await session.execute(
+                select(Transaction).where(
+                    Transaction.user_id == user.id,
+                    Transaction.position_id == t.opening_for_position_id,
+                    Transaction.kind == "invest_buy",
+                    Transaction.wallet_id == t.wallet_id,
+                    Transaction.amount == t.amount,
+                    Transaction.currency_code == t.currency_code,
+                    Transaction.occurred_on == t.occurred_on,
+                ).limit(1)
+            )).scalars().first()
+            if buy is not None:
+                pos_ids.add(buy.position_id)
+                await session.delete(buy)
         await session.delete(t)
     await session.flush()
     # 删掉"清仓那笔卖出"后持仓不能卡在"已清仓": 按剩余成本重算 status
