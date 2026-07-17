@@ -178,6 +178,17 @@
 
 2 审查员对新加的"纯代付" + 整个分摊流程 + #77-81 delta 做对抗性复查:**纯代付核心无 P0/P1**(数学/状态压制/后端配平三层一致)。3 个 P2 边角:
 
-- [x] **82** ✅ **纯代付(my_share=0)+ 标记周期账单 → 周期设定被静默丢弃** — `loans.py` 的周期字段只挂在 `my_share>0` 的支出腿上,纯代付无支出腿故整张周期账单不进 `/recurring/upcoming`。修:my_share=0 时把周期挂到第一条 loan_out 腿(dry-run 验证 loan_out 带 is_recurring/period/rec_group)。确认扣款的完整分摊语义仍归 #29。
+- [~] **82** ⏸️[07-17 已回退] **纯代付(my_share=0)+ 标记周期账单** — 原想把周期挂到第一条 loan_out 腿让它可见,但复查发现这引入 P1 回归:那条 loan_out 是"部分份额",`/recurring/upcoming` 不过滤 kind 会把它当待确认条目,确认扣款时 `Overview` 把 loan_out 塌缩成一笔**金额错误的个人支出**,比"周期被丢弃"更糟。已**回退**:纯代付暂不支持周期(整个"分摊感知的周期确认流"归 #29 专项)。
 - [x] **83** ✅ **均摊后再加参与人 → 新人份额=0 却显示「✓合计正好」,保存后不产生应收** — 自动均摊被非空 myShareText 压制,新人 share=0,shareDiff 仍=0,后端 `continue` 跳过他。修:前端 save 前挡住"任一参与人份额≤0",提示先重新均摊或移除。
 - [ ] **84** **P2(#79 引入的窄回归·可接受)** — 给 RepaymentModal/WriteOffModal/CreditRepayForm 的预填 effect 加 `digits` 依赖后,JPY/KRW 在 currencies 冷缓存迟到时会二次触发 effect、清掉用户在 <1s 窗口内的编辑(重置值正确、不 misrecord)。用一个"金额小数位窄体验回归"换掉了原来的"预填缩小 100 倍可提交"的钱错,净收益为正,暂留。
+
+---
+
+# 第八轮(2026-07-17 · 未审交互流程:转账/投资/金额)
+
+`decimal_digits ?? 2` 这条系统性根因比 #77 修的范围更广 —— 转账/投资买卖弹窗同样漏了守卫且**同样落库**。本轮把它们全堵上;连同这些, 该根因现已覆盖**所有写路径**(仅 Stats #81 展示层自愈未改)。
+
+- [x] **85** ✅ **P1: 转账弹窗金额 100 倍落库** — `TransferForm.tsx` save 无 currencies 门闩, JPY 转 ¥698 → 两腿各记 ¥69,800。修:save 前两腿币种小数位没加载出来就 fail-closed 拒绝(dry-run 逻辑同 #77)。
+- [x] **86** ✅ **P1: 投资买入/追加金额 100 倍落库** — `Investments.tsx` BuyModal save 无守卫, JPY 买入 ¥698 → 存 ¥69,800(物理/投资中各错 100 倍)。修:save 前 currencies 未就绪拒绝。
+- [x] **87** ✅ **P1: 投资卖出 proceeds 100 倍 + 成本预填 digit 陈旧** — `Investments.tsx` SellModal:(A)proceeds 兜底 2 位 → 幽灵投资收益;(B)预填 effect 缺 digits 依赖 → currencies 到货后成本从 ¥698 缩成 ¥7、只卖 ¥7 不清仓。修:save fail-closed + 预填 effect 加 `digits` 依赖。
+- [x] **88** ✅ **P2: `TransferCreate` 金额无上界** — #71 只加固了 `TransactionCreate/Update`, 漏了转账 schema。修:`from_amount/to_amount` 加 `Field(gt=0, le=1e12)`(dry-run: 1e13 与 -5 均 422)。

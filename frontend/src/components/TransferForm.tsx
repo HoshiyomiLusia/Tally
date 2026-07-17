@@ -109,6 +109,12 @@ export default function TransferForm({ open, onClose }: Props) {
     mutationFn: async () => {
       if (!fromW || !toW) throw new Error("请选转出与转入钱包");
       if (fromW.id === toW.id) throw new Error("转出与转入钱包必须不同");
+      // 币种小数位没加载出来时 digits 兜底 2, 对 JPY/KRW(0位)会把两腿金额放大 100 倍落库。
+      // currencies 未就绪就不许保存(审计: 与 #77 同根, 转账弹窗漏了这道守卫)。
+      if (!currencies.data?.some((c) => c.code === fromW.currency_code) ||
+          !currencies.data?.some((c) => c.code === toW.currency_code)) {
+        throw new Error("货币信息未加载完成, 请稍候重试");
+      }
       if (fromAmount <= 0) throw new Error("转出金额需大于 0");
       if (toAmount <= 0) throw new Error("转入金额需大于 0");
       await api.post("/transactions/transfer", {

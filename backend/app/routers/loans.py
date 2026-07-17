@@ -142,13 +142,9 @@ async def create_split(
         session.add(t)
         created.append(t)
 
-    # 纯代付(my_share=0)时没有支出腿承载周期字段, 否则周期设定会随支出腿一起不存在而被静默丢弃。
-    # 把周期挂到第一条 loan_out 腿上, 让"标记为周期账单"至少在周期列表里可见(确认扣款的完整分摊语义见 #29)。
-    if payload.my_share <= 0 and payload.is_recurring and created:
-        created[0].is_recurring = True
-        created[0].recurrence_period_days = payload.recurrence_period_days
-        created[0].recurrence_group_id = rec_group
-
+    # 注: 纯代付(my_share=0)+周期账单 暂不支持 —— 不把周期挂到 loan_out 腿上。
+    # (曾试过挂 created[0], 但那是"部分份额"的 loan_out, 确认扣款会把它塌缩成一笔金额错误的个人支出,
+    #  比"周期设定被丢弃"更糟。整个"分摊感知的周期确认流"归 #29 专项, 在那之前纯代付不支持周期。)
     await session.commit()
     for t in created:
         await session.refresh(t)

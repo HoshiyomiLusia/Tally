@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, delete as sql_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +17,9 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 class TransferCreate(BaseModel):
     from_wallet_id: int
     to_wallet_id: int
-    from_amount: int
-    to_amount: int
+    # 审计 #71 遗漏了转账 schema: 加正数下界 + 上界防 2^63 越界 / SUM 溢出(与 TransactionCreate 一致)
+    from_amount: int = Field(gt=0, le=1_000_000_000_000)
+    to_amount: int = Field(gt=0, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
 

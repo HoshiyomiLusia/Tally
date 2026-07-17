@@ -214,6 +214,8 @@ function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose
 
   const save = useMutation({
     mutationFn: async () => {
+      // 币种小数位没加载出来时 digits 兜底 2, JPY/KRW(0位)会把金额放大 100 倍落库(审计: 与 #77 同根)
+      if (!currencies.some((c) => c.code === effCurrency)) throw new Error("货币信息未加载完成, 请稍候重试");
       const amount = parseAmount(amountText, digits);
       if (amount <= 0) throw new Error("金额需大于 0");
       if (target) {
@@ -373,8 +375,10 @@ function SellModal({ pos, wallets, currencies, onClose }: {
     setOccurredOn(todayIso());
     setNote("");
     setError("");
+    // 加 digits: currencies 冷缓存时 digits 先兜底 2, 到货后要按正确小数位重算成本预填,
+    // 否则 JPY 成本从 698 缩成 7、只卖出 ¥7 且不清仓(审计: 与 #79 同类)。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos]);
+  }, [pos, digits]);
 
   const cost = pos ? parseAmount(costText || "0", digits) : 0;
   const proceeds = pos ? parseAmount(proceedsText || "0", digits) : 0;
@@ -383,6 +387,8 @@ function SellModal({ pos, wallets, currencies, onClose }: {
   const save = useMutation({
     mutationFn: async () => {
       if (!pos || !walletId) throw new Error("请选择回款 Wallet");
+      // 币种小数位没加载出来时会把 proceeds 放大 100 倍造幽灵盈亏(审计: 与 #77 同根)
+      if (!currencies.some((c) => c.code === pos.currency_code)) throw new Error("货币信息未加载完成, 请稍候重试");
       if (cost <= 0) throw new Error("卖出成本需大于 0");
       if (cost > pos.cost_remaining) throw new Error("卖出成本不能超过剩余持有成本");
       await api.post("/investments/sell", {
