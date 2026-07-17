@@ -43,7 +43,7 @@
 
 ## P0(新)— 静默算错钱/丢数据/越权
 
-- [x] **23** ✅[代码已修 07-17,tx151 脏数据待你确认金额] **编辑交易换钱包跨币种脱钩(线上已有脏数据)** — `transactions.py:340` 换钱包只校验归属不校验币种(create 有校验,PATCH 没有),且 `TransactionUpdate` 无 `currency_code` 字段、前端照发被 Pydantic `extra=ignore` 静默吞掉。→ 交易币种与钱包币种脱钩,`balances.py` 按 wallet_id 聚合、`stats/dashboard` 按 currency_code 分组,同一笔进两个币种,金额还按 10^Δdigits 漂移。**实测线上 `data/tally.db` 已有 tx151:698 CNY 挂在 JPY 三菱UFJ銀行**。改守卫也清不掉这行,需手工修数据。[账务+交易 2 命中]
+- [x] **23** ✅[全修 07-17:代码守卫 + tx151 数据已订正为 ¥698.00 CNY/微信钱包,全库无剩余币种钱包不一致行] **编辑交易换钱包跨币种脱钩(线上已有脏数据)** — `transactions.py:340` 换钱包只校验归属不校验币种(create 有校验,PATCH 没有),且 `TransactionUpdate` 无 `currency_code` 字段、前端照发被 Pydantic `extra=ignore` 静默吞掉。→ 交易币种与钱包币种脱钩,`balances.py` 按 wallet_id 聚合、`stats/dashboard` 按 currency_code 分组,同一笔进两个币种,金额还按 10^Δdigits 漂移。**实测线上 `data/tally.db` 已有 tx151:698 CNY 挂在 JPY 三菱UFJ銀行**。改守卫也清不掉这行,需手工修数据。[账务+交易 2 命中]
 - [x] **24** ✅[已修 07-17] **内部分类靠「名字」识别 + fail-open(#4 可被一次改名撤销)** — `internal_cats.py:16` 按 `name in ('对账调整',)` 反查 id;分类 API 改名/删除零守卫(`categories.py:52/68`),查不到时 `not_internal([])` 走 `true()` = 零过滤。→ 改名即让 ~¥46M 幽灵收入 + ~¥17M 幽灵支出回流 dashboard/stats/budgets/lifetime,全程无报错。更糟:写入端 `_pnl_cat`/reconcile 也按名查,改名窗口内新分录 `category_id=NULL` 落库,**改回名也救不回(不可逆)**;FK 未开→删分类后 category_id 悬空。影响 4 个用户。[账务+周期+安全 3 命中]
 - [x] **25** ✅[已修 07-17] **删钱包漏查 attributed_wallet_id** — `wallets.py:148` 占用检查只看 `wallet_id`,漏 `attributed_wallet_id`。→ 删掉某笔借贷调整的「名义归属」钱包后,该金额从所有视图静默蒸发(净值虚变)。[账务+交易+安全 3 命中]
 - [x] **26** ✅[已修 07-17: 按你定, 保持全局共享(家用汇率本就一致)+ 加正数/上界/base≠quote 校验挡污染] **exchange_rates 全局表无 user_id + 零校验(多租户越权)** — `exchange_rates.py:25` 汇率表无 user 归属、rate/on_date 无校验。→ 任一注册用户写一条即永久污染**所有人**的净值折算;负汇率翻符号(见 #42)、倒数抢槽(见 #41)。[安全 单命中,但根因牵连 #41/#42/#33]
