@@ -223,3 +223,11 @@
 - [x] **92** ✅ **P2: ×10/×100/×千/×万 用 `parseFloat`(不剥逗号)** — 与落库的 `parseAmount`(先剥 `,`)不一致 → 手输"1,000"点×倍数被打成 1,少两个数量级。修:三处(`TransactionForm`/`Loans`/`Investments`)`parseFloat(amountText.replace(/,/g,""))`。
 - [x] **93** ✅ **P2: 注册非原子(#61 的 register 版)** — `auth.py` 先 commit User 再 seed(seed 内部再 commit),seed 失败留下无默认/系统分类的坏账号。修:改 `flush` 拿 id、让 seed 的提交把 User+默认数据一起落库(dry-run: 注册建 67 分类含 4 系统分类)。
 - [x] **94** ✅ **P2: Settings 导出/重置无错误反馈** — `downloadExport` 裸 async 无 try/catch、reset mutation 无 onError → 500 时静默无提示(用户以为已导出/已重置)。修:加 try/catch + onError alert。
+
+---
+
+# 实操发现(2026-07-18 · 浏览器跑真实流程)
+
+在真实 App 上逐流程点检(#76 的确认扣款已验证修复生效:代肝/农业银行 确认弹窗正确预填 CNY/农行,不再默认三菱UFJ)。发现一条账单页与首页口径不一致:
+
+- [x] **95** ✅ **P2: 账单页"当日支/收"小计把「对账调整」当真实收支** — `Transactions.tsx:318` 的日头汇总只排除了转账/借贷(`kind !== income/expense`),漏排内部分类「对账调整」→ 对账日(如 2026-07-30)日头显示"支 -¥269 收 +¥4,039"(全是对账调整余额校正分录),与首页/统计(已按 `not_internal` 排除,审计 #4)口径矛盾、误导用户以为当天有真实收支。修:日头汇总也跳过「对账调整」分类(前端按分类名匹配,与后端 INTERNAL_CATEGORY_NAMES 一致)。真机验证:07-30 日头改后不再显示支/收,其余日(07-31/29/28 排除借贷转账)正确。

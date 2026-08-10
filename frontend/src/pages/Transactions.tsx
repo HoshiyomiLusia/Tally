@@ -315,10 +315,13 @@ export default function Transactions() {
       <div className="space-y-3">
         {grouped.length === 0 && <div className="card text-sm text-ink-500">没有符合条件的交易</div>}
         {grouped.map(([date, list]) => {
-          // 按币种汇总当日收/支 (转账/借贷不进总额)
+          // 按币种汇总当日收/支 (转账/借贷不进总额; 内部分类"对账调整"也剔除 —— 它是余额校正分录、
+          // 非真实收支, 首页/统计已排除(审计 #4), 账单日头此前漏了它导致对账日 支/收 虚增, 此处对齐)
+          const internalCatIds = new Set((categories.data ?? []).filter((c) => c.name === "对账调整").map((c) => c.id));
           const totals = new Map<string, { income: number; expense: number }>();
           for (const t of list) {
             if (t.kind !== "income" && t.kind !== "expense") continue;
+            if (t.category_id != null && internalCatIds.has(t.category_id)) continue;
             const row = totals.get(t.currency_code) ?? { income: 0, expense: 0 };
             if (t.kind === "income") row.income += t.amount;
             else row.expense += t.amount;
