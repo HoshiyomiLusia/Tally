@@ -31,6 +31,7 @@ class TransactionUpdate(BaseModel):
     wallet_id: int | None = None
     category_id: int | None = None
     merchant_id: int | None = None
+    contact_id: int | None = None  # 审计: 独立借贷可改联系人(换借给谁); 路由只对独立借贷放行
     # 审计#71: 与 Create 对齐, 编辑金额同样约束 >0 且加上界防溢出
     amount: int | None = Field(default=None, gt=0, le=1_000_000_000_000)
     occurred_on: date | None = None

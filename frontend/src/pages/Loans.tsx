@@ -192,7 +192,7 @@ export default function Loans() {
 
       <RepaymentModal acct={repayFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setRepayFor(null)} />
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
-      <HistoryModal acct={historyFor} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
+      <HistoryModal acct={historyFor} wallets={wallets.data ?? []} contacts={contactList} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
       <ContactForm open={contactFormOpen} onClose={() => setContactFormOpen(false)} editing={editingContact} />
       <LendModal open={lendOpen} initialContact={lendContact} contacts={contactList} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => { setLendOpen(false); setLendContact(null); }} />
     </div>
@@ -536,8 +536,10 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
   );
 }
 
-function HistoryModal({ acct, currencies, onClose }: {
+function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
   acct: LoanAccount | null;
+  wallets: Wallet[];
+  contacts: Contact[];
   currencies: Currency[];
   onClose: () => void;
 }) {
@@ -549,6 +551,7 @@ function HistoryModal({ acct, currencies, onClose }: {
   const [filter, setFilter] = useState<"all" | "loan_out" | "loan_repayment">("all");
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(60);
+  const [editTx, setEditTx] = useState<Transaction | null>(null);
 
   const sums = useMemo(() => {
     let out = 0, rep = 0, no = 0, nr = 0;

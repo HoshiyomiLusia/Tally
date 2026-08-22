@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Category, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
+from ..models import Category, Contact, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 from .recurring import resolve_recurrence_group
 
@@ -341,10 +341,27 @@ async def update_transaction(
     if not t or t.user_id != user.id:
         raise HTTPException(404)
     updates = payload.model_dump(exclude_unset=True)
-    # 转账/借贷/投资各腿有配对不变量: 通用接口不允许改金额/钱包(会让配对腿失配或持仓归属错乱).
+    # 转账/投资各腿有配对不变量: 通用接口不允许改金额/钱包(会让配对腿失配或持仓归属错乱).
     # 前端已对这些类型隐藏铅笔, 这里再挡一道防绕过 UI 直接 PATCH.
-    if t.kind not in ("expense", "income") and any(k in updates for k in ("amount", "wallet_id")):
+    # 例外: 独立借贷(不在分摊、无转账配对腿、无持仓)可在此改金额/钱包/联系人 —— 它本身就是单腿,
+    # 借贷应收与钱包 loan_out_on_wallet 都是实时 SUM, 改完即一致, 不存在配对失配。分摊里的借出腿仍锁死。
+    is_standalone_loan = (
+        t.kind in ("loan_out", "loan_repayment")
+        and t.split_group_id is None
+        and t.transfer_pair_id is None
+        and t.position_id is None
+    )
+    if t.kind not in ("expense", "income") and not is_standalone_loan and any(k in updates for k in ("amount", "wallet_id")):
         raise HTTPException(400, "转账 / 借贷 / 投资交易请在对应功能里修改, 不能在此改金额或钱包")
+    # 联系人只对独立借贷可改(收支/转账/投资本不该挂 contact); 必须归属本人且不能清空。
+    if "contact_id" in updates:
+        if not is_standalone_loan:
+            raise HTTPException(400, "只有独立借贷交易可以改联系人")
+        if updates["contact_id"] is None:
+            raise HTTPException(400, "借贷交易必须指定联系人")
+        c = await session.get(Contact, updates["contact_id"])
+        if not c or c.user_id != user.id:
+            raise HTTPException(400, "invalid contact_id")
     # 审计#60: 允许在 支出<->收入 之间改类型(它们无配对腿, 是合理的记错订正),
     # 但不许改成/改自 转账/借贷/投资(会造出没有配对腿或归属的悬挂交易)。
     if "kind" in updates and updates["kind"] != t.kind:
