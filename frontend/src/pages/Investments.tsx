@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, Calculator, ChevronLeft, ChevronRight, Delete, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDownLeft, Calculator, Delete, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import DateField from "../components/DateField";
 import Modal from "../components/Modal";
 import { api, type Currency, type InvestEvent, type Position, type Wallet, type WalletType } from "../lib/api";
 import { invalidateMoney } from "../lib/invalidate";
@@ -12,12 +13,6 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
   bank: "银行账户", e_wallet: "电子钱包", cash: "现金", credit_card: "信用卡", virtual: "虚拟账户",
 };
 
-function shiftDay(iso: string, delta: number): string {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + delta);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 function stripTrailingZero(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return String(parseFloat(n.toFixed(8)));
@@ -333,11 +328,7 @@ function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose
 
         <div>
           <span className="text-xs text-ink-500">日期</span>
-          <div className="mt-1 flex items-stretch gap-2">
-            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, -1))} title="前一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronLeft size={18} /></button>
-            <input className="input flex-1" type="date" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
-            <button type="button" onClick={() => setOccurredOn(shiftDay(occurredOn, 1))} title="后一天" className="flex shrink-0 items-center rounded-md border border-ink-200 px-2.5 text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800"><ChevronRight size={18} /></button>
-          </div>
+          <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
         </div>
         <label className="block">
           <span className="text-xs text-ink-500">备注</span>
@@ -435,7 +426,7 @@ function SellModal({ pos, wallets, currencies, onClose }: {
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
-            <input type="date" className="input mt-1" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+            <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
           </label>
           <label className="block">
             <span className="text-xs text-ink-500">备注</span>
@@ -500,7 +491,7 @@ function EditModal({ pos, onClose }: { pos: Position | null; onClose: () => void
           </label>
           <label className="block">
             <span className="text-xs text-ink-500">买入日期</span>
-            <input type="date" className="input mt-1" value={openedOn} onChange={(e) => setOpenedOn(e.target.value)} />
+            <DateField value={openedOn} onChange={setOpenedOn} className="mt-1" />
           </label>
         </div>
         <label className="block">

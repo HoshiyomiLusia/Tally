@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type Currency, type ReconciliationView, type Wallet } from "../lib/api";
 import { invalidateMoney } from "../lib/invalidate";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
+import DateField from "./DateField";
 import Modal from "./Modal";
 
 const JPY_DENOMS = [10000, 5000, 1000, 500, 100, 50, 10, 5, 1];
@@ -227,7 +228,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
             <span className="text-xs text-ink-500">日期</span>
-            <input type="date" className="input mt-1" value={occurredOn} onChange={(e) => setOccurredOn(e.target.value)} />
+            <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
           </label>
           <label className="block">
             <span className="text-xs text-ink-500">备注</span>
