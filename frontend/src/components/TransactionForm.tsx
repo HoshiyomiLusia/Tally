@@ -644,18 +644,34 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
               标记为周期账单
             </label>
             {isRecurring && (
-              <div className="mt-1.5 flex items-center gap-1 pl-5">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-5">
                 <span className="mr-1 text-xs text-ink-500">频率</span>
-                <button
-                  type="button"
-                  onClick={() => setRecurrenceText("30")}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${recurrenceText === "30" ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
-                >月度</button>
-                <button
-                  type="button"
-                  onClick={() => setRecurrenceText("365")}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${recurrenceText === "365" ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
-                >年度</button>
+                {[
+                  { label: "每周", days: "7" },
+                  { label: "每两周", days: "14" },
+                  { label: "每月", days: "30" },
+                  { label: "每季度", days: "90" },
+                  { label: "每半年", days: "180" },
+                  { label: "每年", days: "365" },
+                ].map((f) => (
+                  <button
+                    key={f.days}
+                    type="button"
+                    onClick={() => setRecurrenceText(f.days)}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs ${recurrenceText === f.days ? "border-ink-800 bg-ink-800 text-white" : "border-ink-200 text-ink-600"}`}
+                  >{f.label}</button>
+                ))}
+                <span className="ml-1 flex items-center gap-1 text-xs text-ink-500">
+                  每
+                  <input
+                    type="number"
+                    min="1"
+                    value={recurrenceText}
+                    onChange={(e) => setRecurrenceText(e.target.value)}
+                    className="w-14 rounded-md border border-ink-200 bg-transparent px-1.5 py-0.5 text-center text-xs text-ink-700 dark:border-ink-700 dark:text-ink-200"
+                  />
+                  天
+                </span>
               </div>
             )}
           </div>

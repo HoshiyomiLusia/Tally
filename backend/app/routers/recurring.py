@@ -23,10 +23,15 @@ def _add_months(d: date, months: int) -> date:
 
 
 def _next_due(d: date, period_days: int) -> date:
-    """按周期推进下次扣款日。月度(≈30)/年度(≈365)按自然月/年推进, 不把"月"当固定 30 天,
-    否则每逢 31 天月就使预测日跨月漂移、连带"确认扣款"落库到错误自然月(审计 #75)。其余按字面天数。"""
+    """按周期推进下次扣款日。月度(≈30)/季度(≈90)/半年(≈180)/年度(≈365)按自然月/年推进,
+    不把"月"当固定天数, 否则每逢长短月就使预测日跨月漂移、连带"确认扣款"落库到错误自然月
+    (审计 #75)。周/两周/自定义天数按字面天数(它们本就是精确天数)。"""
     if 28 <= period_days <= 31:
         return _add_months(d, 1)
+    if 88 <= period_days <= 92:
+        return _add_months(d, 3)
+    if 175 <= period_days <= 185:
+        return _add_months(d, 6)
     if 360 <= period_days <= 366:
         return _add_months(d, 12)
     return d + timedelta(days=period_days)
