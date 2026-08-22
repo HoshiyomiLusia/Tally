@@ -160,29 +160,33 @@ export default function Stats({
   const categoryGroups = useMemo(() => {
     const catById = new Map<number, Category>();
     for (const c of categories.data ?? []) catById.set(c.id, c);
-    type Child = { id: number | null; name: string; emoji: string; amount: number };
-    const groups = new Map<number | string, { id: number | null; name: string; emoji: string; own: number; children: Child[]; total: number }>();
+    type Child = { id: number | null; name: string; emoji: string; amount: number; prev: number };
+    const groups = new Map<number | string, { id: number | null; name: string; emoji: string; own: number; children: Child[]; total: number; prev: number }>();
     const ensure = (id: number | null, name: string, emoji: string) => {
       const key = id ?? `null-${name}`;
       let g = groups.get(key);
-      if (!g) { g = { id, name, emoji, own: 0, children: [], total: 0 }; groups.set(key, g); }
+      if (!g) { g = { id, name, emoji, own: 0, children: [], total: 0, prev: 0 }; groups.set(key, g); }
       return g;
     };
     for (const row of compareForCurrency) {
-      if (row.current <= 0) continue;
+      // 同比上月: 本月 0 但上月有的分类不单独展示, 但要计入父级 prev, 否则父级环比会偏高
+      if (row.current <= 0 && row.previous <= 0) continue;
       const cat = row.category_id != null ? catById.get(row.category_id) : undefined;
       if (cat && cat.parent_id != null) {
         const parent = catById.get(cat.parent_id);
         const g = ensure(cat.parent_id, parent?.name ?? "?", parent?.emoji ?? "");
-        g.children.push({ id: row.category_id, name: row.category_name, emoji: row.emoji, amount: row.current });
+        if (row.current > 0) g.children.push({ id: row.category_id, name: row.category_name, emoji: row.emoji, amount: row.current, prev: row.previous });
         g.total += row.current;
+        g.prev += row.previous;
       } else {
         const g = ensure(row.category_id, row.category_name, row.emoji);
         g.own += row.current;
         g.total += row.current;
+        g.prev += row.previous;
       }
     }
     return Array.from(groups.values())
+      .filter((g) => g.total > 0)
       .map((g) => ({ ...g, children: g.children.sort((a, b) => b.amount - a.amount) }))
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
@@ -339,14 +343,20 @@ export default function Stats({
                     <span>{g.emoji}</span>
                     <span className="font-medium">{g.name}</span>
                   </div>
-                  <div className="shrink-0 font-semibold text-rose-600">{formatAmount(g.total, displayCode, currencies.data)}</div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <DeltaTag current={g.total} previous={g.prev} />
+                    <span className="font-semibold text-rose-600">{formatAmount(g.total, displayCode, currencies.data)}</span>
+                  </div>
                 </div>
                 {g.children.length > 0 && (
                   <div className="mt-1 space-y-0.5 pl-5">
                     {g.children.map((c) => (
                       <div key={c.id ?? `null-${c.name}`} className="flex items-center justify-between text-xs text-ink-500">
                         <span className="truncate">{c.emoji} {c.name}</span>
-                        <span className="shrink-0">{formatAmount(c.amount, displayCode, currencies.data)}</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          <DeltaTag current={c.amount} previous={c.prev} small />
+                          <span>{formatAmount(c.amount, displayCode, currencies.data)}</span>
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -411,6 +421,21 @@ export default function Stats({
       </section>
 
     </div>
+  );
+}
+
+// 分类同比上月小标: 支出涨=红 / 降=绿; 上月为 0 显示"新"; 倍率过大截到 999%+
+function DeltaTag({ current, previous, small }: { current: number; previous: number; small?: boolean }) {
+  const size = small ? "text-[10px]" : "text-[11px]";
+  if (previous <= 0) return current > 0 ? <span className={`${size} text-ink-400`}>新</span> : null;
+  const delta = current - previous;
+  if (delta === 0) return <span className={`${size} text-ink-400`}>持平</span>;
+  const pct = Math.abs(delta / previous) * 100;
+  const Trend = delta > 0 ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`flex items-center gap-0.5 tabular-nums ${size} ${delta > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+      <Trend size={small ? 9 : 10} />{pct > 999 ? "999%+" : `${pct.toFixed(0)}%`}
+    </span>
   );
 }
 
