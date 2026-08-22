@@ -308,6 +308,7 @@ class CatMonthly(BaseModel):
 
 
 class MerchantTotal(BaseModel):
+    month: str = ""          # 逐月 (YYYY-MM), 前端按区间聚合成 Top
     merchant_name: str
     currency_code: str
     expense: int
@@ -317,7 +318,7 @@ class MerchantTotal(BaseModel):
 class LifetimeStats(BaseModel):
     monthly: list[MonthlyPoint]          # 逐月收支
     category_monthly: list[CatMonthly]   # 逐月分类支出 (前端按区间/币种聚合)
-    merchants: list[MerchantTotal]       # 全时段商家支出 Top
+    merchants: list[MerchantTotal]       # 逐月商家支出 (前端按区间/币种聚合成 Top)
 
 
 @router.get("/lifetime", response_model=LifetimeStats)
@@ -365,14 +366,14 @@ async def lifetime(
                                            parent_emoji=pem, is_leaf=leaf, currency_code=code, expense=int(s or 0)))
 
     mer_rows = (await session.execute(
-        select(Merchant.name, Transaction.currency_code, func.sum(Transaction.amount), func.count(Transaction.id))
+        select(ym.label("ym"), Merchant.name, Transaction.currency_code, func.sum(Transaction.amount), func.count(Transaction.id))
         .join(Merchant, Merchant.id == Transaction.merchant_id)
         .where(Transaction.user_id == user.id, Transaction.kind == "expense", notskip)
-        .group_by(Transaction.merchant_id, Transaction.currency_code)
-        .order_by(func.sum(Transaction.amount).desc())
+        .group_by("ym", Transaction.merchant_id, Transaction.currency_code)
+        .order_by("ym")
     )).all()
-    merchants = [MerchantTotal(merchant_name=nm, currency_code=c, expense=int(s or 0), count=int(n or 0))
-                 for nm, c, s, n in mer_rows]
+    merchants = [MerchantTotal(month=m, merchant_name=nm, currency_code=c, expense=int(s or 0), count=int(n or 0))
+                 for m, nm, c, s, n in mer_rows]
 
     return LifetimeStats(monthly=monthly, category_monthly=category_monthly, merchants=merchants)
 

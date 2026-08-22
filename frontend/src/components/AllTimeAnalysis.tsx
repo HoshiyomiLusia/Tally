@@ -6,10 +6,11 @@ import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
 import Modal from "./Modal";
+import MonthPicker from "./MonthPicker";
 
 interface MonthlyPoint { month: string; currency_code: string; income: number; expense: number; }
 interface CatMonthly { month: string; category_name: string; emoji: string; parent_name: string; parent_emoji: string; is_leaf: boolean; currency_code: string; expense: number; }
-interface MerchantTotal { merchant_name: string; currency_code: string; expense: number; count: number; }
+interface MerchantTotal { month: string; merchant_name: string; currency_code: string; expense: number; count: number; }
 interface Lifetime { monthly: MonthlyPoint[]; category_monthly: CatMonthly[]; merchants: MerchantTotal[]; }
 interface MRow { income: number; expense: number }
 
@@ -20,6 +21,15 @@ const METRICS: { k: Metric; label: string; color: string }[] = [
   { k: "net", label: "净额", color: "#6366f1" },
 ];
 const ALL = "__all__";
+
+type Range = { from: string; to: string } | null;  // 月粒度闭区间 "YYYY-MM"; null = 全部
+function ymNow(): string { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+function shiftYm(v: string, delta: number): string {
+  const [y, m] = v.split("-").map((x) => parseInt(x, 10));
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function sameRange(a: Range, b: Range): boolean { return a === null || b === null ? a === b : a.from === b.from && a.to === b.to; }
 
 function shortNum(v: number): string {
   const a = Math.abs(v);
@@ -61,13 +71,32 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
   const dispCur = agg ? baseCur : cur;
   const digits = currencies.data?.find((c) => c.code === dispCur)?.decimal_digits ?? 2;
   const [metric, setMetric] = useState<Metric>("expense");
-  const [range, setRange] = useState<string>("all");
+  const [range, setRange] = useState<Range>(null);
 
   const years = useMemo(() => {
     const ys = new Set<string>();
     for (const p of lt.data?.monthly ?? []) if (agg || p.currency_code === cur) ys.add(p.month.slice(0, 4));
     return [...ys].sort().reverse();
   }, [lt.data, cur, agg]);
+
+  // 范围快捷键: 近 N 月按日历月算(含本月), 年份 = 整年; 自定义用两个月份选择器
+  const now = ymNow();
+  const presets = useMemo<{ k: string; label: string; r: Range }[]>(() => [
+    { k: "all", label: "全部", r: null },
+    { k: "3m", label: "近3月", r: { from: shiftYm(now, -2), to: now } },
+    { k: "6m", label: "近6月", r: { from: shiftYm(now, -5), to: now } },
+    { k: "12m", label: "近12月", r: { from: shiftYm(now, -11), to: now } },
+    { k: "24m", label: "近24月", r: { from: shiftYm(now, -23), to: now } },
+    ...years.map((y) => ({ k: y, label: y, r: { from: `${y}-01`, to: `${y}-12` } })),
+  ], [years, now]);
+  const activeRangeKey = presets.find((p) => sameRange(p.r, range))?.k ?? "custom";
+  const firstMonth = useMemo(() => {
+    let f = "";
+    for (const p of lt.data?.monthly ?? []) if ((agg || p.currency_code === cur) && (!f || p.month < f)) f = p.month;
+    return f || now;
+  }, [lt.data, agg, cur, now]);
+  const pickFrom = range?.from ?? firstMonth;
+  const pickTo = range?.to ?? now;
 
   const mc = METRICS.find((m) => m.k === metric)!;
 
@@ -82,9 +111,7 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
       mMap.set(p.month, e);
     }
     const all = [...mMap.entries()].map(([month, v]) => ({ month, ...v })).sort((a, b) => a.month.localeCompare(b.month));
-    const allMonths = all.map((p) => p.month);
-    const cutoff = allMonths.length > 12 ? allMonths[allMonths.length - 12] : (allMonths[0] ?? "");
-    const inRange = (m: string) => (range === "all" ? true : range === "12m" ? m >= cutoff : m.startsWith(range + "-"));
+    const inRange = (m: string) => (range === null ? true : m >= range.from && m <= range.to);
     const months = all.filter((p) => inRange(p.month));
     const mv = (p: MRow) => (metric === "expense" ? p.expense : metric === "income" ? p.income : p.income - p.expense);
 
@@ -119,7 +146,7 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
 
     const merMap = new Map<string, { amt: number; count: number }>();
     for (const m of lt.data?.merchants ?? []) {
-      if (!agg && m.currency_code !== cur) continue;
+      if ((!agg && m.currency_code !== cur) || !inRange(m.month)) continue;
       const e = merMap.get(m.merchant_name) ?? { amt: 0, count: 0 };
       e.amt += conv(m.expense, m.currency_code); e.count += m.count; merMap.set(m.merchant_name, e);
     }
@@ -132,16 +159,22 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
   const curItems = [{ k: ALL, label: `汇总·${baseCur}` }, ...curs.map((c) => ({ k: c, label: c }))];
 
   return (
-    <Modal onClose={onClose} title="总分析 · 至今" maxW="max-w-4xl">
+    <Modal onClose={onClose} title={`总分析 · ${range ? `${range.from} ~ ${range.to}` : "至今"}`} maxW="max-w-4xl">
       {lt.isLoading && <div className="py-12 text-center text-sm text-ink-500">加载中…</div>}
       {!lt.isLoading && curs.length === 0 && <div className="py-12 text-center text-sm text-ink-500">还没有数据</div>}
 
       {curs.length > 0 && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-ink-50 p-2.5 dark:bg-ink-800/40">
-            <ChipRow label="币种" items={curItems} active={cur} onPick={(k) => { setCur(k); setRange("all"); }} />
+            <ChipRow label="币种" items={curItems} active={cur} onPick={setCur} />
             <ChipRow label="指标" items={METRICS.map((m) => ({ k: m.k, label: m.label }))} active={metric} onPick={(k) => setMetric(k as Metric)} />
-            <ChipRow label="范围" items={[{ k: "all", label: "全部" }, { k: "12m", label: "近12月" }, ...years.map((y) => ({ k: y, label: y }))]} active={range} onPick={setRange} />
+            <ChipRow label="范围" items={presets.map((p) => ({ k: p.k, label: p.label }))} active={activeRangeKey} onPick={(k) => setRange(presets.find((p) => p.k === k)?.r ?? null)} />
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className={activeRangeKey === "custom" ? "font-medium text-ink-800 dark:text-ink-100" : "text-ink-500"}>自定义</span>
+              <MonthPicker align="left" value={pickFrom} onChange={(v) => setRange({ from: v, to: v > pickTo ? v : pickTo })} />
+              <span className="text-ink-400">至</span>
+              <MonthPicker align="left" value={pickTo} onChange={(v) => setRange({ from: v < pickFrom ? v : pickFrom, to: v })} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -206,7 +239,7 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
               </div>
             </div>
             <div>
-              <div className="mb-1.5 text-xs font-medium text-ink-500">Top 商家（全时段{agg ? `· 折${baseCur}` : ""}）</div>
+              <div className="mb-1.5 text-xs font-medium text-ink-500">Top 商家（区间内{agg ? `· 折${baseCur}` : ""}）</div>
               <div className="space-y-1">
                 {view.mers.length === 0 && <div className="py-4 text-center text-xs text-ink-400">无</div>}
                 {view.mers.map((m, i) => (

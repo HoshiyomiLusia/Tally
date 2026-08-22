@@ -5,6 +5,7 @@ interface Props {
   value: string;       // "YYYY-MM"
   onChange: (v: string) => void;
   className?: string;
+  align?: "left" | "right";  // 下拉面板对齐边, 默认 right; 放在窄容器左侧时用 left 防被裁
 }
 
 function parse(v: string): { y: number; m: number } {
@@ -22,7 +23,7 @@ function shiftMonth(v: string, delta: number): string {
   return fmt(d.getFullYear(), d.getMonth() + 1);
 }
 
-export default function MonthPicker({ value, onChange, className = "" }: Props) {
+export default function MonthPicker({ value, onChange, className = "", align = "right" }: Props) {
   const [open, setOpen] = useState(false);
   const [yearShown, setYearShown] = useState(() => parse(value).y);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -81,7 +82,7 @@ export default function MonthPicker({ value, onChange, className = "" }: Props) 
       ><ChevronRight size={16} /></button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-64 rounded-xl border border-ink-200 bg-white p-3 shadow-xl dark:border-ink-700 dark:bg-ink-800">
+        <div className={`absolute ${align === "left" ? "left-0" : "right-0"} top-full z-30 mt-1 w-64 rounded-xl border border-ink-200 bg-white p-3 shadow-xl dark:border-ink-700 dark:bg-ink-800`}>
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
