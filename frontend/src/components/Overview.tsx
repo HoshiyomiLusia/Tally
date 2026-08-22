@@ -85,11 +85,14 @@ export function BalanceModule() {
   }, [dash.data]);
 
   const fmtBase = (v: number) => formatAmount(v, baseCurrency, currencies.data);
+  // 一键"抹除投资": 把投资额从真实余额里剔除, 看不含投资的净资产(= 物理 - 待还 + 借贷)
+  const [excludeInvest, setExcludeInvest] = useState(false);
+  const mainTotal = (cross.data?.total ?? 0) - (excludeInvest ? (cross.data?.total_invested ?? 0) : 0);
   const metricItems: { label: string; text: string; color: string }[] = [
     { label: "物理余额", text: fmtBase(cross.data?.total_spendable ?? 0), color: "" },
   ];
   if (cross.data?.total_credit_debt) metricItems.push({ label: "信用卡待还", text: fmtBase(cross.data.total_credit_debt), color: "text-rose-500 dark:text-rose-300" });
-  if (cross.data?.total_invested) metricItems.push({ label: "投资中", text: fmtBase(cross.data.total_invested), color: "text-sky-600 dark:text-sky-400" });
+  if (cross.data?.total_invested) metricItems.push({ label: excludeInvest ? "投资中 (已抹除)" : "投资中", text: fmtBase(cross.data.total_invested), color: excludeInvest ? "text-sky-600/40 line-through dark:text-sky-400/40" : "text-sky-600 dark:text-sky-400" });
   if (loanNet.receivable > 0) metricItems.push({ label: "借贷 · 应收", text: fmtBase(loanNet.receivable), color: "text-emerald-600 dark:text-emerald-400" });
   if (loanNet.payable > 0) metricItems.push({ label: "借贷 · 应付", text: fmtBase(loanNet.payable), color: "text-rose-500 dark:text-rose-300" });
 
@@ -100,7 +103,7 @@ export function BalanceModule() {
         <div className="min-w-0">
           <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
           <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-xs uppercase tracking-wider text-ink-500">真实余额 · 折算到</span>
+            <span className="text-xs uppercase tracking-wider text-ink-500">{excludeInvest ? "不含投资 · 折算到" : "真实余额 · 折算到"}</span>
             <select
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
@@ -108,9 +111,15 @@ export function BalanceModule() {
             >
               {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
+            <button
+              type="button"
+              onClick={() => setExcludeInvest((v) => !v)}
+              title="一键切换: 是否把投资额计入余额"
+              className={`rounded border px-1.5 py-0.5 text-xs ${excludeInvest ? "border-sky-500 bg-sky-500/15 text-sky-600 dark:text-sky-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
+            >{excludeInvest ? "恢复" : "抹除投资"}</button>
           </div>
           <div className="text-3xl font-semibold tracking-tight">
-            {formatAmount(cross.data?.total ?? 0, baseCurrency, currencies.data)}
+            {formatAmount(mainTotal, baseCurrency, currencies.data)}
           </div>
           {/* 移动端: 折叠/展开次要指标 */}
           <button

@@ -25,6 +25,8 @@ export default function Loans() {
   const accounts = useQuery({ queryKey: ["loan-accounts"], queryFn: async () => (await api.get<LoanAccount[]>("/loans/accounts")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data });
+  const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
+  const baseCurrency = localStorage.getItem("tally.baseCurrency") || "JPY";
 
   const [repayFor, setRepayFor] = useState<LoanAccount | null>(null);
   const [writeOffFor, setWriteOffFor] = useState<LoanAccount | null>(null);
@@ -39,6 +41,25 @@ export default function Loans() {
     for (const a of accounts.data ?? []) m.set(a.currency_code, (m.get(a.currency_code) ?? 0) + a.balance);
     return Array.from(m.entries()).filter(([, v]) => v !== 0);
   }, [accounts.data]);
+
+  // 合计: 各币种净额折算到 baseCurrency 求和(负=应收总额, 正=应付总额); 缺汇率的币种单列提示不静默吞
+  const grand = useMemo(() => {
+    const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
+    const rateMap = new Map<string, number>();
+    for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    const missing: string[] = [];
+    const fold = (amt: number, from: string): number => {
+      if (from === baseCurrency) return amt;
+      const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
+      let rate = rateMap.get(`${from}->${baseCurrency}`);
+      if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      if (rate === 0 && amt !== 0 && !missing.includes(from)) missing.push(from);
+      return Math.round(amt * rate * Math.pow(10, td - fd));
+    };
+    let sum = 0;
+    for (const [code, total] of totals) sum += fold(total, code);
+    return { sum, missing };
+  }, [totals, rates.data, currencies.data, baseCurrency]);
 
   // Group loan accounts by contact_id
   const acctsByContact = useMemo(() => {
@@ -88,6 +109,15 @@ export default function Loans() {
               </div>
             </div>
           ))}
+          {totals.length >= 2 && (
+            <div className="card border border-ink-200/60 dark:border-ink-700/60">
+              <div className="text-xs text-ink-500">合计 · 折算到 {baseCurrency}</div>
+              <div className={`text-lg font-semibold ${grand.sum < 0 ? "text-emerald-600" : grand.sum > 0 ? "text-rose-600" : ""}`}>
+                {formatAmount(grand.sum, baseCurrency, currencies.data)}
+                {grand.missing.length > 0 && <span className="ml-1 text-xs text-amber-600">缺 {grand.missing.join("/")} 汇率</span>}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
