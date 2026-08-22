@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
 import { api, type Category, type Currency } from "../lib/api";
@@ -38,6 +38,16 @@ const PACE_COLORS = [
   "#84cc16", "#f97316", "#14b8a6", "#8b5cf6", "#eab308", "#06b6d4",
 ];
 
+// 轴刻度缩写(与总分析同款): 千/万位区间保留 1 位小数并去尾零, 避免相邻刻度重复
+function shortNum(v: number): string {
+  const a = Math.abs(v);
+  const f = (x: number, d: number) => String(parseFloat(x.toFixed(d)));
+  if (a >= 1e8) return f(v / 1e8, 1) + "亿";
+  if (a >= 1e4) return f(v / 1e4, a >= 1e5 ? 0 : 1) + "万";
+  if (a >= 1e3) return f(v / 1e3, 1) + "k";
+  return String(Math.round(v));
+}
+
 interface FxRate { id: number; on_date: string; base: string; quote: string; rate: number; }
 
 export default function Stats({
@@ -68,6 +78,7 @@ export default function Stats({
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   // 支出节奏: 本月线对照过去 N 个月的历史群线, 看本月花得比平时快/慢
   const [paceMonths, setPaceMonths] = useState<6 | 12>(6);
+  const [paceHl, setPaceHl] = useState<string | null>(null);  // 图例 hover 高亮某个历史月
   // 拉近 ~13 个月日数据, 覆盖 12 个月历史对比
   const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => {
     const end = new Date();
@@ -221,17 +232,39 @@ export default function Stats({
     let curCum = 0;
     const cum: Record<string, number> = {};
     for (const h of hist) cum[h.key] = 0;
-    const rows: Record<string, number | null>[] = [];
+    // 均值/区间只用有数据的历史月, 否则没记账的空月会把均值拉低
+    const active = hist.filter((h) => buckets[h.key].some((v) => v > 0));
+    const rows: Record<string, number | number[] | null>[] = [];
+    const avgArr: number[] = [];
     for (let i = 0; i < 31; i++) {
       curCum += cur[i];
-      const row: Record<string, number | null> = {
+      const row: Record<string, number | number[] | null> = {
         day: i + 1,
         current: isCurMonth && i + 1 > todayDay ? null : curCum,
       };
       for (const h of hist) { cum[h.key] += buckets[h.key][i]; row[h.key] = cum[h.key]; }
+      if (active.length) {
+        const vals = active.map((h) => cum[h.key]);
+        const avg = Math.round(vals.reduce((a, v) => a + v, 0) / vals.length);
+        row.avg = avg; avgArr.push(avg);
+        row.band = [Math.min(...vals), Math.max(...vals)];
+      }
       rows.push(row);
     }
-    return { rows, hist };
+    // 小结: 截至参考日(本月=今天, 历史月=月末) 本月累计 vs 历史均值同期; 本月还按平均后续节奏推算月末
+    const daysInMonth = new Date(yr, mn, 0).getDate();
+    const refIdx = (isCurMonth ? Math.min(todayDay, daysInMonth) : daysInMonth) - 1;
+    let summary: { refDay: number; cur: number; avg: number; pct: number | null; projected: number | null } | null = null;
+    if (active.length && refIdx >= 0) {
+      const curRef = rows[refIdx].current as number | null;
+      const avgRef = avgArr[refIdx], avgEnd = avgArr[daysInMonth - 1];
+      if (curRef != null) summary = {
+        refDay: refIdx + 1, cur: curRef, avg: avgRef,
+        pct: avgRef > 0 ? (curRef - avgRef) / avgRef : null,
+        projected: isCurMonth && avgRef > 0 ? Math.round(curRef + (avgEnd - avgRef)) : null,
+      };
+    }
+    return { rows, hist, activeCount: active.length, summary };
   }, [daily.data, month, paceMonths, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // Top 商家
@@ -371,7 +404,19 @@ export default function Stats({
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
-            <p className="text-[11px] text-ink-400">本月（粗红）对照过去 {paceMonths} 个月同期；红线在历史各月之上=花得比平时快</p>
+            <p className="text-[11px] text-ink-400">本月（粗红）对照过去 {paceMonths} 个月同期（有数据 {pace.activeCount} 个月）；灰虚线=历史均值，灰带=历史最低~最高</p>
+            {pace.summary && (
+              <p className="mt-0.5 text-[11px] text-ink-500">
+                截至 {pace.summary.refDay} 号：本月 <b className="text-ink-800 dark:text-ink-100">{formatAmount(pace.summary.cur, displayCode, currencies.data)}</b>
+                {" · "}均值同期 {formatAmount(pace.summary.avg, displayCode, currencies.data)}
+                {pace.summary.pct != null && (
+                  <span className={pace.summary.pct > 0 ? "text-rose-600" : "text-emerald-600"}>
+                    {" · "}比平均{pace.summary.pct > 0 ? "快" : "慢"} {Math.abs(pace.summary.pct * 100).toFixed(0)}%
+                  </span>
+                )}
+                {pace.summary.projected != null && <>{" · "}按平均节奏月末约 {formatAmount(pace.summary.projected, displayCode, currencies.data)}</>}
+              </p>
+            )}
           </div>
           <div className="flex gap-1 text-xs">
             {([6, 12] as const).map((n) => (
@@ -385,24 +430,32 @@ export default function Stats({
         </div>
         <div className={`${box} p-4`}>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={pace.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <ComposedChart data={pace.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
               <XAxis dataKey="day" fontSize={10} tickFormatter={(d) => `${d} 号`} />
-              <YAxis fontSize={10} />
+              <YAxis fontSize={10} width={48} tickFormatter={shortNum} />
               <Tooltip
-                formatter={(v: number, key: string) => {
+                formatter={(v: number | number[], key: string) => {
+                  const f = (x: number) => formatAmount(x, displayCode, currencies.data);
+                  if (key === "band") return [Array.isArray(v) ? `${f(v[0])} ~ ${f(v[1])}` : "", "历史区间"];
+                  if (key === "avg") return [f(v as number), "历史均值"];
                   const h = pace.hist.find((x) => x.key === key);
-                  return [formatAmount(v, displayCode, currencies.data), h ? h.label : "本月"];
+                  return [f(v as number), h ? h.label : "本月"];
                 }}
                 labelFormatter={(d) => `${d} 号`}
               />
-              {/* 历史月: 每月一色 */}
+              {/* 历史区间带: 各月最低~最高 */}
+              <Area type="monotone" dataKey="band" stroke="none" fill="#94a3b8" fillOpacity={0.12} isAnimationActive={false} />
+              {/* 历史月: 每月一色但淡化; 图例 hover 只高亮那一个月 */}
               {pace.hist.map((h) => (
-                <Line key={h.key} type="monotone" dataKey={h.key} stroke={h.color} strokeWidth={1.8} dot={false} />
+                <Line key={h.key} type="monotone" dataKey={h.key} stroke={h.color} strokeWidth={paceHl === h.key ? 2.5 : 1.2}
+                  strokeOpacity={paceHl ? (paceHl === h.key ? 1 : 0.12) : 0.4} dot={false} isAnimationActive={false} />
               ))}
+              {/* 历史均值: 灰虚线 */}
+              <Line type="monotone" dataKey="avg" stroke="#64748b" strokeWidth={2} strokeDasharray="5 3" dot={false} isAnimationActive={false} />
               {/* 本月: 粗红实线, 压在最上层 */}
               <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={3} dot={false} connectNulls={false} />
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
           {/* 图例: 色块 = 月份 */}
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
@@ -410,9 +463,18 @@ export default function Stats({
               <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "#e11d48" }} />
               <span className="font-medium">本月</span>
             </span>
+            <span className="flex items-center gap-1 text-ink-500">
+              <span className="inline-block h-0 w-3.5 border-t-2 border-dashed" style={{ borderColor: "#64748b" }} />
+              历史均值
+            </span>
+            <span className="flex items-center gap-1 text-ink-500">
+              <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "rgba(148,163,184,0.3)" }} />
+              历史区间
+            </span>
             {pace.hist.map((h) => (
-              <span key={h.key} className="flex items-center gap-1 text-ink-500">
-                <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: h.color }} />
+              <span key={h.key} onMouseEnter={() => setPaceHl(h.key)} onMouseLeave={() => setPaceHl(null)}
+                className={`flex cursor-default items-center gap-1 ${paceHl === h.key ? "text-ink-800 dark:text-ink-100" : "text-ink-500"}`}>
+                <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: h.color, opacity: paceHl && paceHl !== h.key ? 0.3 : 1 }} />
                 {h.label}
               </span>
             ))}
