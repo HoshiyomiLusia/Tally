@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, ChevronDown, HandCoins, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type Transaction, type WalletType } from "../lib/api";
+import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type PlannedExpense, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { formatAmount, todayIso as todayIsoStr } from "../lib/format";
+import { formatAmount, parseAmount, todayIso as todayIsoStr } from "../lib/format";
 import TransactionForm, { type TransactionPrefill } from "./TransactionForm";
 
 const WALLET_TYPE_ORDER: WalletType[] = ["bank", "e_wallet", "cash", "credit_card", "virtual"];
@@ -48,6 +48,27 @@ export function BalanceModule() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const loans = useQuery({ queryKey: ["loan-accounts"], queryFn: async () => (await api.get<LoanAccount[]>("/loans/accounts")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
+  const qc = useQueryClient();
+  const planned = useQuery({ queryKey: ["planned-expenses"], queryFn: async () => (await api.get<PlannedExpense[]>("/planned-expenses")).data });
+  const [excludePlanned, setExcludePlanned] = useState(false);
+  const [peName, setPeName] = useState("");
+  const [peAmt, setPeAmt] = useState("");
+  const [peCcy, setPeCcy] = useState("");
+  const [peDate, setPeDate] = useState("");
+  const addPlanned = useMutation({
+    mutationFn: async () => {
+      const ccy = peCcy || baseCurrency;
+      const digits = currencies.data?.find((c) => c.code === ccy)?.decimal_digits ?? 2;
+      if (!peName.trim() || parseAmount(peAmt || "0", digits) <= 0) throw new Error("填名称和金额");
+      await api.post("/planned-expenses", { name: peName.trim(), amount: parseAmount(peAmt, digits), currency_code: ccy, due_date: peDate || null });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["planned-expenses"] }); setPeName(""); setPeAmt(""); setPeDate(""); },
+    onError: (e: any) => alert(e?.response?.data?.detail ?? (e instanceof Error ? e.message : "添加失败")),
+  });
+  const delPlanned = useMutation({
+    mutationFn: async (id: number) => api.delete(`/planned-expenses/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["planned-expenses"] }),
+  });
   const cross = useQuery({ queryKey: ["cross-currency-total", baseCurrency], queryFn: async () => (await api.get<CrossTotal>(`/stats/cross-currency-total?base=${baseCurrency}`)).data });
 
   // 借贷净额折算到 baseCurrency. balance: 负=应收(对方未还), 正=应付(我未还)
@@ -87,7 +108,20 @@ export function BalanceModule() {
   const fmtBase = (v: number) => formatAmount(v, baseCurrency, currencies.data);
   // 一键"抹除投资": 把投资额从真实余额里剔除, 看不含投资的净资产(= 物理 - 待还 + 借贷)
   const [excludeInvest, setExcludeInvest] = useState(false);
-  const mainTotal = (cross.data?.total ?? 0) - (excludeInvest ? (cross.data?.total_invested ?? 0) : 0);
+  const plannedTotal = useMemo(() => {
+    const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
+    const rateMap = new Map<string, number>();
+    for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    const fold = (amt: number, from: string): number => {
+      if (from === baseCurrency) return amt;
+      const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
+      let rate = rateMap.get(`${from}->${baseCurrency}`);
+      if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      return Math.round(amt * rate * Math.pow(10, td - fd));
+    };
+    return (planned.data ?? []).reduce((s, p) => s + fold(p.amount, p.currency_code), 0);
+  }, [planned.data, rates.data, currencies.data, baseCurrency]);
+  const mainTotal = (cross.data?.total ?? 0) - (excludeInvest ? (cross.data?.total_invested ?? 0) : 0) - (excludePlanned ? plannedTotal : 0);
   const metricItems: { label: string; text: string; color: string }[] = [
     { label: "物理余额", text: fmtBase(cross.data?.total_spendable ?? 0), color: "" },
   ];
@@ -189,6 +223,45 @@ export function BalanceModule() {
         {(cross.data?.breakdown ?? []).filter((b) => b.net !== 0 || b.spendable !== 0 || b.credit_debt !== 0 || b.invested !== 0).length === 0 && (
           <div className="col-span-full text-xs text-ink-500">还没有任何余额</div>
         )}
+      </div>
+
+      {/* 预定支出便签: 未来大额支出(如学费), 一键从余额扣除看真实可用额度 */}
+      <div className="mt-3 rounded-lg border border-dashed border-ink-300/60 p-2.5 dark:border-ink-700/70">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs font-medium text-ink-600 dark:text-ink-300">📌 预定支出</span>
+            {plannedTotal > 0 && <span className="text-xs text-ink-400">合计 ≈{fmtBase(plannedTotal)}</span>}
+          </div>
+          {plannedTotal > 0 && (
+            <button
+              type="button"
+              onClick={() => setExcludePlanned((v) => !v)}
+              className={`rounded border px-1.5 py-0.5 text-xs ${excludePlanned ? "border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
+            >{excludePlanned ? "已从余额扣除" : "从余额扣除"}</button>
+          )}
+        </div>
+        {(planned.data ?? []).length > 0 && (
+          <div className="mt-1.5 space-y-1">
+            {(planned.data ?? []).map((p) => (
+              <div key={p.id} className="flex items-center justify-between text-xs">
+                <span className="min-w-0 truncate text-ink-600 dark:text-ink-300">{p.name}{p.due_date && <span className="ml-1.5 text-ink-400">{p.due_date}</span>}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-rose-500 dark:text-rose-300">-{formatAmount(p.amount, p.currency_code, currencies.data)}</span>
+                  <button type="button" onClick={() => delPlanned.mutate(p.id)} className="text-ink-400 hover:text-rose-500" title="删除">×</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <input value={peName} onChange={(e) => setPeName(e.target.value)} placeholder="名称(如 学费)" className="w-28 rounded border border-ink-200 bg-transparent px-1.5 py-0.5 text-xs dark:border-ink-700" />
+          <input value={peAmt} onChange={(e) => setPeAmt(e.target.value)} inputMode="decimal" placeholder="金额" className="w-20 rounded border border-ink-200 bg-transparent px-1.5 py-0.5 text-xs dark:border-ink-700" />
+          <select value={peCcy || baseCurrency} onChange={(e) => setPeCcy(e.target.value)} className="rounded border border-ink-200 bg-transparent px-1 py-0.5 text-xs dark:border-ink-700">
+            {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+          </select>
+          <input type="date" value={peDate} onChange={(e) => setPeDate(e.target.value)} className="rounded border border-ink-200 bg-transparent px-1 py-0.5 text-xs text-ink-500 dark:border-ink-700" />
+          <button type="button" onClick={() => addPlanned.mutate()} disabled={addPlanned.isPending} className="rounded border border-ink-300 px-2 py-0.5 text-xs text-ink-600 hover:bg-ink-100 dark:border-ink-600 dark:text-ink-300 dark:hover:bg-ink-800">添加</button>
+        </div>
       </div>
 
       {/* Wallet 余额: 与上方资产总览同处一个矩形, 用分隔线区隔 */}

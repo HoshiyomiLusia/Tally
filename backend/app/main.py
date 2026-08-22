@@ -14,8 +14,8 @@ from .core.config import settings
 from .core.db import SessionLocal
 from .routers import (
     account, attachments, auth, budgets, categories, contacts, currencies,
-    dashboard, exchange_rates, investments, io, loans, merchants, reconciliation,
-    recurring, stats, transactions, wallets,
+    dashboard, exchange_rates, investments, io, loans, merchants, planned_expenses,
+    reconciliation, recurring, stats, transactions, wallets,
 )
 from .services.fx import refresh_rates, schedule_refresh
 from .services.seed import seed_currencies
@@ -84,6 +84,7 @@ api.include_router(io.router)
 api.include_router(exchange_rates.router)
 api.include_router(dashboard.router)
 api.include_router(account.router)
+api.include_router(planned_expenses.router)
 
 
 @api.get("/health")

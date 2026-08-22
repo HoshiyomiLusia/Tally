@@ -36,6 +36,15 @@ export interface Currency {
   decimal_digits: number;
 }
 
+export interface PlannedExpense {
+  id: number;
+  name: string;
+  amount: number;
+  currency_code: string;
+  due_date: string | null;
+  note: string;
+}
+
 export type WalletType = "cash" | "bank" | "credit_card" | "e_wallet" | "virtual";
 
 export interface Wallet {
