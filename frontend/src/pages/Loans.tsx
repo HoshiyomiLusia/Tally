@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDownLeft, Calculator, Delete, HandCoins, Pencil, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import ContactForm, { CONTACT_COLORS } from "../components/ContactForm";
 import DateField from "../components/DateField";
@@ -171,7 +172,7 @@ export default function Loans() {
                         {formatAmount(a.balance, a.currency_code, currencies.data)}
                       </div>
                       <div className="flex shrink-0 gap-1">
-                        <button onClick={() => setHistoryFor(a)} className="btn-ghost text-xs">明细</button>
+                        <button onClick={() => setHistoryFor(a)} className="btn-ghost text-xs">分析</button>
                         <button onClick={() => setRepayFor(a)} className="btn-ghost text-xs" title="收到还款">
                           <ArrowDownLeft size={12} /> 还款
                         </button>
@@ -536,6 +537,22 @@ function WriteOffModal({ acct, wallets, currencies, onClose }: {
   );
 }
 
+function thisYm(): string { return todayIso().slice(0, 7); }
+function shiftYm(v: string, delta: number): string {
+  const [y, m] = v.split("-").map((x) => parseInt(x, 10));
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function shortNum(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1e8) return (v / 1e8).toFixed(1) + "亿";
+  if (a >= 1e4) return (v / 1e4).toFixed(0) + "万";
+  if (a >= 1e3) return (v / 1e3).toFixed(0) + "k";
+  return String(Math.round(v));
+}
+
+// 借贷分析: 某联系人·某币种的全部借出/还款, 纯前端聚合(类似总分析).
+// 全时段 KPI(当前欠款/累计/已还比例) + 区间 KPI + 逐月双柱+欠款走势 + 钱包分布 + 可编辑明细.
 function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
   acct: LoanAccount | null;
   wallets: Wallet[];
@@ -552,76 +569,305 @@ function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
   const [q, setQ] = useState("");
   const [limit, setLimit] = useState(60);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
+  const [range, setRange] = useState<string>("all");  // all | 6m | 12m | YYYY
 
-  const sums = useMemo(() => {
-    let out = 0, rep = 0, no = 0, nr = 0;
-    for (const t of list.data ?? []) {
-      if (t.kind === "loan_out") { out += t.amount; no++; }
-      else if (t.kind === "loan_repayment") { rep += t.amount; nr++; }
+  const digits = currencies.find((c) => c.code === acct?.currency_code)?.decimal_digits ?? 2;
+  const txs = useMemo(() => (list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment"), [list.data]);
+  const years = useMemo(() => {
+    const ys = new Set<string>();
+    for (const t of txs) ys.add(t.occurred_on.slice(0, 4));
+    return [...ys].sort().reverse();
+  }, [txs]);
+
+  const now = thisYm();
+  const rangeFrom = range === "all" ? "" : range === "6m" ? shiftYm(now, -5) : range === "12m" ? shiftYm(now, -11) : `${range}-01`;
+  const rangeTo = range === "all" || range === "6m" || range === "12m" ? "9999-12" : `${range}-12`;
+
+  const an = useMemo(() => {
+    const inRange = (d: string) => { const m = d.slice(0, 7); return m >= rangeFrom && m <= rangeTo; };
+    const sorted = [...txs].sort((a, b) => a.occurred_on.localeCompare(b.occurred_on) || a.id - b.id);
+    const first = sorted[0]?.occurred_on ?? null, last = sorted[sorted.length - 1]?.occurred_on ?? null;
+    // 逐月(全时段), 用于连续月份轴与欠款累计
+    const byMonth = new Map<string, { out: number; rep: number }>();
+    for (const t of sorted) {
+      const m = t.occurred_on.slice(0, 7);
+      const e = byMonth.get(m) ?? { out: 0, rep: 0 };
+      if (t.kind === "loan_out") e.out += t.amount; else e.rep += t.amount;
+      byMonth.set(m, e);
     }
-    return { out, rep, no, nr };
-  }, [list.data]);
+    const months: string[] = [];
+    if (sorted.length) {
+      const firstM = sorted[0].occurred_on.slice(0, 7), lastM = sorted[sorted.length - 1].occurred_on.slice(0, 7);
+      let m = rangeFrom && rangeFrom > firstM ? rangeFrom : firstM;
+      const end = rangeTo < lastM ? rangeTo : lastM;
+      let guard = 0;
+      while (m <= end && guard++ < 600) { months.push(m); m = shiftYm(m, 1); }
+    }
+    // 区间起点之前的累计欠款作为起始值, 再逐月累加
+    let running = 0;
+    for (const [m, e] of byMonth) if (months.length && m < months[0]) running += e.out - e.rep;
+    const k = Math.pow(10, digits);
+    const chart = months.map((m) => {
+      const e = byMonth.get(m);
+      if (e) running += e.out - e.rep;
+      return { m: m.slice(2), out: (e?.out ?? 0) / k, rep: (e?.rep ?? 0) / k, bal: running / k };
+    });
+    // 区间 KPI + 钱包分布
+    let out = 0, rep = 0, no = 0, nr = 0;
+    let maxOutTx: Transaction | null = null;
+    const byWallet = new Map<number, { out: number; rep: number }>();
+    for (const t of sorted) {
+      if (!inRange(t.occurred_on)) continue;
+      const w = byWallet.get(t.wallet_id) ?? { out: 0, rep: 0 };
+      if (t.kind === "loan_out") { out += t.amount; no++; w.out += t.amount; if (!maxOutTx || t.amount > maxOutTx.amount) maxOutTx = t; }
+      else { rep += t.amount; nr++; w.rep += t.amount; }
+      byWallet.set(t.wallet_id, w);
+    }
+    const walletRows = [...byWallet.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.out + b.rep) - (a.out + a.rep));
+    const walletMax = walletRows.reduce((mx, r) => Math.max(mx, r.out + r.rep), 0) || 1;
+    return { first, last, chart, out, rep, no, nr, maxOutTx, walletRows, walletMax };
+  }, [txs, rangeFrom, rangeTo, digits]);
 
   const rows = useMemo(() => {
-    let r = (list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment");
+    let r = txs.filter((t) => { const m = t.occurred_on.slice(0, 7); return m >= rangeFrom && m <= rangeTo; });
     if (filter !== "all") r = r.filter((t) => t.kind === filter);
     const kw = q.trim().toLowerCase();
     if (kw) r = r.filter((t) => (t.note ?? "").toLowerCase().includes(kw) || t.occurred_on.includes(kw));
     return [...r].sort((a, b) => (a.occurred_on < b.occurred_on ? 1 : a.occurred_on > b.occurred_on ? -1 : b.id - a.id));
-  }, [list.data, filter, q]);
+  }, [txs, filter, q, rangeFrom, rangeTo]);
 
   if (!acct) return null;
   const fmt = (a: number) => formatAmount(a, acct.currency_code, currencies);
+  const walletName = (id: number) => wallets.find((w) => w.id === id)?.name ?? `#${id}`;
+  const owed = acct.loan_out_total - acct.loan_repayment_total;
+  const repaidPct = acct.loan_out_total > 0 ? Math.min(100, (acct.loan_repayment_total / acct.loan_out_total) * 100) : 0;
   const shown = rows.slice(0, limit);
+  const chip = (active: boolean) => active
+    ? "rounded-full bg-ink-800 px-2.5 py-0.5 text-xs text-white dark:bg-emerald-600"
+    : "rounded-full border border-ink-200 px-2.5 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:text-ink-300";
+  const rangeItems = [["all", "全部"], ["6m", "近6月"], ["12m", "近12月"], ...years.map((y) => [y, y])] as [string, string][];
+  const isStandalone = (t: Transaction) => !t.split_group_id && t.transfer_pair_id == null && t.position_id == null;
 
   return (
-    <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 明细`} maxW="max-w-lg">
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        <Sum label={`借出 · ${sums.no}笔`} v={fmt(acct.loan_out_total)} tone="rose" />
-        <Sum label={`还款 · ${sums.nr}笔`} v={fmt(acct.loan_repayment_total)} tone="emerald" />
-        <Sum label="净额 (她欠你)" v={fmt(acct.loan_out_total - acct.loan_repayment_total)} tone={acct.loan_out_total - acct.loan_repayment_total >= 0 ? "rose" : "emerald"} />
-      </div>
-      <div className="mb-2 flex flex-wrap items-center gap-1.5">
-        {([["all", "全部"], ["loan_out", "借出"], ["loan_repayment", "还款"]] as const).map(([k, lbl]) => (
-          <button key={k} type="button" onClick={() => { setFilter(k); setLimit(60); }}
-            className={filter === k
-              ? "rounded-full bg-ink-800 px-2.5 py-0.5 text-xs text-white dark:bg-emerald-600"
-              : "rounded-full border border-ink-200 px-2.5 py-0.5 text-xs text-ink-600 dark:border-ink-700 dark:text-ink-300"}>
-            {lbl}</button>
-        ))}
-        <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(60); }} placeholder="搜备注 / 日期"
-          className="ml-auto w-32 rounded-md border border-ink-200 bg-transparent px-2 py-1 text-xs dark:border-ink-700" />
-      </div>
-      <div className="max-h-[52vh] divide-y divide-ink-100 overflow-y-auto dark:divide-ink-800">
-        {shown.length === 0 && <div className="py-6 text-center text-sm text-ink-500">无记录</div>}
-        {shown.map((t) => (
-          <div key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-            <div className="min-w-0">
-              <div>{t.kind === "loan_out" ? "🟥 借出" : "🟩 还款"} · {t.occurred_on}</div>
-              {t.note && <div className="truncate text-xs text-ink-500">{t.note}</div>}
+    <Modal onClose={onClose} title={`${acct.contact_name} · ${acct.currency_code} 借贷分析`} maxW="max-w-4xl">
+      {list.isLoading && <div className="py-12 text-center text-sm text-ink-500">加载中…</div>}
+      {!list.isLoading && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
+            <span className="mr-1 text-[10px] uppercase tracking-wider text-ink-400">范围</span>
+            {rangeItems.map(([k, lbl]) => (
+              <button key={k} type="button" onClick={() => { setRange(k); setLimit(60); }} className={chip(range === k)}>{lbl}</button>
+            ))}
+            <span className="ml-auto text-[10px] text-ink-400">{an.first ? `首笔 ${an.first} · 最近 ${an.last}` : "暂无往来"}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Sum label="当前欠款 (她欠你·全时段)" v={fmt(owed)} tone={owed >= 0 ? "rose" : "emerald"} />
+            <Sum label="累计借出" v={fmt(acct.loan_out_total)} tone="rose" />
+            <Sum label="累计已还" v={fmt(acct.loan_repayment_total)} tone="emerald" />
+            <Sum label="已还比例" v={`${repaidPct.toFixed(0)}%`} tone="ink" />
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Sum label={`区间借出 · ${an.no}笔${an.no ? ` · 均 ${fmt(Math.round(an.out / an.no))}` : ""}`} v={fmt(an.out)} tone="rose" />
+            <Sum label={`区间还款 · ${an.nr}笔`} v={fmt(an.rep)} tone="emerald" />
+            <Sum label="区间净变动 (+欠款增加)" v={`${an.out - an.rep > 0 ? "+" : ""}${fmt(an.out - an.rep)}`} tone={an.out - an.rep > 0 ? "rose" : "emerald"} />
+            <Sum label="最大单笔借出" v={an.maxOutTx ? `${fmt(an.maxOutTx.amount)} · ${an.maxOutTx.occurred_on.slice(2)}` : "—"} tone="ink" />
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-medium text-ink-500">逐月借出 / 还款 + 欠款余额走势（{an.chart.length} 个月）</div>
+            {an.chart.length === 0 ? (
+              <div className="py-6 text-center text-xs text-ink-400">区间内无往来</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={210}>
+                <ComposedChart data={an.chart} margin={{ top: 6, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ececef" className="dark:opacity-10" />
+                  <XAxis dataKey="m" fontSize={9} interval={Math.max(0, Math.floor(an.chart.length / 12))} tick={{ fill: "#9ca3af" }} />
+                  <YAxis yAxisId="l" fontSize={9} width={44} tickFormatter={shortNum} tick={{ fill: "#9ca3af" }} />
+                  <YAxis yAxisId="r" orientation="right" fontSize={9} width={44} tickFormatter={shortNum} tick={{ fill: "#9ca3af" }} />
+                  <Tooltip
+                    formatter={(v: number, name: string) => [fmt(Math.round(v * Math.pow(10, digits))), name]}
+                    labelFormatter={(l) => `20${l}`}
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="l" dataKey="out" name="借出" fill="#e11d48" radius={[2, 2, 0, 0]} />
+                  <Bar yAxisId="l" dataKey="rep" name="还款" fill="#10b981" radius={[2, 2, 0, 0]} />
+                  <Line yAxisId="r" type="monotone" dataKey="bal" name="欠款余额" stroke="#6366f1" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-5">
+            <div className="lg:col-span-2">
+              <div className="mb-1.5 text-xs font-medium text-ink-500">钱包分布（区间内）</div>
+              <div className="space-y-1.5">
+                {an.walletRows.length === 0 && <div className="py-4 text-center text-xs text-ink-400">无</div>}
+                {an.walletRows.map((w) => (
+                  <div key={w.id} className="relative overflow-hidden rounded-md bg-ink-50 px-2 py-1.5 dark:bg-ink-800/40">
+                    <div className="absolute inset-y-0 left-0 bg-rose-500/15" style={{ width: `${((w.out + w.rep) / an.walletMax) * 100}%` }} />
+                    <div className="relative text-xs">
+                      <div className="truncate font-medium">{walletName(w.id)}</div>
+                      <div className="flex justify-between text-[11px] text-ink-500">
+                        <span className="text-rose-600">借出 {fmt(w.out)}</span>
+                        <span className="text-emerald-600">还款 {fmt(w.rep)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className={`shrink-0 tabular-nums ${t.kind === "loan_out" ? "text-rose-600" : "text-emerald-600"}`}>
-              {t.kind === "loan_out" ? "-" : "+"}{fmt(t.amount)}
+
+            <div className="lg:col-span-3">
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-medium text-ink-500">明细</span>
+                {([["all", "全部"], ["loan_out", "借出"], ["loan_repayment", "还款"]] as const).map(([k, lbl]) => (
+                  <button key={k} type="button" onClick={() => { setFilter(k); setLimit(60); }} className={chip(filter === k)}>{lbl}</button>
+                ))}
+                <input value={q} onChange={(e) => { setQ(e.target.value); setLimit(60); }} placeholder="搜备注 / 日期"
+                  className="ml-auto w-32 rounded-md border border-ink-200 bg-transparent px-2 py-1 text-xs dark:border-ink-700" />
+              </div>
+              <div className="max-h-[40vh] divide-y divide-ink-100 overflow-y-auto dark:divide-ink-800">
+                {shown.length === 0 && <div className="py-6 text-center text-sm text-ink-500">无记录</div>}
+                {shown.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span>{t.kind === "loan_out" ? "🟥 借出" : "🟩 还款"} · {t.occurred_on}</span>
+                        {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-500 dark:bg-ink-800" title="分摊腿, 请在账单里改整笔分摊">分摊</span>}
+                      </div>
+                      <div className="truncate text-xs text-ink-500">{walletName(t.wallet_id)}{t.note ? ` · ${t.note}` : ""}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className={`tabular-nums ${t.kind === "loan_out" ? "text-rose-600" : "text-emerald-600"}`}>
+                        {t.kind === "loan_out" ? "-" : "+"}{fmt(t.amount)}
+                      </span>
+                      {isStandalone(t) && (
+                        <button type="button" onClick={() => setEditTx(t)} className="btn-ghost p-1" title="编辑这笔"><Pencil size={13} /></button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {rows.length > shown.length && (
+                <button type="button" onClick={() => setLimit((n) => n + 100)}
+                  className="mt-2 w-full rounded-md border border-ink-200 py-1.5 text-xs text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800">
+                  加载更多（还有 {rows.length - shown.length} 条）
+                </button>
+              )}
+              <div className="mt-1 text-center text-[10px] text-ink-400">共 {rows.length} 条{filter !== "all" || q || range !== "all" ? "（已筛选）" : ""}</div>
             </div>
           </div>
-        ))}
-      </div>
-      {rows.length > shown.length && (
-        <button type="button" onClick={() => setLimit((n) => n + 100)}
-          className="mt-2 w-full rounded-md border border-ink-200 py-1.5 text-xs text-ink-500 hover:bg-ink-100 dark:border-ink-700 dark:hover:bg-ink-800">
-          加载更多（还有 {rows.length - shown.length} 条）
-        </button>
+        </div>
       )}
-      <div className="mt-1 text-center text-[10px] text-ink-400">共 {rows.length} 条{filter !== "all" || q ? "（已筛选）" : ""}</div>
+      {editTx && (
+        <EditLoanTxModal tx={editTx} wallets={wallets} contacts={contacts} currencies={currencies} onClose={() => setEditTx(null)} />
+      )}
     </Modal>
   );
 }
 
-function Sum({ label, v, tone }: { label: string; v: string; tone: "rose" | "emerald" }) {
+// 编辑独立借出/还款(非分摊腿): 金额 / 钱包(同币种) / 联系人 / 日期 / 备注, 或删除.
+// 后端 update_transaction 对独立借贷放行这些字段; 分摊腿不会进到这里(列表不给铅笔).
+function EditLoanTxModal({ tx, wallets, contacts, currencies, onClose }: {
+  tx: Transaction;
+  wallets: Wallet[];
+  contacts: Contact[];
+  currencies: Currency[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const digits = currencies.find((c) => c.code === tx.currency_code)?.decimal_digits ?? 2;
+  const [walletId, setWalletId] = useState<number>(tx.wallet_id);
+  const [contactId, setContactId] = useState<number | null>(tx.contact_id);
+  const [amountText, setAmountText] = useState(formatAmountInput(tx.amount, digits));
+  const [occurredOn, setOccurredOn] = useState(tx.occurred_on);
+  const [note, setNote] = useState(tx.note ?? "");
+  const [error, setError] = useState("");
+  const matchingWallets = wallets.filter((w) => w.currency_code === tx.currency_code && (!w.archived || w.id === tx.wallet_id));
+  const contactItems = contacts.filter((c) => !c.archived || c.id === tx.contact_id);
+
+  const onErr = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : "保存失败";
+    const r = (e as { response?: { data?: { detail?: string } } }).response;
+    setError(r?.data?.detail ?? msg);
+  };
+  const save = useMutation({
+    mutationFn: async () => {
+      const amount = parseAmount(amountText, digits);
+      if (amount <= 0) throw new Error("金额需大于 0");
+      if (!contactId) throw new Error("请选择联系人");
+      const body: Record<string, unknown> = {};
+      if (amount !== tx.amount) body.amount = amount;
+      if (walletId !== tx.wallet_id) body.wallet_id = walletId;
+      if (contactId !== tx.contact_id) body.contact_id = contactId;
+      if (occurredOn !== tx.occurred_on) body.occurred_on = occurredOn;
+      if (note !== (tx.note ?? "")) body.note = note;
+      if (Object.keys(body).length === 0) return;
+      await api.patch(`/transactions/${tx.id}`, body);
+    },
+    onSuccess: () => { invalidateMoney(qc); onClose(); },
+    onError: onErr,
+  });
+  const del = useMutation({
+    mutationFn: async () => { await api.delete(`/transactions/${tx.id}`); },
+    onSuccess: () => { invalidateMoney(qc); onClose(); },
+    onError: onErr,
+  });
+
+  return (
+    <Modal onClose={onClose} title={`编辑${tx.kind === "loan_out" ? "借出" : "还款"} · ${tx.occurred_on}`} maxW="max-w-sm">
+      <div className="space-y-3">
+        <label className="block">
+          <span className="text-xs text-ink-500">联系人</span>
+          <select className="input mt-1" value={contactId ?? ""} onChange={(e) => setContactId(Number(e.target.value) || null)}>
+            {contactItems.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-xs text-ink-500">{tx.kind === "loan_out" ? "出账" : "入账"} Wallet ({tx.currency_code})</span>
+          <select className="input mt-1" value={walletId} onChange={(e) => setWalletId(Number(e.target.value))}>
+            {matchingWallets.map((w) => <option key={w.id} value={w.id}>{w.name}{w.archived ? "（已归档）" : ""}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-xs text-ink-500">金额</span>
+          <input className="input mt-1" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} autoFocus />
+        </label>
+        <div className="grid grid-cols-1 gap-2">
+          <div>
+            <span className="text-xs text-ink-500">日期</span>
+            <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
+          </div>
+          <label className="block">
+            <span className="text-xs text-ink-500">备注</span>
+            <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+          </label>
+        </div>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <button type="button" onClick={() => { if (confirm("删除这笔借贷记录？余额与借贷应收会立即重算。")) del.mutate(); }}
+            disabled={del.isPending || save.isPending} className="btn-ghost text-rose-600">
+            {del.isPending ? "删除中…" : "删除"}
+          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="btn-ghost">取消</button>
+            <button type="button" onClick={() => save.mutate()} disabled={save.isPending || del.isPending} className="btn-primary">
+              {save.isPending ? "保存中…" : "保存"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Sum({ label, v, tone }: { label: string; v: string; tone: "rose" | "emerald" | "ink" }) {
   return (
     <div className="rounded-lg bg-ink-50 p-2 dark:bg-ink-800/40">
       <div className="text-[10px] uppercase tracking-wider text-ink-400">{label}</div>
-      <div className={`text-sm font-semibold tabular-nums ${tone === "rose" ? "text-rose-600" : "text-emerald-600"}`}>{v}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone === "rose" ? "text-rose-600" : tone === "emerald" ? "text-emerald-600" : "text-ink-800 dark:text-ink-100"}`}>{v}</div>
     </div>
   );
 }
