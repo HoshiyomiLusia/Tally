@@ -401,11 +401,11 @@ function RepaymentModal({ acct, wallets, currencies, onClose }: {
             <span className="text-xs text-ink-500">金额</span>
             <input className="input mt-1" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} autoFocus />
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
+          <div className="grid grid-cols-1 gap-2">
+            <div>
               <span className="text-xs text-ink-500">日期</span>
               <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
-            </label>
+            </div>
             <label className="block">
               <span className="text-xs text-ink-500">备注</span>
               <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
