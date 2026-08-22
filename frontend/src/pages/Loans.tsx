@@ -543,11 +543,13 @@ function shiftYm(v: string, delta: number): string {
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+// 轴刻度缩写. 千/万位区间保留 1 位小数并去尾零, 否则相邻刻度(1500/2250)会都显示成 "2k" 重复
 function shortNum(v: number): string {
   const a = Math.abs(v);
-  if (a >= 1e8) return (v / 1e8).toFixed(1) + "亿";
-  if (a >= 1e4) return (v / 1e4).toFixed(0) + "万";
-  if (a >= 1e3) return (v / 1e3).toFixed(0) + "k";
+  const f = (x: number, d: number) => String(parseFloat(x.toFixed(d)));
+  if (a >= 1e8) return f(v / 1e8, 1) + "亿";
+  if (a >= 1e4) return f(v / 1e4, a >= 1e5 ? 0 : 1) + "万";
+  if (a >= 1e3) return f(v / 1e3, 1) + "k";
   return String(Math.round(v));
 }
 
