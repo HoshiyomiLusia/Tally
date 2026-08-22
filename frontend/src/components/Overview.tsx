@@ -107,7 +107,8 @@ export function BalanceModule() {
 
   const fmtBase = (v: number) => formatAmount(v, baseCurrency, currencies.data);
   // 一键"抹除投资": 把投资额从真实余额里剔除, 看不含投资的净资产(= 物理 - 待还 + 借贷)
-  const [excludeInvest, setExcludeInvest] = useState(false);
+  const [investCutPct, setInvestCutPct] = useState(0);   // 抹除投资的比例 0~100
+  const [investPopover, setInvestPopover] = useState(false);
   const plannedTotal = useMemo(() => {
     const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
     const rateMap = new Map<string, number>();
@@ -121,12 +122,12 @@ export function BalanceModule() {
     };
     return (planned.data ?? []).reduce((s, p) => s + fold(p.amount, p.currency_code), 0);
   }, [planned.data, rates.data, currencies.data, baseCurrency]);
-  const mainTotal = (cross.data?.total ?? 0) - (excludeInvest ? (cross.data?.total_invested ?? 0) : 0) - (excludePlanned ? plannedTotal : 0);
+  const mainTotal = (cross.data?.total ?? 0) - Math.round((cross.data?.total_invested ?? 0) * investCutPct / 100) - (excludePlanned ? plannedTotal : 0);
   const metricItems: { label: string; text: string; color: string }[] = [
     { label: "物理余额", text: fmtBase(cross.data?.total_spendable ?? 0), color: "" },
   ];
   if (cross.data?.total_credit_debt) metricItems.push({ label: "信用卡待还", text: fmtBase(cross.data.total_credit_debt), color: "text-rose-500 dark:text-rose-300" });
-  if (cross.data?.total_invested) metricItems.push({ label: excludeInvest ? "投资中 (已抹除)" : "投资中", text: fmtBase(cross.data.total_invested), color: excludeInvest ? "text-sky-600/40 line-through dark:text-sky-400/40" : "text-sky-600 dark:text-sky-400" });
+  if (cross.data?.total_invested) metricItems.push({ label: investCutPct > 0 ? `投资中 (抹${investCutPct}%)` : "投资中", text: fmtBase(cross.data.total_invested), color: investCutPct >= 100 ? "text-sky-600/40 line-through dark:text-sky-400/40" : "text-sky-600 dark:text-sky-400" });
   if (loanNet.receivable > 0) metricItems.push({ label: "借贷 · 应收", text: fmtBase(loanNet.receivable), color: "text-emerald-600 dark:text-emerald-400" });
   if (loanNet.payable > 0) metricItems.push({ label: "借贷 · 应付", text: fmtBase(loanNet.payable), color: "text-rose-500 dark:text-rose-300" });
 
@@ -137,7 +138,7 @@ export function BalanceModule() {
         <div className="min-w-0">
           <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
           <div className="mb-1 flex items-center gap-1.5">
-            <span className="text-xs uppercase tracking-wider text-ink-500">{excludeInvest ? "不含投资 · 折算到" : "真实余额 · 折算到"}</span>
+            <span className="text-xs uppercase tracking-wider text-ink-500">{investCutPct > 0 ? `不含投资${investCutPct < 100 ? ` ${investCutPct}%` : ""} · 折算到` : "真实余额 · 折算到"}</span>
             <select
               value={baseCurrency}
               onChange={(e) => setBaseCurrency(e.target.value)}
@@ -145,12 +146,26 @@ export function BalanceModule() {
             >
               {(currencies.data ?? []).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
             </select>
-            <button
-              type="button"
-              onClick={() => setExcludeInvest((v) => !v)}
-              title="一键切换: 是否把投资额计入余额"
-              className={`rounded border px-1.5 py-0.5 text-xs ${excludeInvest ? "border-sky-500 bg-sky-500/15 text-sky-600 dark:text-sky-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
-            >{excludeInvest ? "恢复" : "抹除投资"}</button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setInvestPopover((v) => !v)}
+                title="点开选择抹除多少投资额"
+                className={`rounded border px-1.5 py-0.5 text-xs ${investCutPct > 0 ? "border-sky-500 bg-sky-500/15 text-sky-600 dark:text-sky-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
+              >{investCutPct > 0 ? `抹除投资 ${investCutPct}%` : "抹除投资"}</button>
+              {investPopover && (
+                <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-ink-200 bg-white p-1.5 shadow-lg dark:border-ink-700 dark:bg-ink-800">
+                  {[0, 25, 50, 75, 100].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => { setInvestCutPct(pct); setInvestPopover(false); }}
+                      className={`rounded px-1.5 py-0.5 text-xs ${investCutPct === pct ? "bg-sky-500 text-white" : "text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-700"}`}
+                    >{pct}%</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="text-3xl font-semibold tracking-tight">
             {formatAmount(mainTotal, baseCurrency, currencies.data)}
