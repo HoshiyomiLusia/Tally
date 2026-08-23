@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import MonthPicker from "../components/MonthPicker";
@@ -65,9 +65,12 @@ export default function Stats({
   const month = monthProp ?? monthState;
   const setMonth = onMonthChange ?? setMonthState;
   const { user } = useAuth();
+  // 审计 #98: 与 Overview.BalanceModule 同一守卫 —— 只在本地没保存过折算币种时才用主币种初始化,
+  // 否则每次挂载都把用户手选的折算币种覆写回主币种(第二次刷新就被顶回)。
+  const hadSavedBase = useRef(localStorage.getItem("tally.baseCurrency") != null);
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
   useEffect(() => {
-    if (user?.primary_currency_code) setBaseCurrency(user.primary_currency_code);
+    if (!hadSavedBase.current && user?.primary_currency_code) setBaseCurrency(user.primary_currency_code);
   }, [user?.primary_currency_code]);
   useEffect(() => { localStorage.setItem("tally.baseCurrency", baseCurrency); }, [baseCurrency]);
 
@@ -79,10 +82,11 @@ export default function Stats({
   // 支出节奏: 本月线对照过去 N 个月的历史群线, 看本月花得比平时快/慢
   const [paceMonths, setPaceMonths] = useState<6 | 12>(6);
   const [paceHl, setPaceHl] = useState<string | null>(null);  // 图例 hover 高亮某个历史月
-  // 拉近 ~13 个月日数据, 覆盖 12 个月历史对比
-  const daily = useQuery({ queryKey: ["stats-daily"], queryFn: async () => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 400 * 86400000);
+  // 审计 #108: 按所选月份 + 对比月数拉"整月"数据(此前固定今天往前 400 天, 最老的历史月只拉到半截却仍计入均值/区间带)
+  const daily = useQuery({ queryKey: ["stats-daily", month, paceMonths], queryFn: async () => {
+    const [yr, mn] = month.split("-").map(Number);
+    const start = new Date(yr, mn - 1 - paceMonths, 1);
+    const end = new Date(yr, mn, 0);  // 所选月最后一天
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return (await api.get<DailyPoint[]>(`/stats/daily?kind=expense&start=${iso(start)}&end=${iso(end)}`)).data;
   } });

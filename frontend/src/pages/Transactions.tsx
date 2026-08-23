@@ -200,6 +200,28 @@ export default function Transactions() {
   const total = totalCount.data ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasMore = page + 1 < totalPages;
+  // 审计 #99: 分页按行切, 同一天可能跨页 → 页首组(page>0)和页末组(还有下一页)的日头合计只算到本页的行.
+  // 对这两个可能被截断的日期, 用同样筛选条件单独拉全天数据算合计.
+  const boundaryDays = useMemo(() => {
+    const days: string[] = [];
+    if (!grouped.length) return days;
+    if (page > 0) days.push(grouped[0][0]);
+    if (hasMore) { const last = grouped[grouped.length - 1][0]; if (!days.includes(last)) days.push(last); }
+    return days;
+  }, [grouped, page, hasMore]);
+  const boundaryFull = useQuery({
+    queryKey: ["transactions", "day-full", countParams, boundaryDays],
+    enabled: boundaryDays.length > 0,
+    queryFn: async () => {
+      const out = new Map<string, Transaction[]>();
+      for (const d of boundaryDays) {
+        const p = new URLSearchParams(countParams);
+        p.set("start", d); p.set("end", d); p.set("limit", "2000"); p.set("offset", "0");
+        out.set(d, (await api.get<Transaction[]>(`/transactions?${p.toString()}`)).data);
+      }
+      return out;
+    },
+  });
 
   const activeFilters = [walletId, currency, kind, q, parentCatId, childCatId, start, end].filter(Boolean).length;
   const clearFilters = () => { setWalletId(""); setCurrency(""); setKind(""); setQ(""); setParentCatId(""); setChildCatId(""); setStart(""); setEnd(""); };
@@ -319,7 +341,8 @@ export default function Transactions() {
           // 非真实收支, 首页/统计已排除(审计 #4), 账单日头此前漏了它导致对账日 支/收 虚增, 此处对齐)
           const internalCatIds = new Set((categories.data ?? []).filter((c) => c.name === "对账调整").map((c) => c.id));
           const totals = new Map<string, { income: number; expense: number }>();
-          for (const t of list) {
+          const dayRows = boundaryFull.data?.get(date) ?? list;  // 审计 #99: 跨页的日期用全天数据
+          for (const t of dayRows) {
             if (t.kind !== "income" && t.kind !== "expense") continue;
             if (t.category_id != null && internalCatIds.has(t.category_id)) continue;
             const row = totals.get(t.currency_code) ?? { income: 0, expense: 0 };
@@ -397,7 +420,7 @@ export default function Transactions() {
                           title="撤销分摊"
                         ><Split size={14} /></button>
                       )}
-                      {(t.kind === "expense" || t.kind === "income") && (
+                      {(t.kind === "expense" || t.kind === "income") && !t.split_group_id && (
                         <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
                       )}
                       <button

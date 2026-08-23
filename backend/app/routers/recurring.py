@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
+from ..services.months import parse_month
 from ..models import Category, Merchant, Transaction, User, Wallet
 from ..schemas.transaction import TransactionRead
 
@@ -222,7 +223,7 @@ async def by_month(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
+    anchor = parse_month(month, today)  # 审计 #106
     m_start = anchor.replace(day=1)
     m_end = date(anchor.year + 1, 1, 1) if anchor.month == 12 else date(anchor.year, anchor.month + 1, 1)
     y_start = date(anchor.year, 1, 1)

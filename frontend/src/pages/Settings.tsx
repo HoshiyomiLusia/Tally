@@ -256,7 +256,7 @@ export default function Settings() {
         </div>
         <div className="mt-3 max-h-72 overflow-y-auto divide-y divide-ink-100">
           {(rates.data ?? []).length === 0 && <div className="py-4 text-center text-sm text-ink-500">还没有汇率数据</div>}
-          {(rates.data ?? []).slice(0, 50).map((r) => (
+          {(rates.data ?? []).map((r) => (
             <div key={r.id} className="flex items-center justify-between py-1.5 text-sm">
               <div>
                 <span className="text-ink-700">{r.on_date}</span>

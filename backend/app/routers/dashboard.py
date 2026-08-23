@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
+from ..services.months import parse_month
 from ..models import Category, Transaction, User, Wallet
 from ..schemas.dashboard import (
     CategoryBreakdownItem,
@@ -40,10 +41,7 @@ async def get_dashboard(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    if month:
-        anchor = date.fromisoformat(month + "-01") if len(month) == 7 else date.fromisoformat(month)
-    else:
-        anchor = today
+    anchor = parse_month(month, today)  # 审计 #106: 非法 month 400 而非 500
     start, next_m = _month_bounds(anchor)
 
     wallets = (

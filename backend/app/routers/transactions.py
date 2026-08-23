@@ -10,6 +10,7 @@ from ..core.db import get_session
 from ..models import Category, Contact, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 from .recurring import resolve_recurrence_group
+from ..services.internal_cats import SYSTEM_CATEGORY_NAMES
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -144,6 +145,9 @@ async def create_transaction(
             obj = await session.get(model, fid)
             if not obj or obj.user_id != user.id:
                 raise HTTPException(400, f"invalid {fk}")
+            # 审计 #100: 分类 kind 与交易类型一致(系统分类两用, 放行)
+            if fk == "category_id" and obj.kind != payload.kind and obj.name not in SYSTEM_CATEGORY_NAMES:
+                raise HTTPException(400, "分类类型与交易类型不一致(支出分类不能挂在收入上, 反之亦然)")
 
     data = payload.model_dump()
     source_id = data.pop("recurrence_source_id", None)
@@ -341,6 +345,10 @@ async def update_transaction(
     if not t or t.user_id != user.id:
         raise HTTPException(404)
     updates = payload.model_dump(exclude_unset=True)
+    # 审计 #101: 分摊组(支出腿 + 各借出腿)的金额/钱包/日期/类型有组内不变量(撤销分摊时按组合并),
+    # 单腿单独改会让合并金额错、各腿日期钱包不一致. 组内任一腿都不许改这几项(分类/商家/备注仍可改).
+    if t.split_group_id and any(k in updates for k in ("amount", "wallet_id", "occurred_on", "kind")):
+        raise HTTPException(400, "分摊订单的金额 / 钱包 / 日期 / 类型需整组一致, 请先撤销分摊再改")
     # 转账/投资各腿有配对不变量: 通用接口不允许改金额/钱包(会让配对腿失配或持仓归属错乱).
     # 前端已对这些类型隐藏铅笔, 这里再挡一道防绕过 UI 直接 PATCH.
     # 例外: 独立借贷(不在分摊、无转账配对腿、无持仓)可在此改金额/钱包/联系人 —— 它本身就是单腿,
@@ -385,6 +393,18 @@ async def update_transaction(
             obj = await session.get(model, updates[fk])
             if not obj or obj.user_id != user.id:
                 raise HTTPException(400, f"invalid {fk}")
+    # 审计 #100: 支出<->收入互改或换分类时, 分类的 kind 必须与最终交易类型一致, 否则收入挂在支出分类下进统计.
+    # 系统分类(对账调整等)两种类型共用, 放行.
+    final_kind = updates.get("kind", t.kind)
+    final_cat = updates["category_id"] if "category_id" in updates else t.category_id
+    if final_cat is not None and final_kind in ("expense", "income") and ("kind" in updates or "category_id" in updates):
+        cat = await session.get(Category, final_cat)
+        if cat and cat.kind != final_kind and cat.name not in SYSTEM_CATEGORY_NAMES:
+            raise HTTPException(400, "分类类型与交易类型不一致(支出分类不能挂在收入上, 反之亦然)")
+    # 审计 #107: 独立借贷换出账钱包时, 旧的"名义归属"钱包(attributed_wallet_id)随之作废,
+    # 否则余额按 COALESCE(attributed, wallet) 仍扣在旧钱包, 而明细显示新钱包, 两处不一致.
+    if is_standalone_loan and "wallet_id" in updates and updates["wallet_id"] != t.wallet_id:
+        t.attributed_wallet_id = None
     for k, v in updates.items():
         setattr(t, k, v)
     await session.commit()

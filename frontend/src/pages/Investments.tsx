@@ -484,15 +484,15 @@ function EditModal({ pos, onClose }: { pos: Position | null; onClose: () => void
           <span className="text-xs text-ink-500">标的名称</span>
           <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2">
           <label className="block">
             <span className="text-xs text-ink-500">币种（不可改）</span>
             <input className="input mt-1 opacity-60" value={pos.currency_code} disabled />
           </label>
-          <label className="block">
+          <div>
             <span className="text-xs text-ink-500">买入日期</span>
             <DateField value={openedOn} onChange={setOpenedOn} className="mt-1" />
-          </label>
+          </div>
         </div>
         <label className="block">
           <span className="text-xs text-ink-500">备注</span>

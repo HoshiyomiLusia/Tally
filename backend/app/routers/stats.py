@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
+from ..services.months import parse_month
 from ..models import Category, Currency, ExchangeRate, Merchant, Transaction, User, Wallet
 from ..services.balances import (
     all_wallet_investment_summary,
@@ -111,7 +112,7 @@ async def summary(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
+    anchor = parse_month(month, today)  # 审计 #106
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
     skip_cats = await internal_cat_ids(session, user.id)
@@ -177,7 +178,7 @@ async def category_compare(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
+    anchor = parse_month(month, today)  # 审计 #106
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
     skip_cats = await internal_cat_ids(session, user.id)
@@ -233,7 +234,7 @@ async def top_merchants(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    anchor = date.fromisoformat(month + "-01") if month and len(month) == 7 else today
+    anchor = parse_month(month, today)  # 审计 #106
     start, end = _month_bounds(anchor)
 
     rows = (

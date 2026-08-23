@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HandCoins, Pencil, Plus, Scale, Trash2, TrendingUp } from "lucide-react";
+import { Archive, ArchiveRestore, HandCoins, Pencil, Plus, Scale, Trash2, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Banknote, CreditCard, Globe2, Landmark, Smartphone, type LucideIcon } from "lucide-react";
@@ -62,12 +62,25 @@ export default function Wallets() {
     return Array.from(m.entries());
   }, [wallets.data]);
 
+  // 审计 #104: 页面此前没有任何归档入口, 删除被拒却提示"请改为归档"; 归档卡也无标识
+  const archiveMut = useMutation({
+    mutationFn: async (w: Wallet) => api.patch(`/wallets/${w.id}`, { archived: !w.archived }),
+    onSuccess: () => { invalidateMoney(qc); qc.invalidateQueries({ queryKey: ["wallets"] }); },
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "归档失败");
+    },
+  });
   const deleteMut = useMutation({
     mutationFn: async (id: number) => api.delete(`/wallets/${id}`),
     onSuccess: () => invalidateMoney(qc),
-    onError: (e: unknown) => {
-      const r = (e as { response?: { data?: { detail?: string } } }).response;
-      alert(r?.data?.detail ?? "删除失败");
+    onError: (e: unknown, id: number) => {
+      const r = (e as { response?: { status?: number; data?: { detail?: string } } }).response;
+      const detail = r?.data?.detail ?? "删除失败";
+      const w = (wallets.data ?? []).find((x) => x.id === id);
+      if (r?.status === 409 && w && !w.archived) {
+        if (confirm(`${detail}\n\n现在把「${w.name}」归档吗？归档后不计入汇总, 随时可恢复。`)) archiveMut.mutate(w);
+      } else alert(detail);
     },
   });
 
@@ -157,6 +170,7 @@ export default function Wallets() {
                             currencies={currencies.data ?? []}
                             onReconcile={() => setReconcileFor(w)}
                             onEdit={() => { setEditing(w); setOpen(true); }}
+                            onArchive={() => archiveMut.mutate(w)}
                             onDelete={() => { if (confirm(`删除 ${w.name}？只能删除没有交易的 Wallet`)) deleteMut.mutate(w.id); }}
                           />
                         ))}
@@ -415,6 +429,7 @@ function WalletCardItem({
   currencies,
   onReconcile,
   onEdit,
+  onArchive,
   onDelete,
 }: {
   wallet: Wallet;
@@ -422,6 +437,7 @@ function WalletCardItem({
   currencies: Currency[];
   onReconcile: () => void;
   onEdit: () => void;
+  onArchive: () => void;
   onDelete: () => void;
 }) {
   const color = wallet.color || DEFAULT_TYPE_COLOR[wallet.type];
@@ -436,7 +452,7 @@ function WalletCardItem({
 
   return (
     <div
-      className={`relative aspect-[856/540] w-[calc(50%-0.375rem)] overflow-hidden rounded-xl p-3 shadow-sm sm:w-[260px] ${faceText}`}
+      className={`relative aspect-[856/540] w-[calc(50%-0.375rem)] overflow-hidden rounded-xl p-3 shadow-sm sm:w-[260px] ${faceText} ${wallet.archived ? "opacity-55 saturate-50" : ""}`}
       style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
     >
       <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
@@ -446,8 +462,14 @@ function WalletCardItem({
       <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
         <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
         <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
+        <button onClick={onArchive} title={wallet.archived ? "取消归档" : "归档(不计入汇总, 可恢复)"} className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35">
+          {wallet.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+        </button>
         <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
       </div>
+      {wallet.archived && (
+        <span className="absolute left-2 top-2 z-10 rounded bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">已归档 · 不计入汇总</span>
+      )}
 
       <div className="relative flex h-full flex-col justify-between">
         <div className="min-w-0 pr-20">

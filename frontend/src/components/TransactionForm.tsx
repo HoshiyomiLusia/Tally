@@ -437,12 +437,12 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
           <div className="flex gap-1.5 border-t border-ink-100 pt-3 dark:border-ink-700">
             <button
               type="button"
-              onClick={() => setKind("expense")}
+              onClick={() => { if (kind !== "expense") setCategoryId(null); setKind("expense"); }}
               className={`flex-1 rounded-md py-2 text-sm font-medium ${kind === "expense" ? "bg-rose-600 text-white" : "bg-ink-100 text-ink-600 dark:bg-ink-700/40 dark:text-ink-300"}`}
             >支出</button>
             <button
               type="button"
-              onClick={() => { setKind("income"); setSplitOn(false); }}
+              onClick={() => { if (kind !== "income") setCategoryId(null); setKind("income"); setSplitOn(false); }}
               className={`flex-1 rounded-md py-2 text-sm font-medium ${kind === "income" ? "bg-emerald-600 text-white" : "bg-ink-100 text-ink-600 dark:bg-ink-700/40 dark:text-ink-300"}`}
             >收入</button>
           </div>

@@ -193,7 +193,7 @@ export default function Loans() {
 
       <RepaymentModal acct={repayFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setRepayFor(null)} />
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
-      <HistoryModal acct={historyFor} wallets={wallets.data ?? []} contacts={contactList} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
+      <HistoryModal acct={historyFor} accounts={accounts.data ?? []} wallets={wallets.data ?? []} contacts={contactList} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
       <ContactForm open={contactFormOpen} onClose={() => setContactFormOpen(false)} editing={editingContact} />
       <LendModal open={lendOpen} initialContact={lendContact} contacts={contactList} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => { setLendOpen(false); setLendContact(null); }} />
     </div>
@@ -555,8 +555,9 @@ function shortNum(v: number): string {
 
 // 借贷分析: 某联系人·某币种的全部借出/还款, 纯前端聚合(类似总分析).
 // 全时段 KPI(当前欠款/累计/已还比例) + 区间 KPI + 逐月双柱+欠款走势 + 钱包分布 + 可编辑明细.
-function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
+function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }: {
   acct: LoanAccount | null;
+  accounts: LoanAccount[];   // 审计 #102: 实时列表, 顶部全时段 KPI 按它取值, 弹窗内编辑/删除后才会刷新
   wallets: Wallet[];
   contacts: Contact[];
   currencies: Currency[];
@@ -641,8 +642,13 @@ function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
   if (!acct) return null;
   const fmt = (a: number) => formatAmount(a, acct.currency_code, currencies);
   const walletName = (id: number) => wallets.find((w) => w.id === id)?.name ?? `#${id}`;
-  const owed = acct.loan_out_total - acct.loan_repayment_total;
-  const repaidPct = acct.loan_out_total > 0 ? Math.min(100, (acct.loan_repayment_total / acct.loan_out_total) * 100) : 0;
+  // 审计 #102: props.acct 是打开弹窗时的快照; 编辑/删除后 invalidateMoney 会重取 loan-accounts, 这里按键取实时值.
+  // 账户被删空(无记录)时列表里不再有它, 退回用明细求和.
+  const live = accounts.find((a) => a.contact_id === acct.contact_id && a.currency_code === acct.currency_code);
+  const outAll = live ? live.loan_out_total : txs.reduce((s, t) => s + (t.kind === "loan_out" ? t.amount : 0), 0);
+  const repAll = live ? live.loan_repayment_total : txs.reduce((s, t) => s + (t.kind === "loan_repayment" ? t.amount : 0), 0);
+  const owed = outAll - repAll;
+  const repaidPct = outAll > 0 ? Math.min(100, (repAll / outAll) * 100) : 0;
   const shown = rows.slice(0, limit);
   const chip = (active: boolean) => active
     ? "rounded-full bg-ink-800 px-2.5 py-0.5 text-xs text-white dark:bg-emerald-600"
@@ -665,8 +671,8 @@ function HistoryModal({ acct, wallets, contacts, currencies, onClose }: {
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Sum label="当前欠款 (她欠你·全时段)" v={fmt(owed)} tone={owed >= 0 ? "rose" : "emerald"} />
-            <Sum label="累计借出" v={fmt(acct.loan_out_total)} tone="rose" />
-            <Sum label="累计已还" v={fmt(acct.loan_repayment_total)} tone="emerald" />
+            <Sum label="累计借出" v={fmt(outAll)} tone="rose" />
+            <Sum label="累计已还" v={fmt(repAll)} tone="emerald" />
             <Sum label="已还比例" v={`${repaidPct.toFixed(0)}%`} tone="ink" />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
