@@ -2,7 +2,7 @@ import calendar
 import uuid
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,8 +65,8 @@ class ForecastItem(BaseModel):
 
 @router.get("/upcoming", response_model=list[ForecastItem])
 async def upcoming(
-    days: int = 14,
-    back: int = 7,
+    days: int = Query(14, ge=0, le=3660),   # 审计 #116: 上界防 today+timedelta 越过 9999 年 OverflowError
+    back: int = Query(7, ge=0, le=3660),
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):

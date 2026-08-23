@@ -11,6 +11,11 @@ RUN npm run build
 
 FROM python:3.12-slim AS backend
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# 审计 #111/#117: 装 tzdata 并默认时区 Asia/Shanghai, 否则 date.today() 走 UTC,
+# 在 UTC+8 的 0~8 点期间"今天"落后一天 -> 日均支出分母、周期账单窗口、首页默认月份全部差一天。
+# 实际时区由 compose 的 TZ 覆盖(默认跟随部署地)。
+ENV TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 COPY backend/requirements.txt ./requirements.txt

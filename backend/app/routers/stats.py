@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -236,6 +236,7 @@ async def top_merchants(
     today = date.today()
     anchor = parse_month(month, today)  # 审计 #106
     start, end = _month_bounds(anchor)
+    skip_cats = await internal_cat_ids(session, user.id)  # 审计 #109: 与 summary/dashboard 同口径剔除对账调整等内部分类
 
     rows = (
         await session.execute(
@@ -250,6 +251,7 @@ async def top_merchants(
             .where(
                 Transaction.user_id == user.id,
                 Transaction.kind == "expense",
+                not_internal(skip_cats),
                 Transaction.occurred_on >= start,
                 Transaction.occurred_on < end,
                 Transaction.merchant_id.is_not(None),
@@ -267,7 +269,7 @@ async def top_merchants(
 
 @router.get("/monthly-trend", response_model=list[MonthlyPoint])
 async def monthly_trend(
-    months: int = 12,
+    months: int = Query(12, ge=1, le=600),  # 审计 #116: 上界防 _add_months 年份越界
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -388,10 +390,12 @@ async def daily(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    if not end:
-        end = today
-    if not start:
-        start = end - timedelta(days=90)
+    # 审计 #116: 把日期夹到合理范围, 防极端 end(如 0001-01-01)减 90 天 OverflowError; 保证 start<=end
+    lo, hi = date(1970, 1, 1), date(2999, 12, 31)
+    end = min(max(end or today, lo), hi)
+    start = min(max(start or (end - timedelta(days=90)), lo), hi)
+    if start > end:
+        start = end
     skip_cats = await internal_cat_ids(session, user.id)
     rows = (
         await session.execute(
@@ -412,7 +416,7 @@ async def daily(
 
 @router.get("/category-trend", response_model=list[CategoryTrendPoint])
 async def category_trend(
-    months: int = 6,
+    months: int = Query(6, ge=1, le=600),  # 审计 #116
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
