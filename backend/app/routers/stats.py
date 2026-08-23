@@ -77,6 +77,7 @@ class SummaryResponse(BaseModel):
 
 
 class CategoryCompare(BaseModel):
+    # 注: previous 为"上月同期"(仅当查看的是当月时截断到今天对应的日子), 见 category_compare
     category_id: int | None
     category_name: str
     emoji: str
@@ -181,6 +182,11 @@ async def category_compare(
     anchor = parse_month(month, today)  # 审计 #106
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
+    # 同比应比"上月同期": 看当月时本月只过了 N 天, 拿上月整月比会让每个分类都显示大幅下降。
+    # 把上月窗口截到同一天(上月天数少时按上月末封顶); 看已完整的历史月则仍比整月。
+    if cur_start <= today < cur_end:
+        prev_last_day = (prev_end - timedelta(days=1)).day
+        prev_end = prev_start + timedelta(days=min(today.day, prev_last_day))
     skip_cats = await internal_cat_ids(session, user.id)
 
     async def fetch(start, end):

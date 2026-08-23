@@ -171,6 +171,9 @@ export default function Stats({
     return Array.from(m.values()).sort((a, b) => b.current - a.current);
   }, [compare.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
+  // 看的是不是当前月: 决定同比口径文案(当月比上月同期, 历史月比上月整月, 与后端 category_compare 一致)
+  const isCurMonthView = month === thisMonth();
+
   // 本月分类: 用 categories 树把子类归到父类下. 父类总额 = 自身直接消费 + 各子类之和.
   const categoryGroups = useMemo(() => {
     const catById = new Map<number, Category>();
@@ -370,7 +373,12 @@ export default function Stats({
           </div>
         </div>
         <div>
-          <h2 className="mb-2 text-sm font-medium text-ink-600">本月分类</h2>
+          <h2 className="mb-2 flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-ink-600">
+            本月分类
+            <span className="text-[11px] font-normal text-ink-400">
+              {isCurMonthView ? `↑↓ 对比上月 1~${new Date().getDate()} 日同期` : "↑↓ 对比上月整月"}
+            </span>
+          </h2>
           <div className={`${box} divide-y divide-ink-100 p-0`}>
             {categoryGroups.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
             {categoryGroups.map((g) => (

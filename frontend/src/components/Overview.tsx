@@ -158,15 +158,37 @@ export function BalanceModule() {
                 className={`rounded border px-1.5 py-0.5 text-xs ${investCutPct > 0 ? "border-sky-500 bg-sky-500/15 text-sky-600 dark:text-sky-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
               >{investCutPct > 0 ? `抹除投资 ${investCutPct}%` : "抹除投资"}</button>
               {investPopover && (
-                <div className="absolute left-0 top-full z-10 mt-1 flex gap-1 rounded-lg border border-ink-200 bg-white p-1.5 shadow-lg dark:border-ink-700 dark:bg-ink-800">
-                  {[0, 25, 50, 75, 100].map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => { setInvestCutPct(pct); setInvestPopover(false); }}
-                      className={`rounded px-1.5 py-0.5 text-xs ${investCutPct === pct ? "bg-sky-500 text-white" : "text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-700"}`}
-                    >{pct}%</button>
-                  ))}
+                <div className="absolute left-0 top-full z-20 mt-1 w-60 rounded-lg border border-ink-200 bg-white p-2.5 shadow-lg dark:border-ink-700 dark:bg-ink-800">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-xs text-ink-500">抹除投资比例</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number" min={0} max={100} step={1} value={investCutPct}
+                        onChange={(e) => setInvestCutPct(Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))))}
+                        className="w-14 rounded border border-ink-200 bg-transparent px-1 py-0.5 text-right text-xs tabular-nums dark:border-ink-700"
+                      />
+                      <span className="text-xs text-ink-500">%</span>
+                    </div>
+                  </div>
+                  <input
+                    type="range" min={0} max={100} step={1} value={investCutPct}
+                    onChange={(e) => setInvestCutPct(Number(e.target.value))}
+                    className="w-full accent-sky-500"
+                  />
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {[0, 10, 25, 33, 50, 66, 75, 90, 100].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setInvestCutPct(pct)}
+                        className={`rounded px-1.5 py-0.5 text-xs ${investCutPct === pct ? "bg-sky-500 text-white" : "text-ink-500 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-700"}`}
+                      >{pct}%</button>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between border-t border-ink-100 pt-1.5 text-[11px] dark:border-ink-700">
+                    <span className="text-ink-400">抹除 {fmtBase(Math.round((cross.data?.total_invested ?? 0) * investCutPct / 100))}</span>
+                    <button type="button" onClick={() => setInvestPopover(false)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">完成</button>
+                  </div>
                 </div>
               )}
             </div>
