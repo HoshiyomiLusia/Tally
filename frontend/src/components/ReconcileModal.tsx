@@ -73,6 +73,9 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
     : (useDenom ? denomSum : inputVal);
   const expected = view.data?.expected_physical ?? 0;
   const diff = actual - expected;
+  // 审计 #114: 信用卡按可用额度模式下, 未输入时 inputVal=0 会让 actual=-额度、差额显示为满额度且可提交(误点即把额度记成支出)。
+  // 只有真正输入了(或现金按面额填了)才算"点过", 才显示差额、才允许提交。
+  const hasInput = useDenom ? denomRows.some((r) => (parseInt(r.count || "0", 10) || 0) > 0) : actualText.trim() !== "";
 
   const submit = useMutation({
     mutationFn: async () => {
@@ -101,7 +104,7 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
           <div className="mb-3 space-y-1 rounded-md bg-ink-50 p-3 text-sm">
             <div className="flex justify-between">
               <span className="text-ink-600">当前待还</span>
-              <span className="font-medium">{formatAmount(-expected, wallet.currency_code, currencies.data)}</span>
+              <span className="font-medium">{formatAmount(-expected || 0, wallet.currency_code, currencies.data)}</span>
             </div>
             {wallet.credit_limit != null && (
               <>
@@ -212,11 +215,11 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
         <div className="mb-2 rounded-md bg-ink-50 p-2 text-sm">
           <div className="flex justify-between">
             <span className="text-ink-600">差额</span>
-            <span className={`font-semibold ${diff === 0 ? "text-ink-500" : diff > 0 ? "text-emerald-600" : "text-rose-600"}`}>
-              {diff === 0 ? "0 (对得上)" : `${diff > 0 ? "+" : ""}${formatAmount(diff, wallet.currency_code, currencies.data)}`}
+            <span className={`font-semibold ${!hasInput ? "text-ink-400" : diff === 0 ? "text-ink-500" : diff > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              {!hasInput ? "— 请先填写" : diff === 0 ? "0 (对得上)" : `${diff > 0 ? "+" : "-"}${formatAmount(Math.abs(diff), wallet.currency_code, currencies.data)}`}
             </span>
           </div>
-          {diff !== 0 && (
+          {hasInput && diff !== 0 && (
             <div className="mt-1 text-xs text-ink-500">
               {isCredit
                 ? `待还${diff > 0 ? "比记录少" : "比记录多"}, 生成一笔${diff > 0 ? " income" : " expense"} 入分类「对账调整」`
@@ -240,8 +243,8 @@ export default function ReconcileModal({ wallet, onClose }: { wallet: Wallet | n
 
         <div className="mt-3 flex justify-end gap-2">
           <button onClick={onClose} className="btn-ghost">取消</button>
-          <button onClick={() => submit.mutate()} disabled={submit.isPending} className="btn-primary">
-            {submit.isPending ? "对账中…" : diff === 0 ? "确认（无差）" : "对账并调整"}
+          <button onClick={() => submit.mutate()} disabled={submit.isPending || !hasInput} className="btn-primary">
+            {submit.isPending ? "对账中…" : !hasInput ? "请先填写" : diff === 0 ? "确认（无差）" : "对账并调整"}
           </button>
         </div>
     </Modal>

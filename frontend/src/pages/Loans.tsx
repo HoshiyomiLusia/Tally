@@ -26,6 +26,8 @@ export default function Loans() {
   const accounts = useQuery({ queryKey: ["loan-accounts"], queryFn: async () => (await api.get<LoanAccount[]>("/loans/accounts")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data });
+  // 审计 #121: 借贷分析里编辑独立借贷 + 明细钱包名需要能解析已归档钱包, 单独拉含归档的列表(仅给 HistoryModal 用)
+  const walletsAll = useQuery({ queryKey: ["wallets", "all"], queryFn: async () => (await api.get<Wallet[]>("/wallets?include_archived=true")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
   const baseCurrency = localStorage.getItem("tally.baseCurrency") || "JPY";
 
@@ -193,7 +195,7 @@ export default function Loans() {
 
       <RepaymentModal acct={repayFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setRepayFor(null)} />
       <WriteOffModal acct={writeOffFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWriteOffFor(null)} />
-      <HistoryModal acct={historyFor} accounts={accounts.data ?? []} wallets={wallets.data ?? []} contacts={contactList} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
+      <HistoryModal acct={historyFor} accounts={accounts.data ?? []} wallets={walletsAll.data ?? wallets.data ?? []} contacts={contactList} currencies={currencies.data ?? []} onClose={() => setHistoryFor(null)} />
       <ContactForm open={contactFormOpen} onClose={() => setContactFormOpen(false)} editing={editingContact} />
       <LendModal open={lendOpen} initialContact={lendContact} contacts={contactList} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => { setLendOpen(false); setLendContact(null); }} />
     </div>
@@ -565,7 +567,7 @@ function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }
 }) {
   const list = useQuery({
     queryKey: ["loan-history", acct?.contact_id, acct?.currency_code],
-    queryFn: async () => (await api.get<Transaction[]>(`/transactions?contact_id=${acct!.contact_id}&currency_code=${acct!.currency_code}&limit=2000`)).data,
+    queryFn: async () => (await api.get<Transaction[]>(`/transactions?contact_id=${acct!.contact_id}&currency_code=${acct!.currency_code}&limit=5000`)).data,
     enabled: !!acct,
   });
   const [filter, setFilter] = useState<"all" | "loan_out" | "loan_repayment">("all");
@@ -573,6 +575,8 @@ function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }
   const [limit, setLimit] = useState(60);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [range, setRange] = useState<string>("all");  // all | 6m | 12m | YYYY
+  // 审计 #118: 换账户(contact/币种变化)时重置筛选, 否则上一个账户选的年份/关键词残留会让新账户区间 KPI 全 0、明细全空且无 chip 高亮
+  useEffect(() => { setRange("all"); setFilter("all"); setQ(""); setLimit(60); setEditTx(null); }, [acct?.contact_id, acct?.currency_code]);
 
   const digits = currencies.find((c) => c.code === acct?.currency_code)?.decimal_digits ?? 2;
   const txs = useMemo(() => (list.data ?? []).filter((t) => t.kind === "loan_out" || t.kind === "loan_repayment"), [list.data]);
@@ -764,7 +768,7 @@ function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }
                   加载更多（还有 {rows.length - shown.length} 条）
                 </button>
               )}
-              <div className="mt-1 text-center text-[10px] text-ink-400">共 {rows.length} 条{filter !== "all" || q || range !== "all" ? "（已筛选）" : ""}</div>
+              <div className="mt-1 text-center text-[10px] text-ink-400">共 {rows.length} 条{filter !== "all" || q || range !== "all" ? "（已筛选）" : ""}{(list.data?.length ?? 0) >= 5000 ? " · 仅显示最近 5000 条" : ""}</div>
             </div>
           </div>
         </div>

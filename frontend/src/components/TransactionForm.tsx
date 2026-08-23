@@ -128,6 +128,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       setParticipants([]);
     } else {
       setKind("expense");
+      setWalletId(null);  // 审计 #112: 新建时清空, 让默认钱包 effect 重选第一个未归档钱包(不继承上次编辑的钱包/币种)
       setCategoryId(null);
       setMerchantInput("");
       if (merchantInputRef.current) merchantInputRef.current.value = "";

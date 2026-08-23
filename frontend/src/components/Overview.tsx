@@ -109,19 +109,23 @@ export function BalanceModule() {
   // 一键"抹除投资": 把投资额从真实余额里剔除, 看不含投资的净资产(= 物理 - 待还 + 借贷)
   const [investCutPct, setInvestCutPct] = useState(0);   // 抹除投资的比例 0~100
   const [investPopover, setInvestPopover] = useState(false);
-  const plannedTotal = useMemo(() => {
+  const plannedInfo = useMemo(() => {
     const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
     const rateMap = new Map<string, number>();
     for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
+    const missing = new Set<string>();
     const fold = (amt: number, from: string): number => {
       if (from === baseCurrency) return amt;
       const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
       let rate = rateMap.get(`${from}->${baseCurrency}`);
       if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
+      if (rate === 0 && amt !== 0) missing.add(from);  // 审计 #119: 缺汇率不静默折 0, 记下来提示
       return Math.round(amt * rate * Math.pow(10, td - fd));
     };
-    return (planned.data ?? []).reduce((s, p) => s + fold(p.amount, p.currency_code), 0);
+    const list = planned.data ?? [];
+    return { sum: list.reduce((s, p) => s + fold(p.amount, p.currency_code), 0), count: list.length, missing: [...missing] };
   }, [planned.data, rates.data, currencies.data, baseCurrency]);
+  const plannedTotal = plannedInfo.sum;
   const mainTotal = (cross.data?.total ?? 0) - Math.round((cross.data?.total_invested ?? 0) * investCutPct / 100) - (excludePlanned ? plannedTotal : 0);
   const metricItems: { label: string; text: string; color: string }[] = [
     { label: "物理余额", text: fmtBase(cross.data?.total_spendable ?? 0), color: "" },
@@ -245,9 +249,10 @@ export function BalanceModule() {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-baseline gap-2">
             <span className="text-xs font-medium text-ink-600 dark:text-ink-300">📌 预定支出</span>
-            {plannedTotal > 0 && <span className="text-xs text-ink-400">合计 ≈{fmtBase(plannedTotal)}</span>}
+            {plannedInfo.count > 0 && <span className="text-xs text-ink-400">合计 ≈{fmtBase(plannedTotal)}</span>}
+            {plannedInfo.missing.length > 0 && <span className="text-xs text-amber-600">缺 {plannedInfo.missing.join("/")} 汇率, 未计入</span>}
           </div>
-          {plannedTotal > 0 && (
+          {plannedInfo.count > 0 && plannedTotal > 0 && (
             <button
               type="button"
               onClick={() => setExcludePlanned((v) => !v)}

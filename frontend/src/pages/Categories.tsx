@@ -29,6 +29,11 @@ export default function Categories() {
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/categories/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["categories"] }),
+    // 审计 #113: 删除被后端拒绝(系统分类 / 归属)时给提示, 否则用户不知道为何删不掉
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      alert(r?.data?.detail ?? "删除失败");
+    },
   });
 
   return (

@@ -27,7 +27,8 @@ export default function Settings() {
   const [iosHelp, setIosHelp] = useState(false);
   const savePrimaryCurrency = useMutation({
     mutationFn: async (code: string) => api.patch("/users/me", { primary_currency_code: code }),
-    onSuccess: () => { refreshUser(); },
+    // 审计 #115: 改主币种是显式动作, 同步把首页余额块的折算基准也设为它(否则 #98 守卫下余额块永远停在旧值)
+    onSuccess: (_d, code) => { localStorage.setItem("tally.baseCurrency", code); refreshUser(); },
   });
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState("");
