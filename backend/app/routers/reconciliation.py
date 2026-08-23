@@ -56,6 +56,8 @@ async def reconcile(
     diff = payload.actual_balance - expected
     if diff == 0:
         return ReconciliationResult(diff=0, transaction_id=None)
+    if abs(diff) > 1_000_000_000_000:
+        raise HTTPException(400, "对账差额超出允许范围(1e12 最小单位), 请检查输入")
 
     cat_id = (
         await session.execute(

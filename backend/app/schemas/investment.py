@@ -26,7 +26,7 @@ class BuyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     currency_code: str
     wallet_id: int
-    amount: int = Field(gt=0)        # 买入成本 (从现金钱包转出)
+    amount: int = Field(gt=0, le=1_000_000_000_000)        # 买入成本 (从现金钱包转出)
     occurred_on: date
     note: str = ""
     opening: bool = False            # True = 已持有资产: 不扣钱包, 作为额外资产计入净值 (配一笔对账注入)
@@ -35,7 +35,7 @@ class BuyRequest(BaseModel):
 class AddBuyRequest(BaseModel):
     """追加买入到已有持仓: 币种取持仓的, 不在此处指定."""
     wallet_id: int
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
     opening: bool = False            # 同 BuyRequest: 已持有资产则不扣钱包
@@ -44,8 +44,8 @@ class AddBuyRequest(BaseModel):
 class SellRequest(BaseModel):
     position_id: int
     wallet_id: int                   # 卖出回款到哪个现金钱包
-    cost_amount: int = Field(gt=0)   # 这次卖出对应的成本 (部分卖出可 < 剩余成本)
-    proceeds: int = Field(ge=0)      # 卖出到手金额
+    cost_amount: int = Field(gt=0, le=1_000_000_000_000)   # 这次卖出对应的成本 (部分卖出可 < 剩余成本)
+    proceeds: int = Field(ge=0, le=1_000_000_000_000)      # 卖出到手金额
     occurred_on: date
     note: str = ""
 

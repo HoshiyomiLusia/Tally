@@ -13,7 +13,8 @@ class ReconciliationView(BaseModel):
 
 
 class ReconciliationRequest(BaseModel):
-    actual_balance: int
+    # 审计 #97: 与交易金额同口径加上下界, 否则极端值落库后 SUM 溢出让钱包/首页/统计接口全部 500
+    actual_balance: int = Field(ge=-1_000_000_000_000, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
 

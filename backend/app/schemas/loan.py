@@ -5,21 +5,21 @@ from pydantic import BaseModel, Field
 
 class SplitParticipant(BaseModel):
     contact_id: int
-    share: int = Field(ge=0)
+    share: int = Field(ge=0, le=1_000_000_000_000)
 
 
 class SplitCreateRequest(BaseModel):
     wallet_id: int
     category_id: int | None = None
     merchant_id: int | None = None
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     currency_code: str
     occurred_on: date
     note: str = ""
     is_recurring: bool = False
     recurrence_period_days: int | None = None
     recurrence_source_id: int | None = None
-    my_share: int = Field(ge=0)
+    my_share: int = Field(ge=0, le=1_000_000_000_000)
     participants: list[SplitParticipant] = Field(min_length=1)
 
 
@@ -36,7 +36,7 @@ class RepaymentRequest(BaseModel):
     contact_id: int
     currency_code: str
     wallet_id: int
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
 
@@ -45,7 +45,7 @@ class WriteOffRequest(BaseModel):
     contact_id: int
     currency_code: str
     wallet_id: int
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
 
@@ -55,6 +55,6 @@ class LendRequest(BaseModel):
     contact_id: int
     currency_code: str
     wallet_id: int
-    amount: int = Field(gt=0)
+    amount: int = Field(gt=0, le=1_000_000_000_000)
     occurred_on: date
     note: str = ""
