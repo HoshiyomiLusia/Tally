@@ -14,6 +14,7 @@ from ..schemas.investment import (
     PositionUpdate,
     PositionView,
     SellRequest,
+    WalletChangeRequest,
 )
 from ..schemas.transaction import TransactionRead
 
@@ -270,6 +271,62 @@ async def update_position(
             )
     await session.commit()
     return await _build_position_view(session, user.id, pos)
+
+
+@router.patch("/transactions/{tid}/wallet", response_model=list[TransactionRead])
+async def change_transaction_wallet(
+    tid: int,
+    payload: WalletChangeRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """订正投资交易记错的钱包: 把这笔所属的整个投资事件的全部腿一起挪到新钱包(同币种).
+
+    为什么要整组挪: 卖出 = invest_sell + 盈亏(income/expense) 共用一个 split_group_id 且同钱包;
+    期初买入 = invest_buy + 配套的期初对账收入。只挪其中一条会让配对腿留在旧钱包, 两边余额都错。
+    通用的 PATCH /transactions 对分摊组/投资腿的钱包是锁死的(审计 #101), 这里是投资专用的订正口。
+    """
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id:
+        raise HTTPException(404, "transaction not found")
+    if t.position_id is None and t.opening_for_position_id is None:
+        raise HTTPException(400, "这不是投资交易, 请在账单里修改")
+    await _check_wallet(session, user, payload.wallet_id, t.currency_code)
+
+    legs: dict[int, Transaction] = {t.id: t}
+    if t.split_group_id:  # 卖出组: 卖出腿 + 盈亏腿
+        for r in (await session.execute(select(Transaction).where(
+            Transaction.user_id == user.id, Transaction.split_group_id == t.split_group_id,
+        ))).scalars().all():
+            legs[r.id] = r
+    # 期初买入 <-> 配套期初收入 (靠 opening_for_position_id + 同钱包/同额/同日 配对, 与删除逻辑同口径)
+    pos_id = t.position_id or t.opening_for_position_id
+    if t.kind == "invest_buy":
+        for r in (await session.execute(select(Transaction).where(
+            Transaction.user_id == user.id,
+            Transaction.opening_for_position_id == pos_id,
+            Transaction.wallet_id == t.wallet_id,
+            Transaction.amount == t.amount,
+            Transaction.occurred_on == t.occurred_on,
+        ).limit(1))).scalars().all():
+            legs[r.id] = r
+    elif t.opening_for_position_id is not None:
+        for r in (await session.execute(select(Transaction).where(
+            Transaction.user_id == user.id,
+            Transaction.position_id == pos_id,
+            Transaction.kind == "invest_buy",
+            Transaction.wallet_id == t.wallet_id,
+            Transaction.amount == t.amount,
+            Transaction.occurred_on == t.occurred_on,
+        ).limit(1))).scalars().all():
+            legs[r.id] = r
+
+    for leg in legs.values():
+        leg.wallet_id = payload.wallet_id
+    await session.commit()
+    for leg in legs.values():
+        await session.refresh(leg)
+    return list(legs.values())
 
 
 @router.delete("/positions/{position_id}", status_code=status.HTTP_204_NO_CONTENT)

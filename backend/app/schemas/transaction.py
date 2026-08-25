@@ -50,6 +50,8 @@ class TransactionRead(BaseModel):
     merchant_id: int | None
     contact_id: int | None
     position_id: int | None
+    # 期初持仓配套的对账收入靠它关联持仓; 前端据此识别投资腿(给"换钱包"订正入口)
+    opening_for_position_id: int | None = None
     amount: int
     currency_code: str
     kind: TransactionKind

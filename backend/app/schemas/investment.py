@@ -50,6 +50,11 @@ class SellRequest(BaseModel):
     note: str = ""
 
 
+class WalletChangeRequest(BaseModel):
+    """把某笔投资交易(及其同事件的其它腿)整体挪到另一个同币种钱包 —— 记账时点错钱包的订正入口。"""
+    wallet_id: int
+
+
 class InvestEventView(BaseModel):
     """投资历史里的一条事件: 买入 = 一笔; 卖出 = invest_sell + 盈亏 合成一条."""
     key: str

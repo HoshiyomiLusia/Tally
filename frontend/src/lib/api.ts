@@ -105,6 +105,7 @@ export interface Transaction {
   merchant_id: number | null;
   contact_id: number | null;
   position_id: number | null;
+  opening_for_position_id: number | null;
   amount: number;
   currency_code: string;
   kind: TransactionKind;

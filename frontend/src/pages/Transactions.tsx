@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Filter, Pencil, Plus, Split, Trash2, TrendingUp, Zap } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Filter, Pencil, Plus, Split, Trash2, TrendingUp, Wallet as WalletIcon, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -54,6 +54,7 @@ export default function Transactions() {
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [walletFixFor, setWalletFixFor] = useState<Transaction | null>(null);  // 投资腿记错钱包的订正
   const [transferOpen, setTransferOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [reimburseOpen, setReimburseOpen] = useState(false);
@@ -423,6 +424,13 @@ export default function Transactions() {
                       {(t.kind === "expense" || t.kind === "income") && !t.split_group_id && (
                         <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
                       )}
+                      {(t.position_id != null || t.opening_for_position_id != null) && (
+                        <button
+                          onClick={() => setWalletFixFor(t)}
+                          className="btn-ghost p-2 sm:p-1.5"
+                          title="记错钱包了? 把这笔投资挪到别的钱包"
+                        ><WalletIcon size={14} /></button>
+                      )}
                       <button
                         onClick={() => {
                           const msg = t.split_group_id ? "这是分摊订单，删除会一并清掉该组所有条目，确认？" : "删除这笔交易？";
@@ -468,6 +476,7 @@ export default function Transactions() {
       </div>
 
       <TransactionForm open={open} onClose={() => { setOpen(false); setEditing(null); }} editing={editing} />
+      <InvestWalletFixModal tx={walletFixFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWalletFixFor(null)} />
       <TransferForm open={transferOpen} onClose={() => setTransferOpen(false)} />
       <CreditRepayForm open={creditRepayOpen} onClose={() => setCreditRepayOpen(false)} />
       <ReimburseForm open={reimburseOpen} onClose={() => setReimburseOpen(false)} />
@@ -527,6 +536,62 @@ export default function Transactions() {
         </div>
       )}
     </div>
+  );
+}
+
+// 投资交易记错钱包的订正: 后端把这笔所属投资事件的全部腿(卖出+盈亏 / 期初买入+对账收入)一起挪到新钱包。
+// 只能换同币种钱包 —— 换币种会让交易币种与钱包币种脱钩(与通用编辑同口径)。
+function InvestWalletFixModal({ tx, wallets, currencies, onClose }: {
+  tx: Transaction | null;
+  wallets: Wallet[];
+  currencies: Currency[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [walletId, setWalletId] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => { setWalletId(tx?.wallet_id ?? null); setError(""); }, [tx]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!tx || !walletId) return;
+      await api.patch(`/investments/transactions/${tx.id}/wallet`, { wallet_id: walletId });
+    },
+    onSuccess: () => { invalidateMoney(qc); onClose(); },
+    onError: (e: unknown) => {
+      const r = (e as { response?: { data?: { detail?: string } } }).response;
+      setError(r?.data?.detail ?? "保存失败");
+    },
+  });
+
+  if (!tx) return null;
+  const options = wallets.filter((w) => w.currency_code === tx.currency_code && (!w.archived || w.id === tx.wallet_id));
+  const cur = wallets.find((w) => w.id === tx.wallet_id);
+  return (
+    <Modal onClose={onClose} title="换个钱包" maxW="max-w-sm">
+      <div className="space-y-3">
+        <div className="rounded-md bg-ink-50 p-2 text-xs text-ink-500 dark:bg-ink-800/40">
+          这笔投资现在记在 <b className="text-ink-800 dark:text-ink-100">{cur?.name ?? "?"}</b> 上
+          （{formatAmount(tx.amount, tx.currency_code, currencies)}）。
+          换钱包会把同一笔投资的所有条目（卖出与对应的盈亏 / 期初买入与配套对账）一起挪过去，金额与日期不变。
+        </div>
+        <label className="block">
+          <span className="text-xs text-ink-500">挪到（{tx.currency_code}）</span>
+          <select className="input mt-1" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value) || null)}>
+            {options.map((w) => <option key={w.id} value={w.id}>{w.name}{w.archived ? "（已归档）" : ""}</option>)}
+          </select>
+        </label>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="btn-ghost">取消</button>
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending || !walletId || walletId === tx.wallet_id}
+            className="btn-primary"
+          >{save.isPending ? "保存中…" : "确认换钱包"}</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
