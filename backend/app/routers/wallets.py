@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Transaction, User, Wallet
+from ..models import Currency, Transaction, User, Wallet
 from ..schemas.wallet import WalletCreate, WalletRead, WalletUpdate
 from ..services.balances import (
     all_wallet_investment_summary,
@@ -55,6 +55,9 @@ async def create_wallet(
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    # 审计 #130: 外键开启后未知币种会在 commit 时 IntegrityError 500, 提前校验给 400
+    if not await session.get(Currency, payload.currency_code):
+        raise HTTPException(400, "invalid currency_code")
     w = Wallet(user_id=user.id, **payload.model_dump())
     session.add(w)
     await session.commit()

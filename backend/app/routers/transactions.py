@@ -348,7 +348,7 @@ async def update_transaction(
     # 审计 #101: 分摊组(支出腿 + 各借出腿)的金额/钱包/日期/类型有组内不变量(撤销分摊时按组合并),
     # 单腿单独改会让合并金额错、各腿日期钱包不一致. 组内任一腿都不许改这几项(分类/商家/备注仍可改).
     if t.split_group_id and any(k in updates for k in ("amount", "wallet_id", "occurred_on", "kind")):
-        raise HTTPException(400, "分摊订单的金额 / 钱包 / 日期 / 类型需整组一致, 请先撤销分摊再改")
+        raise HTTPException(400, "这笔属于配对组(分摊 / 投资结算 / 期初持仓), 金额 / 钱包 / 日期 / 类型需整组一致; 分摊请先撤销再改, 投资请在投资功能里操作")
     # 转账/投资各腿有配对不变量: 通用接口不允许改金额/钱包(会让配对腿失配或持仓归属错乱).
     # 前端已对这些类型隐藏铅笔, 这里再挡一道防绕过 UI 直接 PATCH.
     # 例外: 独立借贷(不在分摊、无转账配对腿、无持仓)可在此改金额/钱包/联系人 —— 它本身就是单腿,
@@ -377,8 +377,10 @@ async def update_transaction(
             raise HTTPException(400, "只能在 支出 / 收入 之间改类型; 转账 / 借贷 / 投资请用对应功能")
     # 期初对账收入(挂 opening_for_position_id)改金额/钱包/日期会和配套买入的指纹错位,
     # 日后删买入/收入就漏删配对腿 -> 幽灵收入或裸买入(审计 #28/#59 指纹脆弱性)。禁止在此改这些字段。
-    if t.opening_for_position_id is not None and any(k in updates for k in ("amount", "wallet_id", "occurred_on")):
-        raise HTTPException(400, "期初对账收入不能在此改金额 / 钱包 / 日期(请在投资功能里操作)")
+    # 审计 #123: kind/分类同样要锁 —— 翻成支出会让钱包凭空少 2×本金且破坏删除级联;
+    # 换成普通分类会把这笔平衡分录计入真实收支统计。
+    if t.opening_for_position_id is not None and any(k in updates for k in ("amount", "wallet_id", "occurred_on", "kind", "category_id")):
+        raise HTTPException(400, "期初对账收入是期初买入的平衡腿, 不能在此改金额 / 钱包 / 日期 / 类型 / 分类(请在投资功能里操作)")
     if "wallet_id" in updates:
         nw = await _check_wallet(session, user, updates["wallet_id"])
         # 防跨币种脱钩: TransactionUpdate 无 currency_code 字段, 换到异币种钱包会让交易币种与钱包币种不一致

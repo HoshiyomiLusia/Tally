@@ -11,10 +11,9 @@ RUN npm run build
 
 FROM python:3.12-slim AS backend
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
-# 审计 #111/#117: 装 tzdata 并默认时区 Asia/Shanghai, 否则 date.today() 走 UTC,
-# 在 UTC+8 的 0~8 点期间"今天"落后一天 -> 日均支出分母、周期账单窗口、首页默认月份全部差一天。
-# 实际时区由 compose 的 TZ 覆盖(默认跟随部署地)。
-ENV TZ=Asia/Shanghai
+# 审计 #111/#117/#124: 装 tzdata, 时区跟随宿主挂载的 /etc/localtime(见 compose)。
+# 不再设 ENV TZ —— glibc/Python 里 TZ 环境变量优先于 /etc/localtime, 设了默认值会把挂载压成摆设,
+# 部署地与默认值不一致时(如宿主 JST)每天错一小时窗口。
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 

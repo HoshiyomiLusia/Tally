@@ -403,7 +403,7 @@ export default function Transactions() {
                         {m && <span className="text-xs text-ink-500">· {m}</span>}
                         {pn && <span className="text-xs text-ink-500">· {pn}</span>}
                         {ct && <span className="rounded bg-amber-50 px-1 text-[10px] text-amber-700">@{ct}</span>}
-                        {t.split_group_id && <span className="rounded bg-purple-50 px-1 text-[10px] text-purple-700">分摊</span>}
+                        {t.split_group_id && t.position_id == null && t.opening_for_position_id == null && <span className="rounded bg-purple-50 px-1 text-[10px] text-purple-700">分摊</span>}
                         {t.is_recurring && <span className="rounded bg-blue-50 px-1 text-[10px] text-blue-700">周期</span>}
                       </div>
                       <div className="truncate text-xs text-ink-500">
@@ -414,7 +414,7 @@ export default function Transactions() {
                       {isPositive ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
                     </div>
                     <div className="flex shrink-0 gap-0.5">
-                      {t.split_group_id && t.kind === "expense" && (
+                      {t.split_group_id && t.kind === "expense" && t.position_id == null && (
                         <button
                           onClick={() => { if (confirm("撤销分摊？相关贷款条目会被合并回单笔全额消费")) unsplit.mutate(t.split_group_id!); }}
                           className="btn-ghost p-2 sm:p-1.5"

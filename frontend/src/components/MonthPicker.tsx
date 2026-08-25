@@ -93,8 +93,9 @@ export default function MonthPicker({ value, onChange, className = "", align = "
             <div className="text-sm font-semibold">{yearShown} 年</div>
             <button
               type="button"
-              onClick={() => setYearShown((y) => y + 1)}
-              className="rounded p-1 text-ink-500 hover:bg-ink-100 dark:hover:bg-ink-700"
+              onClick={() => setYearShown((y) => Math.min(thisY, y + 1))}
+              disabled={yearShown >= thisY}
+              className="rounded p-1 text-ink-500 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-ink-700"
               aria-label="下一年"
             ><ChevronRight size={16} /></button>
           </div>
@@ -102,16 +103,22 @@ export default function MonthPicker({ value, onChange, className = "", align = "
             {Array.from({ length: 12 }, (_, i) => i + 1).map((mm) => {
               const isActive = yearShown === cur.y && mm === cur.m;
               const isThis = yearShown === thisY && mm === thisM;
+              // 审计 #126: 与"下个月"箭头同一守卫 —— 未来月不可选(选了只会看到整页空数据)
+              const isFuture = yearShown > thisY || (yearShown === thisY && mm > thisM);
               return (
                 <button
                   key={mm}
                   type="button"
+                  disabled={isFuture}
                   onClick={() => {
+                    if (isFuture) return;
                     onChange(fmt(yearShown, mm));
                     setOpen(false);
                   }}
                   className={
-                    isActive
+                    isFuture
+                      ? "rounded-md py-1.5 text-xs text-ink-300 opacity-40 dark:text-ink-600"
+                      : isActive
                       ? "rounded-md bg-ink-800 py-1.5 text-xs font-medium text-white dark:bg-emerald-600"
                       : isThis
                         ? "rounded-md border border-emerald-500 py-1.5 text-xs text-emerald-700 dark:text-emerald-300"

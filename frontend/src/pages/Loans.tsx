@@ -674,7 +674,7 @@ function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Sum label="当前欠款 (她欠你·全时段)" v={fmt(owed)} tone={owed >= 0 ? "rose" : "emerald"} />
+            <Sum label={owed >= 0 ? "当前欠款 (对方欠你·全时段)" : "当前欠款 (你欠对方·全时段)"} v={fmt(owed)} tone={owed >= 0 ? "rose" : "emerald"} />
             <Sum label="累计借出" v={fmt(outAll)} tone="rose" />
             <Sum label="累计已还" v={fmt(repAll)} tone="emerald" />
             <Sum label="已还比例" v={`${repaidPct.toFixed(0)}%`} tone="ink" />

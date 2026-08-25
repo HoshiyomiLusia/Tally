@@ -118,10 +118,13 @@ async def buy(
     )
     session.add(pos)
     await session.flush()
+    # 审计 #122: 期初对(买入+配套对账收入)用 split_group_id 显式配对, 不再只靠(钱包/金额/日期)指纹
+    # —— 指纹会与普通追加买入碰撞, 换钱包/删除时挪错/漏删配对腿
+    opening_group = str(uuid.uuid4()) if payload.opening else None
     session.add(Transaction(
         user_id=user.id, wallet_id=payload.wallet_id, position_id=pos.id,
         amount=payload.amount, currency_code=payload.currency_code, kind="invest_buy",
-        occurred_on=payload.occurred_on, note=payload.note,
+        occurred_on=payload.occurred_on, note=payload.note, split_group_id=opening_group,
     ))
     if payload.opening:
         # 已持有资产: 配一笔对账调整收入抵掉买入对物理的影响 -> 钱包物理不变, 净值+本金, 投资中+本金
@@ -130,7 +133,7 @@ async def buy(
             user_id=user.id, wallet_id=payload.wallet_id, category_id=adj,
             amount=payload.amount, currency_code=payload.currency_code, kind="income",
             occurred_on=payload.occurred_on, note="期初持仓·额外资产(余额不变)",
-            opening_for_position_id=pos.id,
+            opening_for_position_id=pos.id, split_group_id=opening_group,
         ))
     await session.commit()
     return PositionView(
@@ -154,10 +157,11 @@ async def add_buy(
     if pos.status != "open":
         raise HTTPException(400, "持仓已清仓, 不能追加")
     await _check_wallet(session, user, payload.wallet_id, pos.currency_code)
+    opening_group = str(uuid.uuid4()) if payload.opening else None  # 审计 #122: 同 buy()
     session.add(Transaction(
         user_id=user.id, wallet_id=payload.wallet_id, position_id=pos.id,
         amount=payload.amount, currency_code=pos.currency_code, kind="invest_buy",
-        occurred_on=payload.occurred_on, note=payload.note,
+        occurred_on=payload.occurred_on, note=payload.note, split_group_id=opening_group,
     ))
     if payload.opening:
         # 已持有资产: 配一笔对账调整收入抵掉买入对物理的影响 (与 buy() 一致)
@@ -166,7 +170,7 @@ async def add_buy(
             user_id=user.id, wallet_id=payload.wallet_id, category_id=adj,
             amount=payload.amount, currency_code=pos.currency_code, kind="income",
             occurred_on=payload.occurred_on, note="期初持仓·额外资产(余额不变)",
-            opening_for_position_id=pos.id,
+            opening_for_position_id=pos.id, split_group_id=opening_group,
         ))
     await session.commit()
     return await _build_position_view(session, user.id, pos)
@@ -301,24 +305,38 @@ async def change_transaction_wallet(
             legs[r.id] = r
     # 期初买入 <-> 配套期初收入 (靠 opening_for_position_id + 同钱包/同额/同日 配对, 与删除逻辑同口径)
     pos_id = t.position_id or t.opening_for_position_id
-    if t.kind == "invest_buy":
-        for r in (await session.execute(select(Transaction).where(
-            Transaction.user_id == user.id,
-            Transaction.opening_for_position_id == pos_id,
-            Transaction.wallet_id == t.wallet_id,
-            Transaction.amount == t.amount,
-            Transaction.occurred_on == t.occurred_on,
-        ).limit(1))).scalars().all():
-            legs[r.id] = r
-    elif t.opening_for_position_id is not None:
-        for r in (await session.execute(select(Transaction).where(
+    # 审计 #122: 新数据的期初对已带 split_group_id(上面整组分支覆盖), 指纹仅兜底"迁移 0011 因歧义跳过"的存量;
+    # 指纹可能与普通追加买入碰撞 —— 同指纹买入多于配对收入时无法确定谁是期初那笔, 拒绝而不是静默挪错。
+    # 已显式打组(split_group_id)的期初对不参与指纹配对 —— 指纹只在"没组的存量"之间匹配,
+    # 否则与已打组期初买入同指纹的普通买入会被误判为歧义而无法换钱包。
+    if t.kind == "invest_buy" and not t.split_group_id:
+        fp = (Transaction.user_id == user.id, Transaction.wallet_id == t.wallet_id,
+              Transaction.amount == t.amount, Transaction.occurred_on == t.occurred_on,
+              Transaction.split_group_id.is_(None))
+        paired = (await session.execute(select(Transaction).where(
+            Transaction.opening_for_position_id == pos_id, *fp,
+        ))).scalars().all()
+        if paired:
+            twin_buys = (await session.execute(select(func.count()).select_from(Transaction).where(
+                Transaction.position_id == pos_id, Transaction.kind == "invest_buy", *fp,
+            ))).scalar() or 0
+            if twin_buys > len(paired):
+                raise HTTPException(400, "这笔买入与期初买入指纹相同(同钱包/同额/同日), 无法确定配对关系, 请在投资功能里分别处理")
+            for r in paired:
+                legs[r.id] = r
+    elif t.opening_for_position_id is not None and not t.split_group_id:
+        twins = (await session.execute(select(Transaction).where(
             Transaction.user_id == user.id,
             Transaction.position_id == pos_id,
             Transaction.kind == "invest_buy",
             Transaction.wallet_id == t.wallet_id,
             Transaction.amount == t.amount,
             Transaction.occurred_on == t.occurred_on,
-        ).limit(1))).scalars().all():
+            Transaction.split_group_id.is_(None),
+        ))).scalars().all()
+        if len(twins) > 1:
+            raise HTTPException(400, "这笔期初收入的配套买入有歧义(同钱包/同额/同日存在多笔买入), 请在投资功能里处理")
+        for r in twins:
             legs[r.id] = r
 
     for leg in legs.values():

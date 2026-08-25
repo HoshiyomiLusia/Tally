@@ -16,6 +16,7 @@ interface CurrencySummary {
   income_prev: number;
   expense_prev: number;
   days_in_month: number;
+  days_elapsed: number;
   avg_daily_expense: number;
 }
 interface SummaryResp { month: string; per_currency: CurrencySummary[]; }
@@ -140,7 +141,7 @@ export default function Stats({
     if (!isAll) return rows.find((s) => s.currency_code === activeCurrency);
     if (rows.length === 0) return undefined;
     let income = 0, expense = 0, income_prev = 0, expense_prev = 0, avg_daily_expense = 0;
-    let days = 0;
+    let days = 0, elapsed = 0;
     for (const r of rows) {
       income += fxTo(r.income, r.currency_code, baseCurrency);
       expense += fxTo(r.expense, r.currency_code, baseCurrency);
@@ -148,10 +149,11 @@ export default function Stats({
       expense_prev += fxTo(r.expense_prev, r.currency_code, baseCurrency);
       avg_daily_expense += fxTo(r.avg_daily_expense, r.currency_code, baseCurrency);
       days = Math.max(days, r.days_in_month);
+      elapsed = Math.max(elapsed, r.days_elapsed);
     }
     return {
       currency_code: baseCurrency, income, expense, net: income - expense,
-      income_prev, expense_prev, days_in_month: days, avg_daily_expense,
+      income_prev, expense_prev, days_in_month: days, days_elapsed: elapsed, avg_daily_expense,
     } as CurrencySummary;
   }, [summary.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
@@ -351,7 +353,7 @@ export default function Stats({
           <div className={`${box} p-4`}>
             <div className="text-xs text-ink-500">日均支出</div>
             <div className="mt-1 text-lg font-semibold">{formatAmount(cur.avg_daily_expense, displayCode, currencies.data)}</div>
-            <div className="text-[10px] text-ink-400">月内 {cur.days_in_month} 天</div>
+            <div className="text-[10px] text-ink-400">{cur.days_elapsed > 0 && cur.days_elapsed < cur.days_in_month ? `按已过 ${cur.days_elapsed} 天` : `月内 ${cur.days_in_month} 天`}</div>
           </div>
         </section>
       )}
@@ -536,7 +538,7 @@ function KPI({
         <div className={`mt-0.5 flex items-center gap-0.5 text-[11px] ${isBad ? "text-rose-600" : "text-emerald-600"}`}>
           <Trend size={11} />
           <span>{Math.abs(ratio * 100).toFixed(0)}%</span>
-          <span className="text-ink-400">vs 上月</span>
+          <span className="text-ink-400">vs 上月同期</span>
         </div>
       )}
     </div>

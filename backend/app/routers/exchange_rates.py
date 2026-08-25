@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import ExchangeRate, User
+from ..models import Currency, ExchangeRate, User
 from ..schemas.exchange_rate import ExchangeRateCreate, ExchangeRateRead
 from ..services.fx import refresh_rates
 
@@ -49,6 +49,10 @@ async def upsert_rate(
         await session.commit()
         await session.refresh(existing)
         return existing
+    # 审计 #130: 未知币种先 400, 否则 FK 失败被下面的 except 误报成 409 "duplicate"
+    for code in (payload.base, payload.quote):
+        if not await session.get(Currency, code):
+            raise HTTPException(400, f"invalid currency: {code}")
     r = ExchangeRate(source="manual", **payload.model_dump())
     session.add(r)
     try:

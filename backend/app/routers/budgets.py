@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Budget, Category, Transaction, User
+from ..models import Budget, Category, Currency, Transaction, User
 from ..schemas.budget import BudgetCreate, BudgetProgress, BudgetRead, BudgetUpdate
 from ..services.internal_cats import internal_cat_ids, not_internal
 
@@ -42,6 +42,9 @@ async def create_budget(
         c = await session.get(Category, payload.category_id)
         if not c or c.user_id != user.id:
             raise HTTPException(400, "invalid category")
+    # 审计 #130: 同 wallets —— 未知币种提前 400, 不落到 FK IntegrityError 500
+    if not await session.get(Currency, payload.currency_code):
+        raise HTTPException(400, "invalid currency_code")
     b = Budget(user_id=user.id, **payload.model_dump())
     session.add(b)
     await session.commit()

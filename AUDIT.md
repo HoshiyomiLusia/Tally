@@ -272,3 +272,19 @@
 - [ ] **119** **首页「预定支出」合计对缺汇率币种静默折算为 0, 且合计为 0 时「从余额扣除」按钮整体隐藏** — fold 返回 0 → plannedTotal 不含这笔; 若它是唯一一笔, plannedTotal=0, 合计与「从余额扣除」按钮都不渲染, 看起来像功能失效; 若有其他币种的预定, 合计与扣减值偏小且无提示。同文件同逻辑在 Loans.tsx:48-63 已做了 missing 提示, 这里漏了。 文件: `frontend/src/components/Overview.tsx:111-123 (plannedTotal/fold: rate==null → 0), 230-237 (plannedTotal>0 才显示合计与按钮)`
 - [ ] **120** **借贷分析明细一次性拉 limit=2000 无分页, 超过后最旧记录被静默截断, 逐月图起点/区间 KPI 将与全时段 KPI 脱节** — 列表按日期降序取前 2000, 最早的记录被丢弃且无任何提示; 「首笔」日期、逐月图起点、区间起点前的累计欠款起始值、「全部」范围下的区间借出/还款都会与服务端算的 acct.loan_out_total 对不上。 文件: `frontend/src/pages/Loans.tsx:565-567; backend/app/schemas/transaction.py:76 (limit le=5000), backend/app/routers/transactions.py:106 (order by occurred_on desc)`
 - [ ] **121** **EditLoanTxModal 的「归档钱包保留」过滤实际无效: 传入的 wallets 列表本身不含归档钱包** — wallets 来自 /wallets(不含归档), matchingWallets 里根本没有该钱包, <select value={walletId}> 无匹配 option 显示为空白; 明细行钱包名也显示为 `#id`。保存若不改钱包不会出错(body 不带 wallet_id), 但一旦用户在空白下拉里选了别的再想改回就不可能。 文件: `frontend/src/pages/Loans.tsx:28 (GET /wallets 默认 include_archived=false), 791 (matchingWallets 过滤 !w.archived || w.id === tx.wallet_id), 647 (walletName 回退 `#id…`
+
+---
+
+# 全面复检(2026-08-25 · 7 路 workflow · 11 条确认 0 反驳; #96-#121 回归全部通过)
+
+重复根因合并后 9 条, 本轮全部修复(两处遗留注明)。验证 agent 另确认: 上一批 26 项修复无回归。
+
+- [x] **122** 期初对指纹误配: 换钱包/删除会把期初对账收入错配给普通追加买入(同钱包/同额/同日碰撞), 拆散期初配对令两个钱包各错一笔本金 — 修: 期初对创建时打 split_group_id 显式配对(迁移 0011 回填存量, 歧义跳过); 换钱包指纹分支只兜底存量且歧义时 400 拒绝。`investments.py`
+- [x] **123** 期初对账收入可经通用编辑翻 kind/换分类: 守卫只锁金额/钱包/日期 — 修: 加锁 kind 与 category_id。`transactions.py:380`
+- [x] **124** 容器时区 TZ 默认值(Asia/Shanghai)压过挂载的宿主 localtime(宿主实为 JST), 每天 23~24 点 JST 后端日期差一天 — 修: 删除 Dockerfile ENV TZ 与 compose TZ 注入, 完全跟随宿主 /etc/localtime。上一轮 #111/#117 修复不完整(错误假设部署地为 Asia/Shanghai)
+- [x] **125** KPI 环比仍与上月整月比, 与同页分类面板「上月同期」口径矛盾(40a3e71 只改了 category_compare) — 修: summary 同样截断上月窗口, KPI 文案改「vs 上月同期」
+- [x] **126** 月份选择器面板可选未来月份绕过箭头守卫, 选中整页空数据 — 修: 面板未来月 disabled + 下一年按钮封顶
+- [x] **127** 日均支出按已过天数算, 副标题却写「月内 31 天」 — 修: 后端返回 days_elapsed, 当月显示「按已过 N 天」
+- [x] **128** 投资盈亏支出腿显示永不可用的「撤销分摊」死按钮(后端必拒) — 修: 条件加 position_id==null; 分摊标也不再标投资/期初组。坏账核销组的同款死按钮暂无法从单行数据识别, 留观察
+- [x] **129** 借贷分析 KPI 硬编码「她欠你」与联系人/方向无关 — 修: 按 owed 方向显示「对方欠你/你欠对方」
+- [x] **130** 外键开启后 POST wallets/budgets 未知币种 IntegrityError 500; exchange-rates 误报 409 duplicate — 修: 三处提前校验 400。io.py import 对备份内币种的校验仍缺, 留清单

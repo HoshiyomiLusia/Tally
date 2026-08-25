@@ -68,6 +68,7 @@ class CurrencySummary(BaseModel):
     income_prev: int
     expense_prev: int
     days_in_month: int
+    days_elapsed: int = 0     # 日均支出的实际分母(当月=已过天数, 历史月=整月), 审计 #127
     avg_daily_expense: int
 
 
@@ -116,6 +117,11 @@ async def summary(
     anchor = parse_month(month, today)  # 审计 #106
     cur_start, cur_end = _month_bounds(anchor)
     prev_start, prev_end = _month_bounds(_add_months(cur_start, -1))
+    # 审计 #125: KPI 环比与分类面板同口径 —— 看当月时上月窗口截到同一天(40a3e71 只改了 category_compare 漏了这里),
+    # 否则同一屏 KPI"vs 上月整月"与分类"vs 上月同期"并存, 涨跌方向都可能矛盾。历史月仍比整月。
+    if cur_start <= today < cur_end:
+        prev_last = (prev_end - timedelta(days=1)).day
+        prev_end = prev_start + timedelta(days=min(today.day, prev_last))
     skip_cats = await internal_cat_ids(session, user.id)
 
     income = case((Transaction.kind == "income", Transaction.amount), else_=0)
@@ -166,6 +172,7 @@ async def summary(
             income=cur_i, expense=cur_e, net=cur_i - cur_e,
             income_prev=prev_i, expense_prev=prev_e,
             days_in_month=days_in_cur,
+            days_elapsed=days_elapsed,
             avg_daily_expense=avg,
         ))
 

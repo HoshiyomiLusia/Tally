@@ -13,9 +13,7 @@ services:
       DATABASE_URL: sqlite+aiosqlite:////data/tally.db
       SECRET_KEY: ${SECRET_KEY:-change-me}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
-      # 审计 #111/#117: 容器时区, 默认 Asia/Shanghai(部署地可用 .env 改); 影响 date.today() 相关逻辑
-      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data:/data
-      # 跟随宿主时区文件(存在即用), 与 TZ 环境变量双保险
+      # 审计 #124: 容器时区完全跟随宿主(不再注入 TZ 环境变量 —— 它会压过 localtime 挂载)
       - /etc/localtime:/etc/localtime:ro
