@@ -831,6 +831,11 @@ function EditLoanTxModal({ tx, wallets, contacts, currencies, onClose }: {
   return (
     <Modal onClose={onClose} title={`编辑${tx.kind === "loan_out" ? "借出" : "还款"} · ${tx.occurred_on}`} maxW="max-w-sm">
       <div className="space-y-3">
+        {tx.attributed_wallet_id != null && tx.attributed_wallet_id !== tx.wallet_id && (
+          <div className="rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+            这笔的余额归属记在「{wallets.find((w) => w.id === tx.attributed_wallet_id)?.name ?? "?"}」名下（名义转移）；换钱包保存后归属会重置为新钱包。
+          </div>
+        )}
         <label className="block">
           <span className="text-xs text-ink-500">联系人</span>
           <select className="input mt-1" value={contactId ?? ""} onChange={(e) => setContactId(Number(e.target.value) || null)}>

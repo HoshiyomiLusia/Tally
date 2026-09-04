@@ -52,6 +52,8 @@ class TransactionRead(BaseModel):
     position_id: int | None
     # 期初持仓配套的对账收入靠它关联持仓; 前端据此识别投资腿(给"换钱包"订正入口)
     opening_for_position_id: int | None = None
+    # 借贷的"名义归属"钱包(余额按 COALESCE(attributed, wallet) 归集); 暴露给前端提示, 审计 #139
+    attributed_wallet_id: int | None = None
     amount: int
     currency_code: str
     kind: TransactionKind

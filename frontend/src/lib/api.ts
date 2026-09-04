@@ -106,6 +106,7 @@ export interface Transaction {
   contact_id: number | null;
   position_id: number | null;
   opening_for_position_id: number | null;
+  attributed_wallet_id: number | null;
   amount: number;
   currency_code: string;
   kind: TransactionKind;

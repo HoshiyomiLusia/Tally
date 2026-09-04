@@ -13,6 +13,42 @@ INTERNAL_CATEGORY_NAMES = ("对账调整",)
 SYSTEM_CATEGORY_NAMES = ("对账调整", "坏账损失", "投资收益", "投资亏损")
 
 
+# 系统分类的建法(与 seed_data 一致), 供老账号缺失时按需补建
+SYSTEM_CATEGORY_SPECS: dict[str, tuple[str, str, str | None]] = {  # name -> (kind, emoji, 父级名或 None)
+    "对账调整": ("expense", "⚖️", "其他"),
+    "坏账损失": ("expense", "📉", "其他"),
+    "投资亏损": ("expense", "📉", None),
+    "投资收益": ("income", "📈", None),
+}
+
+
+async def ensure_system_category(session: AsyncSession, user_id: int, name: str) -> int:
+    """按名找系统分类, 找不到就补建(审计 #134: seed 只在注册/重置时跑, 之后新增的系统分类老账号没有,
+    投资亏损等分录会落成"未分类")。幂等; 不 commit, 随调用方事务一起提交。"""
+    found = (await session.execute(
+        select(Category.id).where(Category.user_id == user_id, Category.name == name).order_by(Category.id).limit(1)
+    )).scalars().first()
+    if found is not None:
+        return found
+    kind, emoji, parent_name = SYSTEM_CATEGORY_SPECS[name]
+    parent_id = None
+    if parent_name:
+        parent_id = (await session.execute(
+            select(Category.id).where(
+                Category.user_id == user_id, Category.name == parent_name, Category.kind == kind, Category.parent_id.is_(None),
+            ).order_by(Category.id).limit(1)
+        )).scalars().first()
+        if parent_id is None:
+            parent = Category(user_id=user_id, parent_id=None, name=parent_name, kind=kind, emoji="🗂️", sort_order=99)
+            session.add(parent)
+            await session.flush()
+            parent_id = parent.id
+    cat = Category(user_id=user_id, parent_id=parent_id, name=name, kind=kind, emoji=emoji, sort_order=99)
+    session.add(cat)
+    await session.flush()
+    return cat.id
+
+
 async def internal_cat_ids(session: AsyncSession, user_id: int) -> list[int]:
     rows = (
         await session.execute(

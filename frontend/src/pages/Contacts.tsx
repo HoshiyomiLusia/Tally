@@ -19,6 +19,7 @@ export default function Contacts() {
   const archive = useMutation({
     mutationFn: async (c: Contact) => api.patch(`/contacts/${c.id}`, { archived: !c.archived }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contacts"] }),
+    onError: (e: unknown) => alert((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "归档失败"),
   });
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/contacts/${id}`),

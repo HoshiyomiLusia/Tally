@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
-from ..models import Attachment, Budget, Category, Contact, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
+from ..models import Attachment, Budget, Category, Contact, Currency, ExchangeRate, Merchant, PlannedExpense, Position, Transaction, User, Wallet
 
 router = APIRouter(tags=["io"])
 
@@ -46,6 +46,7 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
     positions = (await session.execute(select(Position).where(Position.user_id == user.id))).scalars().all()
     txs = (await session.execute(select(Transaction).where(Transaction.user_id == user.id))).scalars().all()
     attachments = (await session.execute(select(Attachment).where(Attachment.user_id == user.id))).scalars().all()
+    planned = (await session.execute(select(PlannedExpense).where(PlannedExpense.user_id == user.id))).scalars().all()
     # 汇率是全局共享表(无 user_id, 审计 #26/#33), 备份时导全表
     rates = (await session.execute(select(ExchangeRate))).scalars().all()
 
@@ -76,6 +77,8 @@ async def _full_export(session: AsyncSession, user: User) -> dict:
         "attachments": [row(a, ["id", "transaction_id", "original_name", "stored_name", "mime_type", "size"]) for a in attachments],
         # 审计 #33: 全局汇率表(无 user_id), id 不导, 靠 (on_date,base,quote) 唯一约束重建
         "exchange_rates": [row(r, ["on_date", "base", "quote", "rate", "source"]) for r in rates],
+        # 审计 #132: 预定支出便签(此前漏导, 备份还原后丢失)
+        "planned_expenses": [row(p, ["id", "name", "amount", "currency_code", "due_date", "note"]) for p in planned],
     }
 
 
@@ -186,7 +189,30 @@ async def import_json(
     if d.get("version") not in IMPORTABLE_VERSIONS:
         raise HTTPException(400, f"version mismatch: expect one of {IMPORTABLE_VERSIONS}, got {d.get('version')}")
 
-    for model in (Attachment, Transaction, Position, Budget, Contact, Merchant, Category, Wallet):
+    # 审计 #136: 先校验再清库 —— 任何不合法都 400 且现有数据一字不动。
+    # 外键已开启(#96), 未知币种在 commit 时会 IntegrityError 500(并且已经清库了); 交易币种与钱包币种
+    # 不一致会造成余额/统计脱钩(#23 同口径)。
+    codes = {c for (c,) in (await session.execute(select(Currency.code))).all()}
+    bad_codes: set[str] = set()
+    for w in d.get("wallets", []):
+        if w.get("currency_code") not in codes:
+            bad_codes.add(str(w.get("currency_code")))
+    for coll in ("budgets", "positions", "transactions", "planned_expenses"):
+        for r in d.get(coll, []):
+            if r.get("currency_code") not in codes:
+                bad_codes.add(str(r.get("currency_code")))
+    pc = d.get("user", {}).get("primary_currency_code")
+    if pc and pc not in codes:
+        bad_codes.add(str(pc))
+    if bad_codes:
+        raise HTTPException(400, f"备份里有本系统不认识的币种: {sorted(bad_codes)}, 拒绝导入")
+    wallet_cur = {w["id"]: w["currency_code"] for w in d.get("wallets", []) if "id" in w}
+    mismatch = [t.get("id") for t in d.get("transactions", [])
+                if t.get("wallet_id") in wallet_cur and t.get("currency_code") != wallet_cur[t["wallet_id"]]]
+    if mismatch:
+        raise HTTPException(400, f"备份里有 {len(mismatch)} 笔交易的币种与其钱包币种不一致(如 id {mismatch[:5]}), 拒绝导入")
+
+    for model in (Attachment, Transaction, PlannedExpense, Position, Budget, Contact, Merchant, Category, Wallet):
         await session.execute(delete(model).where(model.user_id == user.id))
     await session.flush()
 
@@ -312,7 +338,12 @@ async def import_json(
 
     tx_id_map: dict[int, int] = {}
     pending_tx = list(d.get("transactions", []))
+    # 审计 #136: 引用缺失钱包的腿要跳过; 它的转账配对腿也得一起跳过, 否则留下一条 transfer_pair_id 为空的单腿转账
+    skip_ids = {t["id"] for t in pending_tx if wallet_map.get(t.get("wallet_id")) is None}
+    skip_ids |= {t["id"] for t in pending_tx if t.get("transfer_pair_id") in skip_ids}
     for t in pending_tx:
+        if t["id"] in skip_ids:
+            continue
         wid = wallet_map.get(t["wallet_id"])
         if wid is None:
             continue  # 引用了缺失的钱包 -> 跳过这笔, 不要 KeyError 中断整个导入
@@ -355,6 +386,14 @@ async def import_json(
             original_name=a.get("original_name", ""),
             stored_name=Path(a["stored_name"]).name,  # 防穿越: 落库前去掉任何目录部分(不信任备份 JSON)
             mime_type=a.get("mime_type", ""), size=a.get("size", 0),
+        ))
+
+    # 审计 #132: 预定支出(旧版备份没有该键 -> 空)
+    for pe in d.get("planned_expenses", []):
+        session.add(PlannedExpense(
+            user_id=user.id, name=pe["name"], amount=pe["amount"], currency_code=pe["currency_code"],
+            due_date=date.fromisoformat(pe["due_date"]) if isinstance(pe.get("due_date"), str) else pe.get("due_date"),
+            note=pe.get("note", ""),
         ))
 
     await session.commit()

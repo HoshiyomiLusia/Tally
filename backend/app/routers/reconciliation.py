@@ -7,6 +7,7 @@ from ..core.db import get_session
 from ..models import Category, Transaction, User, Wallet
 from ..schemas.reconciliation import ReconciliationRequest, ReconciliationResult, ReconciliationView
 from ..services.balances import wallet_balances, wallet_investment_summary, wallet_loan_summary
+from ..services.internal_cats import ensure_system_category
 
 router = APIRouter(prefix="/wallets", tags=["reconciliation"])
 
@@ -59,12 +60,7 @@ async def reconcile(
     if abs(diff) > 1_000_000_000_000:
         raise HTTPException(400, "对账差额超出允许范围(1e12 最小单位), 请检查输入")
 
-    cat_id = (
-        await session.execute(
-            select(Category.id).where(Category.user_id == user.id, Category.name == "对账调整")
-            .order_by(Category.id).limit(1)  # #48: 用 first 而非 one_or_none, 万一有历史重名也不 500
-        )
-    ).scalars().first()
+    cat_id = await ensure_system_category(session, user.id, "对账调整")  # 审计 #134: 缺失则补建
 
     t = Transaction(
         user_id=user.id,

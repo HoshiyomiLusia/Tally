@@ -414,7 +414,8 @@ export default function Transactions() {
                       {isPositive ? "+" : "-"}{formatAmount(t.amount, t.currency_code, currencies.data)}
                     </div>
                     <div className="flex shrink-0 gap-0.5">
-                      {t.split_group_id && t.kind === "expense" && t.position_id == null && (
+                      {/* 撤销分摊只对 AA 分摊组; 投资结算组(position_id)与坏账核销组(支出腿挂 contact_id)后端必拒, 不给死按钮 */}
+                      {t.split_group_id && t.kind === "expense" && t.position_id == null && t.contact_id == null && (
                         <button
                           onClick={() => { if (confirm("撤销分摊？相关贷款条目会被合并回单笔全额消费")) unsplit.mutate(t.split_group_id!); }}
                           className="btn-ghost p-2 sm:p-1.5"

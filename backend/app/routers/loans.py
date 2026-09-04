@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_user
 from ..core.db import get_session
+from ..services.internal_cats import ensure_system_category
 from ..models import Category, Contact, Transaction, User, Wallet
 from ..schemas.loan import (
     LendRequest,
@@ -97,7 +98,10 @@ async def create_split(
     if not payload.participants:
         raise HTTPException(400, "need at least one participant")
 
-    group_id = str(uuid.uuid4())
+    # 审计 #133: 单人全额代付(我的份额 0, 只生成一条借出腿)没有配对腿, 不打组 ——
+    # 打了组会被当"分摊腿"锁死: 不能编辑、账单页没有撤销分摊按钮(只挂在支出腿上), 改一笔只能删了重记
+    solo_lend = payload.my_share == 0 and len([p for p in payload.participants if p.share > 0]) == 1
+    group_id = None if solo_lend else str(uuid.uuid4())
     if payload.recurrence_source_id:
         rec_group = await resolve_recurrence_group(session, user, payload.recurrence_source_id)
     else:
@@ -227,14 +231,7 @@ async def write_off(
     if payload.amount > outstanding:
         raise HTTPException(400, f"核销金额 {payload.amount} 超过未收余额 {outstanding}")
 
-    writeoff_cat_id = (
-        await session.execute(
-            select(Category.id).where(
-                Category.user_id == user.id,
-                Category.name == "坏账损失",
-            ).order_by(Category.id).limit(1)  # #48: first 而非 one_or_none, 防历史重名 500
-        )
-    ).scalars().first()
+    writeoff_cat_id = await ensure_system_category(session, user.id, "坏账损失")  # 审计 #134: 缺失则补建
 
     # 两笔用同一 split_group 绑定: 从账单删任一笔会级联删掉另一笔, 不会只删一半
     group = str(uuid.uuid4())

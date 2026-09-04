@@ -10,6 +10,8 @@ from ..core.db import get_session
 from ..models import Category, Contact, Currency, ExchangeRate, Merchant, Position, Transaction, User, Wallet
 from ..schemas.transaction import TransactionCreate, TransactionFilter, TransactionRead, TransactionUpdate
 from .recurring import resolve_recurrence_group
+from .attachments import _user_dir
+from ..models import Attachment
 from ..services.internal_cats import SYSTEM_CATEGORY_NAMES
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -414,6 +416,26 @@ async def update_transaction(
     return t
 
 
+async def _attachment_files(session: AsyncSession, user_id: int, tx_ids: list[int]) -> list[str]:
+    """被删交易挂的附件文件名(要在删除语句之前查: 外键 CASCADE 会先把附件行删掉)。"""
+    if not tx_ids:
+        return []
+    return list((await session.execute(
+        select(Attachment.stored_name).where(Attachment.user_id == user_id, Attachment.transaction_id.in_(tx_ids))
+    )).scalars().all())
+
+
+def _unlink_files(user_id: int, names: list[str]) -> None:
+    """审计 #137: 删交易此前只删附件行, 磁盘文件成孤儿。commit 之后再动文件系统(不可回滚, 放最后)。"""
+    from pathlib import Path
+    udir = _user_dir(user_id)
+    for n in names:
+        name = Path(n).name
+        if name and name not in (".", ".."):
+            (udir / name).unlink(missing_ok=True)
+            (udir / f"{Path(name).stem}_thumb.jpg").unlink(missing_ok=True)
+
+
 @router.delete("/{tid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(
     tid: int,
@@ -424,6 +446,7 @@ async def delete_transaction(
     if not t or t.user_id != user.id:
         raise HTTPException(404)
     pos_ids: set[int] = set()  # 删的若是投资交易, 事后要重算这些持仓的清仓状态
+    files: list[str] = []      # 审计 #137: 被删交易的附件文件, commit 后从磁盘清掉
     if t.split_group_id:
         rows = (await session.execute(
             select(Transaction).where(
@@ -432,6 +455,7 @@ async def delete_transaction(
             )
         )).scalars().all()
         pos_ids = {r.position_id for r in rows if r.position_id is not None}
+        files += await _attachment_files(session, user.id, [r.id for r in rows])
         await session.execute(
             sql_delete(Transaction).where(
                 Transaction.user_id == user.id,
@@ -439,6 +463,7 @@ async def delete_transaction(
             )
         )
     elif t.transfer_pair_id:
+        files += await _attachment_files(session, user.id, [t.id, t.transfer_pair_id])
         await session.execute(
             sql_delete(Transaction).where(
                 Transaction.user_id == user.id,
@@ -505,6 +530,7 @@ async def delete_transaction(
                     raise HTTPException(400, "该期初收入对应的买入已被卖出, 不能删除(会让持仓剩余成本为负); 请先删相关卖出")
                 pos_ids.add(buy.position_id)
                 await session.delete(buy)
+        files += await _attachment_files(session, user.id, [t.id])
         await session.delete(t)
     await session.flush()
     # 删掉"清仓那笔卖出"后持仓不能卡在"已清仓": 按剩余成本重算 status
@@ -521,3 +547,4 @@ async def delete_transaction(
             )).scalar() or 0)
             pos.status = "open" if remaining > 0 else "closed"
     await session.commit()
+    _unlink_files(user.id, files)

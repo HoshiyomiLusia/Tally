@@ -286,7 +286,7 @@ export function BalanceModule() {
           <div className="mt-1.5 space-y-1">
             {(planned.data ?? []).map((p) => (
               <div key={p.id} className="flex items-center justify-between text-xs">
-                <span className="min-w-0 truncate text-ink-600 dark:text-ink-300">{p.name}{p.due_date && <span className="ml-1.5 text-ink-400">{p.due_date}</span>}</span>
+                <span className="min-w-0 truncate text-ink-600 dark:text-ink-300">{p.name}{p.due_date && <span className={`ml-1.5 ${p.due_date < todayIsoStr() ? "text-rose-500" : "text-ink-400"}`}>{p.due_date}{p.due_date < todayIsoStr() ? " · 已到期, 记完账记得删掉" : ""}</span>}</span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="text-rose-500 dark:text-rose-300">-{formatAmount(p.amount, p.currency_code, currencies.data)}</span>
                   <button type="button" onClick={() => delPlanned.mutate(p.id)} className="text-ink-400 hover:text-rose-500" title="删除">×</button>
@@ -390,6 +390,8 @@ interface ForecastItem {
   transaction: Transaction;
   due: string;
   status: "confirmed" | "due" | "predicted";
+  overdue_periods: number;   // due 时累计漏确认期数
+  rhythm: { typical_day: number | null; learned_gap: number | null; samples: number };  // 自学习到的节奏
 }
 
 // 前后 7 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
@@ -404,6 +406,20 @@ export function RecurringForecast() {
     queryKey: ["recurring-upcoming", "window", back],
     queryFn: async () => (await api.get<ForecastItem[]>(`/recurring/upcoming?back=${back}&days=7`)).data,
   });
+  const qc = useQueryClient();
+  // 停用: 清掉该账单最新一笔的周期 → 不再预测/提醒(历史保留)
+  const stop = useMutation({
+    mutationFn: async (tid: number) => api.post(`/recurring/stop/${tid}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["recurring-upcoming"] }); qc.invalidateQueries({ queryKey: ["recurring-by-month"] }); qc.invalidateQueries({ queryKey: ["transactions"] }); },
+    onError: (e: unknown) => { const r = (e as { response?: { data?: { detail?: string } } }).response; alert(r?.data?.detail ?? "停用失败"); },
+  });
+  // 学习说明: "通常 25 号" / "约每 14 天"
+  const rhythmText = (it: ForecastItem) => {
+    const r = it.rhythm;
+    if (r.typical_day != null) return `学自 ${r.samples} 期 · 通常 ${r.typical_day} 号`;
+    if (r.learned_gap != null) return `学自 ${r.samples} 期 · 约每 ${r.learned_gap} 天`;
+    return "";
+  };
 
   const catName = (id: number | null) => id == null ? "未分类" : categories.data?.find((c) => c.id === id)?.name ?? "?";
   const catEmoji = (id: number | null) => id == null ? "" : categories.data?.find((c) => c.id === id)?.emoji ?? "";
@@ -411,11 +427,16 @@ export function RecurringForecast() {
   const walletName = (id: number) => dash.data?.wallet_balances.find((w) => w.wallet_id === id)?.wallet_name ?? "?";
 
   const todayIso = todayIsoStr();
+  const [showStale, setShowStale] = useState(false);
+  // 超过 12 期(约一年)没确认的, 十有八九是早就取消的订阅: 默认折叠, 给一键停用, 别把时间轴淹了
+  const STALE = 12;
+  const staleItems = useMemo(() => (upcoming.data ?? []).filter((it) => it.status === "due" && it.overdue_periods >= STALE), [upcoming.data]);
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
+      .filter((it) => showStale || !(it.status === "due" && it.overdue_periods >= STALE))
       .slice()
       .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [upcoming.data]);
+  }, [upcoming.data, showStale]);
 
   return (
     <div>
@@ -425,6 +446,18 @@ export function RecurringForecast() {
           <button onClick={() => setBack((b) => b + 7)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↑ 再往前 7 天</button>
           {back > 7 && <button onClick={() => setBack(7)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
+        {staleItems.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
+            <span className="text-ink-500">有 {staleItems.length} 个周期账单超过一年没确认（多半已取消）</span>
+            <div className="flex gap-2">
+              <button onClick={() => setShowStale((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showStale ? "收起" : "展开"}</button>
+              <button
+                onClick={() => { if (window.confirm(`把这 ${staleItems.length} 个超过一年未确认的周期账单全部停用？\n历史记录保留，只是不再预测和提醒。`)) staleItems.forEach((it) => stop.mutate(it.transaction.id)); }}
+                className="text-rose-600 hover:underline"
+              >全部停用</button>
+            </div>
+          </div>
+        )}
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
         )}
@@ -455,12 +488,16 @@ export function RecurringForecast() {
                     {it.status === "confirmed" && (
                       <span className="rounded bg-emerald-100 px-1 text-[10px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">已确认</span>
                     )}
-                    {it.status === "due" && (
+                    {it.status === "due" && it.overdue_periods <= 1 && (
                       <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">待确认</span>
+                    )}
+                    {it.status === "due" && it.overdue_periods > 1 && (
+                      <span className="rounded bg-rose-100 px-1 text-[10px] text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" title="连续多期没有确认扣款; 若已取消订阅请点「停用」">逾期 {it.overdue_periods} 期</span>
                     )}
                   </div>
                   <div className="text-xs text-ink-500">
                     {it.status === "confirmed" ? "已扣款 " : it.status === "due" ? "应已扣款 " : "下次约 "}{it.due} · {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
+                    {it.status !== "confirmed" && rhythmText(it) && <span className="ml-1.5 text-ink-400">· {rhythmText(it)}</span>}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -487,6 +524,13 @@ export function RecurringForecast() {
                       className="rounded-full border border-emerald-500 px-2 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
                     >确认扣款</button>
                   )}
+                  {it.status !== "confirmed" && (
+                    <button
+                      onClick={() => { if (window.confirm(`停用「${primary}」的周期提醒？\n以后不再预测和提醒这个账单（历史记录保留；想恢复就编辑它重新选周期）。`)) stop.mutate(t.id); }}
+                      className="text-[10px] text-ink-400 hover:text-rose-600"
+                      title="已取消的订阅 / 不再需要提醒"
+                    >停用</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -494,7 +538,7 @@ export function RecurringForecast() {
         })}
         {recurItems.some((it) => it.status === "due") && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
-            「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。
+            「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。扣款日由该账单的历史实际扣款日自动学习（通常几号 / 约每几天），不再机械按固定天数推。已取消的订阅点「停用」。
           </div>
         )}
       </div>

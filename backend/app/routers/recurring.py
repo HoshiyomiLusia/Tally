@@ -2,7 +2,7 @@ import calendar
 import uuid
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,69 @@ def _next_due(d: date, period_days: int) -> date:
     return d + timedelta(days=period_days)
 
 
+def _period_months(period_days: int) -> int | None:
+    """月度类周期对应的自然月数; 固定天数类返回 None。与 _next_due 同一套容差。"""
+    if 28 <= period_days <= 31:
+        return 1
+    if 88 <= period_days <= 92:
+        return 3
+    if 175 <= period_days <= 185:
+        return 6
+    if 360 <= period_days <= 366:
+        return 12
+    return None
+
+
+def _frequency_label(period_days: int | None) -> str:
+    """月度面板的分栏口径, 与预测同一套容差(此前只认 ==30/==365, 366 天年费会被归到"其他")。"""
+    if period_days is None:
+        return "other"
+    m = _period_months(period_days)
+    return "yearly" if m == 12 else ("monthly" if m == 1 else "other")
+
+
+class LearnedRhythm(BaseModel):
+    """从该账单历史实际扣款日学出来的节奏, 供预测与前端解释用。"""
+    typical_day: int | None = None   # 月度类: 通常每月几号扣(最近几期"日"的中位数)
+    learned_gap: int | None = None   # 固定天数类: 实际间隔的中位数(天)
+    samples: int = 0                 # 参与学习的期数(<2 时退回设定周期)
+
+
+def _learn(history: list[date], period_days: int) -> LearnedRhythm:
+    """自学习: 用最近 6 期的真实扣款日推典型节奏。
+    - 月度/季度/半年/年度: 取"每月几号"的中位数 —— 某期晚记了几天不会把后面的预测整体带偏,
+      订阅换了扣款日则中位数在 3 期内跟上。
+    - 固定天数(周/两周/自定义): 取相邻间隔的中位数, 只在 [0.5x, 2x] 设定值内采纳(防补记造成离谱间隔)。"""
+    recent = sorted(history)[-6:]
+    months = _period_months(period_days)
+    if months is not None:
+        if len(recent) >= 2:
+            days = sorted(d.day for d in recent)
+            return LearnedRhythm(typical_day=days[len(days) // 2], samples=len(recent))
+        return LearnedRhythm(samples=len(recent))
+    if len(recent) >= 3:
+        gaps = sorted((b - a).days for a, b in zip(recent, recent[1:]) if (b - a).days > 0)
+        if gaps:
+            g = gaps[len(gaps) // 2]
+            if 0.5 * period_days <= g <= 2 * period_days:
+                return LearnedRhythm(learned_gap=g, samples=len(gaps))
+    return LearnedRhythm(samples=0)
+
+
+def _next_after(d: date, period_days: int, rhythm: LearnedRhythm) -> date:
+    """在日期 d 之后的下一期: 有学到的节奏就按节奏, 否则退回设定周期。"""
+    months = _period_months(period_days)
+    if months is not None:
+        if rhythm.typical_day is None:
+            return _add_months(d, months)
+        base = _add_months(d.replace(day=1), months)
+        nxt = date(base.year, base.month, min(rhythm.typical_day, calendar.monthrange(base.year, base.month)[1]))
+        if nxt <= d:  # d 本身晚于典型日(补记)时再推一期, 保证严格向后
+            nxt = _add_months(nxt, months)
+        return nxt
+    return d + timedelta(days=rhythm.learned_gap or period_days)
+
+
 class RecurringGroup(BaseModel):
     group_id: str | None
     representative_id: int
@@ -61,6 +124,8 @@ class ForecastItem(BaseModel):
     transaction: TransactionRead
     due: date          # confirmed=本期实际扣款日, due/predicted=预测扣款日
     status: str        # "confirmed" 已确认 | "due" 过期待确认 | "predicted" 未来预测
+    overdue_periods: int = 0          # due 时: 到今天为止累计漏了几期(>1 说明连续多期没确认)
+    rhythm: LearnedRhythm = LearnedRhythm()
 
 
 @router.get("/upcoming", response_model=list[ForecastItem])
@@ -74,12 +139,13 @@ async def upcoming(
       - confirmed: 最近一期真实扣款已记录(occurred_on 落在回看窗口内) -> 绿色已确认
       - due/predicted: 下一期预测扣款日, 过期未记 = due(待确认), 未来 = predicted
     这样点了"确认扣款"后, 该期从 due 变成 confirmed 留在原地, 而不是消失."""
+    # 不能在 SQL 里按 recurrence_period_days IS NOT NULL 过滤: "停用"是把组内最新一笔的周期清空,
+    # 若在分组前就把它滤掉, 组里前一笔会顶上来继续预测, 停用形同虚设。先收齐整组, 再看最新一笔。
     rows = (
         await session.execute(
             select(Transaction).where(
                 Transaction.user_id == user.id,
                 Transaction.is_recurring == True,  # noqa: E712
-                Transaction.recurrence_period_days.is_not(None),
             )
         )
     ).scalars().all()
@@ -87,29 +153,61 @@ async def upcoming(
     today = date.today()
     horizon = today + timedelta(days=days)
     floor = today - timedelta(days=back)
-    seen: dict[tuple[str | None, int | None], Transaction] = {}
+    # 按组收齐全部历史(不只最新一笔): 自学习要用历史各期的实际扣款日
+    groups: dict[tuple[str | None, int | None], list[Transaction]] = {}
     for t in rows:
         key = (t.recurrence_group_id, t.id if t.recurrence_group_id is None else None)
-        existing = seen.get(key)
-        if existing is None or t.occurred_on > existing.occurred_on:
-            seen[key] = t
+        groups.setdefault(key, []).append(t)
 
     items: list[ForecastItem] = []
-    for t in seen.values():
-        if not t.recurrence_period_days:
-            continue
+    for txs in groups.values():
+        txs.sort(key=lambda x: (x.occurred_on, x.id))
+        latest = txs[-1]
+        if not latest.recurrence_period_days:
+            continue  # 最新一笔周期被清空 = 已停用(历史仍保留"周期"标记供月度面板用)
+        period = latest.recurrence_period_days
+        rhythm = _learn([x.occurred_on for x in txs], period)
         # 本期已记录的真实扣款 (最新一笔落在回看窗内)
-        if floor <= t.occurred_on <= today:
-            items.append(ForecastItem(transaction=t, due=t.occurred_on, status="confirmed"))
-        # 下一期预测
-        next_due = _next_due(t.occurred_on, t.recurrence_period_days)
-        if floor <= next_due <= horizon:
-            items.append(ForecastItem(
-                transaction=t, due=next_due,
-                status="due" if next_due <= today else "predicted",
-            ))
+        if floor <= latest.occurred_on <= today:
+            items.append(ForecastItem(transaction=latest, due=latest.occurred_on, status="confirmed", rhythm=rhythm))
+        next_due = _next_after(latest.occurred_on, period, rhythm)
+        if next_due <= today:
+            # 已过期: 不管过期多久都要露出来(此前落到回看窗之前就静默消失, 33/56 组因此不见了),
+            # 显示最早漏掉的那期, 并数一数到今天累计漏了几期
+            overdue, probe = 1, next_due
+            while overdue < 240:
+                nxt = _next_after(probe, period, rhythm)
+                if nxt > today:
+                    break
+                overdue, probe = overdue + 1, nxt
+            items.append(ForecastItem(transaction=latest, due=next_due, status="due", overdue_periods=overdue, rhythm=rhythm))
+        elif next_due <= horizon:
+            items.append(ForecastItem(transaction=latest, due=next_due, status="predicted", rhythm=rhythm))
     items.sort(key=lambda x: x.due)
     return items
+
+
+@router.post("/stop/{tid}", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_recurring(
+    tid: int,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """停用一个周期账单: 清掉该组最新一笔的周期天数 → 不再预测/提醒; is_recurring 保留, 历史仍算周期账单。
+    重新启用 = 编辑该笔重新选周期。"""
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id or not t.is_recurring:
+        raise HTTPException(404, "recurring transaction not found")
+    if t.recurrence_group_id:
+        latest = (await session.execute(
+            select(Transaction).where(
+                Transaction.user_id == user.id, Transaction.recurrence_group_id == t.recurrence_group_id,
+            ).order_by(Transaction.occurred_on.desc(), Transaction.id.desc()).limit(1)
+        )).scalar_one()
+    else:
+        latest = t
+    latest.recurrence_period_days = None
+    await session.commit()
 
 
 async def resolve_recurrence_group(session: AsyncSession, user: User, source_id: int | None) -> str | None:
@@ -165,7 +263,7 @@ async def list_groups(
         wallet = wallets.get(latest.wallet_id)
         cat = cats.get(latest.category_id) if latest.category_id else None
         period = latest.recurrence_period_days
-        next_due = _next_due(latest.occurred_on, period) if period else None
+        next_due = _next_after(latest.occurred_on, period, _learn([x.occurred_on for x in txs], period)) if period else None
         name = (latest.note or (cat.name if cat else None)) or "未命名周期账单"
         total = sum(t.amount for t in txs)
         avg = total // max(1, len(txs))
@@ -254,8 +352,8 @@ async def by_month(
         wallet = wallets.get(t.wallet_id)
         cat = cats.get(t.category_id) if t.category_id else None
         merchant = merchants_map.get(t.merchant_id) if t.merchant_id else None
-        is_yearly = t.recurrence_period_days == 365
-        is_monthly_freq = t.recurrence_period_days == 30 or t.recurrence_period_days is None or not is_yearly
+        freq = _frequency_label(t.recurrence_period_days)  # 审计: 与预测同一套容差(此前 ==365/==30 硬比较)
+        is_yearly = freq == "yearly"
         item = MonthlyRecurringItem(
             transaction_id=t.id,
             occurred_on=t.occurred_on,
@@ -270,7 +368,7 @@ async def by_month(
             wallet_name=wallet.name if wallet else "?",
             currency_code=t.currency_code,
             amount=t.amount,
-            frequency="yearly" if is_yearly else ("monthly" if t.recurrence_period_days == 30 else "other"),
+            frequency=freq,
         )
         if is_yearly:
             yearly.append(item)

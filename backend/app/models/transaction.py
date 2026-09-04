@@ -38,4 +38,5 @@ class Transaction(Base):
     # 但聚合借贷调整时按 COALESCE(attributed_wallet_id, wallet_id) 计算.
     # 让用户可以把 Suica 上的借贷在不动账单的前提下挪到 三菱 名下显示.
     attributed_wallet_id: Mapped[int | None] = mapped_column(ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 审计 #140: 应用侧按容器本地时区写入(此前 server_default=func.now() 在 SQLite 恒为 UTC, 与 occurred_on 口径不同); 存量不改
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, server_default=func.now())

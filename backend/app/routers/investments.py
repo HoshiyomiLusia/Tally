@@ -17,6 +17,7 @@ from ..schemas.investment import (
     WalletChangeRequest,
 )
 from ..schemas.transaction import TransactionRead
+from ..services.internal_cats import ensure_system_category
 
 router = APIRouter(prefix="/investments", tags=["investments"])
 
@@ -31,13 +32,8 @@ async def _check_wallet(session: AsyncSession, user: User, wallet_id: int, curre
 
 
 async def _pnl_cat(session: AsyncSession, user: User, name: str) -> int | None:
-    # #48: order+limit+first, 万一有历史重名分类也不会 scalar_one_or_none 抛 500
-    return (
-        await session.execute(
-            select(Category.id).where(Category.user_id == user.id, Category.name == name)
-            .order_by(Category.id).limit(1)
-        )
-    ).scalars().first()
+    # 审计 #134: 找不到就补建(老账号缺新加的系统分类时, 分录不再落成"未分类")
+    return await ensure_system_category(session, user.id, name)
 
 
 async def _position_remaining(session: AsyncSession, position_id: int) -> int:

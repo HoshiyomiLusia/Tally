@@ -81,6 +81,19 @@ async def upload_attachment(
         path.unlink(missing_ok=True)  # 中止/出错时清理已写入的部分文件, 不留孤儿
         raise
 
+    # 审计 #141: 不只信客户端声明的 MIME —— 图片用 PIL 校验, PDF 校验文件头; 不符就删文件拒绝
+    try:
+        if file.content_type.startswith("image/"):
+            with Image.open(path) as probe:
+                probe.verify()
+        elif file.content_type == "application/pdf":
+            with path.open("rb") as fh:
+                if fh.read(5) != b"%PDF-":
+                    raise ValueError("not a pdf")
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "文件内容与声明的类型不符或已损坏")
+
     if file.content_type.startswith("image/"):
         try:
             with Image.open(path) as img:
