@@ -395,17 +395,19 @@ interface ForecastItem {
   split: { total: number; my_share: number; participants: { contact_id: number; share: number }[] } | null;  // 上期是分摊 → 模板
 }
 
-// 前后 7 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
+// 前 7 天 / 后 31 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
 export function RecurringForecast() {
   const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
   const [back, setBack] = useState(7);  // 回看天数, 可点按钮往前扩
+  // 前瞻天数: 默认一个完整月(31 天), 让每个月度账单都能看到下一期; 之前只看 7 天, 月中扣款的账单有大半个月看不到(用户反馈"8-19 的周期订单没有显示")
+  const [ahead, setAhead] = useState(31);
   const dash = useQuery({ queryKey: ["dashboard", thisMonthStr()], queryFn: async () => (await api.get<DashboardData>(`/dashboard?month=${thisMonthStr()}`)).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data });
   const upcoming = useQuery({
-    queryKey: ["recurring-upcoming", "window", back],
-    queryFn: async () => (await api.get<ForecastItem[]>(`/recurring/upcoming?back=${back}&days=7`)).data,
+    queryKey: ["recurring-upcoming", "window", back, ahead],
+    queryFn: async () => (await api.get<ForecastItem[]>(`/recurring/upcoming?back=${back}&days=${ahead}`)).data,
   });
   const qc = useQueryClient();
   // 停用: 清掉该账单最新一笔的周期 → 不再预测/提醒(历史保留)
@@ -441,7 +443,7 @@ export function RecurringForecast() {
 
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 7 天</h3>
+      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 {ahead} 天</h3>
       <div className="card divide-y divide-ink-100 p-0">
         <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
           <button onClick={() => setBack((b) => b + 7)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↑ 再往前 7 天</button>
@@ -543,6 +545,10 @@ export function RecurringForecast() {
             </div>
           );
         })}
+        <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
+          <button onClick={() => setAhead((a) => a + 31)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↓ 再往后 31 天</button>
+          {ahead > 31 && <button onClick={() => setAhead(31)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
+        </div>
         {recurItems.some((it) => it.status === "due") && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
             「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。扣款日由该账单的历史实际扣款日自动学习（通常几号 / 约每几天），不再机械按固定天数推。已取消的订阅点「停用」。

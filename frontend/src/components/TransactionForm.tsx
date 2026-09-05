@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calculator, Delete, Paperclip, Plus, Trash2, X } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -91,6 +91,9 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   const [error, setError] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
   const merchantInputRef = useRef<HTMLInputElement>(null);
+  // 小分类行占位高度: 用隐形量尺把每个大类的小分类都排一遍取最高者, 点大类时下方内容不会跳动(用户反馈: 快速点击会点错位置)
+  const subMeasureRef = useRef<HTMLDivElement>(null);
+  const [subRowMinH, setSubRowMinH] = useState(0);
   const stagedFileRef = useRef<HTMLInputElement>(null);
   const initKey = useRef<string | null>(null);
 
@@ -228,6 +231,20 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   }, [filteredCategories]);
   const selectedCat = filteredCategories.find((c) => c.id === categoryId) ?? null;
   const expandedParent = selectedCat?.parent_id ?? (selectedCat && childrenByParent.get(selectedCat.id) ? selectedCat.id : null);
+  const hasSubRows = childrenByParent.size > 0;
+  useLayoutEffect(() => {
+    const el = subMeasureRef.current;
+    if (!el) { setSubRowMinH(0); return; }
+    const measure = () => {
+      let m = 0;
+      for (const row of Array.from(el.children)) m = Math.max(m, (row as HTMLElement).offsetHeight);
+      setSubRowMinH(m);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [childrenByParent, open, hasSubRows]);
 
   const catUsage = useQuery({
     queryKey: ["merchants-usage", categoryId],
@@ -618,9 +635,9 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                                 key={w.id}
                                 type="button"
                                 onClick={() => setWalletId(w.id)}
+                                aria-pressed={on}
                                 className={on ? "chip chip-selected" : "chip chip-idle"}
                               >
-                                {on && <span className="mr-0.5">✓</span>}
                                 {w.name}
                               </button>
                             );
@@ -644,6 +661,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                   <button
                     key={p.id}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => setCategoryId(p.id)}
                     className={
                       isSelected
@@ -653,28 +671,47 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                           : "chip chip-idle"
                     }
                   >
-                    {isSelected && <span className="mr-0.5">✓</span>}
                     {p.emoji} {p.name}
                   </button>
                 );
               })}
             </div>
-            {expandedParent != null && childrenByParent.get(expandedParent) && (
-              <div className="mt-2 flex flex-wrap gap-1.5 border-t border-ink-100 pt-2 dark:border-ink-700">
-                {(childrenByParent.get(expandedParent) ?? []).map((c) => {
-                  const on = categoryId === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setCategoryId(c.id)}
-                      className={on ? "chip chip-selected" : "chip chip-sub-idle"}
-                    >
-                      {on && <span className="mr-0.5">✓</span>}
-                      {c.emoji} {c.name}
-                    </button>
-                  );
-                })}
+            {hasSubRows && (
+              <div className="mt-2 border-t border-ink-100 pt-2 dark:border-ink-700">
+                {/* 常驻占位: 高度 = 最高的小分类行, 保证点大类前后布局完全不变 */}
+                <div className="relative" style={subRowMinH ? { minHeight: subRowMinH } : undefined}>
+                  <div ref={subMeasureRef} aria-hidden className="pointer-events-none invisible absolute inset-x-0 top-0">
+                    {Array.from(childrenByParent.entries()).map(([pid, kids]) => (
+                      <div key={pid} className="flex flex-wrap gap-1.5">
+                        {kids.map((c) => (
+                          <span key={c.id} className="chip chip-sub-idle">{c.emoji} {c.name}</span>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  {expandedParent != null && (childrenByParent.get(expandedParent)?.length ?? 0) > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(childrenByParent.get(expandedParent) ?? []).map((c) => {
+                        const on = categoryId === c.id;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => setCategoryId(c.id)}
+                            className={on ? "chip chip-selected" : "chip chip-sub-idle"}
+                          >
+                            {c.emoji} {c.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0 flex min-h-[40px] items-center justify-center text-center text-xs text-ink-400 sm:min-h-[26px] dark:text-ink-500">
+                      {expandedParent != null ? "这个大类没有小分类" : "点了大类后, 小分类会出现在这里(不选也行)"}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

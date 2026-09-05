@@ -59,12 +59,13 @@ body, #root {
     @apply border-transparent bg-ink-50 text-ink-700 hover:bg-ink-100
            dark:bg-ink-700/50 dark:text-ink-200 dark:hover:bg-ink-700;
   }
+  /* 选中/展开态不加粗: 加粗会改 chip 宽度, 触发整行重新换行, 快速点击容易点错(用户反馈) */
   .chip-active-parent {
-    @apply border-ink-700 bg-ink-100 text-ink-900 font-semibold
+    @apply border-ink-700 bg-ink-100 text-ink-900
            dark:border-ink-300 dark:bg-ink-700 dark:text-white;
   }
   .chip-selected {
-    @apply border-transparent bg-emerald-600 text-white font-semibold
+    @apply border-transparent bg-emerald-600 text-white
            shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/40
            hover:bg-emerald-700
            dark:bg-emerald-500 dark:shadow-emerald-500/40 dark:ring-emerald-400/50

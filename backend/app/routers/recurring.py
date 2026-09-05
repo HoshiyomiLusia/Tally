@@ -144,7 +144,7 @@ class ForecastItem(BaseModel):
 
 @router.get("/upcoming", response_model=list[ForecastItem])
 async def upcoming(
-    days: int = Query(14, ge=0, le=3660),   # 审计 #116: 上界防 today+timedelta 越过 9999 年 OverflowError
+    days: int = Query(31, ge=0, le=3660),   # 默认一个完整月, 月度账单每个都能看到下一期; 审计 #116: 上界防 today+timedelta 越过 9999 年 OverflowError
     back: int = Query(7, ge=0, le=3660),
     user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
