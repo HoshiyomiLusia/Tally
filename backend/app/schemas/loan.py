@@ -17,7 +17,7 @@ class SplitCreateRequest(BaseModel):
     occurred_on: date
     note: str = ""
     is_recurring: bool = False
-    recurrence_period_days: int | None = None
+    recurrence_period_days: int | None = Field(default=None, ge=1, le=3660)
     recurrence_source_id: int | None = None
     my_share: int = Field(ge=0, le=1_000_000_000_000)
     participants: list[SplitParticipant] = Field(min_length=1)

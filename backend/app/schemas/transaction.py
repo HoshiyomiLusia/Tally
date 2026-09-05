@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 必须与 models.transaction.TRANSACTION_KINDS 保持一致:
 # 漏掉 invest_buy/invest_sell 会让含投资记录的页在 TransactionRead 响应校验时 500 (账单页空白).
@@ -9,6 +9,13 @@ TransactionKind = Literal[
     "expense", "income", "transfer_out", "transfer_in",
     "loan_out", "loan_repayment", "invest_buy", "invest_sell",
 ]
+
+
+def _check_year(v: date | None) -> date | None:
+    """审查 C6: 年份手误(0001/9999)会让周期预测 _add_months 越界 500; 与 parse_month 同口径限制 1900-2999。"""
+    if v is not None and not 1900 <= v.year <= 2999:
+        raise ValueError("日期年份需在 1900-2999 之间")
+    return v
 
 
 class TransactionCreate(BaseModel):
@@ -22,9 +29,14 @@ class TransactionCreate(BaseModel):
     occurred_on: date
     note: str = ""
     is_recurring: bool = False
-    recurrence_period_days: int | None = None
+    recurrence_period_days: int | None = Field(default=None, ge=1, le=3660)  # 负数/0 会让预测循环空转(审查 C5)
     # 确认周期账单本期扣款时传: 让这笔并入来源账单的周期分组, 使预测顺延
     recurrence_source_id: int | None = None
+
+    @field_validator("occurred_on")
+    @classmethod
+    def _year(cls, v: date | None) -> date | None:
+        return _check_year(v)
 
 
 class TransactionUpdate(BaseModel):
@@ -38,7 +50,12 @@ class TransactionUpdate(BaseModel):
     note: str | None = None
     kind: str | None = None  # 审计#60: 允许编辑时切换, 但路由只放行 expense<->income(见 update_transaction 守卫)
     is_recurring: bool | None = None
-    recurrence_period_days: int | None = None
+    recurrence_period_days: int | None = Field(default=None, ge=1, le=3660)
+
+    @field_validator("occurred_on")
+    @classmethod
+    def _year(cls, v: date | None) -> date | None:
+        return _check_year(v)
 
 
 class TransactionRead(BaseModel):

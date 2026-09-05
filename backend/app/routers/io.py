@@ -361,7 +361,7 @@ async def import_json(
             note=t.get("note", ""),
             split_group_id=t.get("split_group_id"),
             is_recurring=t.get("is_recurring", False),
-            recurrence_period_days=t.get("recurrence_period_days"),
+            recurrence_period_days=(t.get("recurrence_period_days") if isinstance(t.get("recurrence_period_days"), int) and t.get("recurrence_period_days") > 0 else None),  # 审查 C5: 导入不放行 <=0
             recurrence_group_id=t.get("recurrence_group_id"),
         )
         session.add(obj)

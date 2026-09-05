@@ -391,7 +391,8 @@ interface ForecastItem {
   due: string;
   status: "confirmed" | "due" | "predicted";
   overdue_periods: number;   // due 时累计漏确认期数
-  rhythm: { typical_day: number | null; learned_gap: number | null; samples: number };  // 自学习到的节奏
+  rhythm: { typical_day: number | null; learned_gap: number | null; samples: number; ignored: number };  // 自学习到的节奏(ignored = 剔除的补记/漏记样本)
+  merged_segments: number;   // >1: 换过付款方式 / 中途另起过一组, 后端已把前后序列接成一条线
   split: { total: number; my_share: number; participants: { contact_id: number; share: number }[] } | null;  // 上期是分摊 → 模板
 }
 
@@ -419,8 +420,8 @@ export function RecurringForecast() {
   // 学习说明: "通常 25 号" / "约每 14 天"
   const rhythmText = (it: ForecastItem) => {
     const r = it.rhythm;
-    if (r.typical_day != null) return `学自 ${r.samples} 期 · 通常 ${r.typical_day} 号`;
-    if (r.learned_gap != null) return `学自 ${r.samples} 期 · 约每 ${r.learned_gap} 天`;
+    if (r.typical_day != null) return `学自 ${r.samples} 期 · 通常 ${r.typical_day} 号${r.ignored > 0 ? ` · 忽略 ${r.ignored} 期补记` : ""}`;
+    if (r.learned_gap != null) return `学自 ${r.samples} 期 · 约每 ${r.learned_gap} 天${r.ignored > 0 ? ` · 忽略 ${r.ignored} 段异常间隔` : ""}`;
     return "";
   };
 
@@ -431,9 +432,12 @@ export function RecurringForecast() {
 
   const todayIso = todayIsoStr();
   const [showStale, setShowStale] = useState(false);
-  // 超过 12 期(约一年)没确认的, 十有八九是早就取消的订阅: 默认折叠, 给一键停用, 别把时间轴淹了
-  const STALE = 12;
+  // 逾期 2 期以上的(用户要求折叠): 多半是取消了的订阅, 或换了记法没接上; 默认折叠, 给一键停用, 别把时间轴淹了
+  const STALE = 2;
   const staleItems = useMemo(() => (upcoming.data ?? []).filter((it) => it.status === "due" && it.overdue_periods >= STALE), [upcoming.data]);
+  // 一键停用只碰逾期半年以上的(刚漏一两期的多半还活着, 误停会让它从预测里消失); confirm 里列出名单可核对
+  const DEAD = 6;
+  const deadItems = useMemo(() => staleItems.filter((it) => it.overdue_periods >= DEAD), [staleItems]);
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
       .filter((it) => showStale || !(it.status === "due" && it.overdue_periods >= STALE))
@@ -451,18 +455,25 @@ export function RecurringForecast() {
         </div>
         {staleItems.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
-            <span className="text-ink-500">有 {staleItems.length} 个周期账单超过一年没确认（多半已取消）</span>
+            <span className="text-ink-500">有 {staleItems.length} 个周期账单逾期 2 期以上（多半已取消，或换了记法没接上）</span>
             <div className="flex gap-2">
               <button onClick={() => setShowStale((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showStale ? "收起" : "展开"}</button>
-              <button
-                onClick={() => { if (window.confirm(`把这 ${staleItems.length} 个超过一年未确认的周期账单全部停用？\n历史记录保留，只是不再预测和提醒。`)) staleItems.forEach((it) => stop.mutate(it.transaction.id)); }}
-                className="text-rose-600 hover:underline"
-              >全部停用</button>
+              {deadItems.length > 0 && (
+                <button
+                  onClick={() => {
+                    const names = deadItems.map((it) => merchantName(it.transaction.merchant_id) || it.transaction.note || catName(it.transaction.category_id)).join("、");
+                    if (window.confirm(`停用这 ${deadItems.length} 个逾期半年以上的周期账单？\n${names}\n历史记录保留，只是不再预测和提醒。逾期不足半年的不会动。`)) deadItems.forEach((it) => stop.mutate(it.transaction.id));
+                  }}
+                  className="text-rose-600 hover:underline"
+                >停用逾期半年以上的 {deadItems.length} 个</button>
+              )}
             </div>
           </div>
         )}
         {recurItems.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-ink-500">这段时间没有周期账单</div>
+          <div className="px-4 py-6 text-center text-sm text-ink-500">
+            {staleItems.length > 0 ? `这段时间没有待处理的周期账单（${staleItems.length} 个逾期账单已折叠，点「展开」查看）` : "这段时间没有周期账单"}
+          </div>
         )}
         {recurItems.map((it, i) => {
           const t = it.transaction;
@@ -501,6 +512,7 @@ export function RecurringForecast() {
                   <div className="text-xs text-ink-500">
                     {it.status === "confirmed" ? "已扣款 " : it.status === "due" ? "应已扣款 " : "下次约 "}{it.due} · {walletName(t.wallet_id)}{mname && t.note ? ` · ${t.note}` : ""}
                     {it.status !== "confirmed" && rhythmText(it) && <span className="ml-1.5 text-ink-400">· {rhythmText(it)}</span>}
+                    {it.merged_segments > 1 && <span className="ml-1.5 text-ink-400" title="换过付款方式或中途另起过一组, 已按同商家同分类接成一条账单">· 已接上之前 {it.merged_segments - 1} 段记录</span>}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">

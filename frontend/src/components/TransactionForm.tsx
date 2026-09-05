@@ -380,6 +380,10 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
   const save = useMutation({
     mutationFn: async (_opts: { again?: boolean }) => {
+      if (isRecurring) {
+        const n = Number(recurrenceText);
+        if (!Number.isInteger(n) || n < 1 || n > 3660) throw new Error("周期天数需为 1~3660 的整数");
+      }
       if (!wallet) throw new Error("请选择 Wallet");
       // 币种小数位没加载出来时, digits 会兜底成 2, 对 JPY/KRW(0 位)会把金额放大 100 倍落库。
       // 宁可拦下也不能记错: currencies 未就绪就不许保存(审计发现的 100 倍落库根因)。
@@ -496,8 +500,10 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     },
     onError: (e: unknown) => {
       let msg = e instanceof Error ? e.message : "保存失败";
-      const r = (e as { response?: { data?: { detail?: string } } }).response;
-      if (r?.data?.detail) msg = r.data.detail;
+      const d = (e as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      // 422 时 detail 是数组(pydantic 校验项), 直接渲染会让 React 抛错白屏(审查 C8)
+      if (typeof d === "string") msg = d;
+      else if (Array.isArray(d)) msg = d.map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : String(x))).join("; ");
       setError(msg);
     },
   });
@@ -789,6 +795,8 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                   <input
                     type="number"
                     min="1"
+                    max="3660"
+                    step="1"
                     value={recurrenceText}
                     onChange={(e) => setRecurrenceText(e.target.value)}
                     className="w-14 rounded-md border border-ink-200 bg-transparent px-1.5 py-0.5 text-center text-xs text-ink-700 dark:border-ink-700 dark:text-ink-200"
