@@ -40,7 +40,7 @@ export default function MonthPicker({ value, onChange, className = "", align = "
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") { e.preventDefault(); setOpen(false); }  // 标记已消费, 外层弹窗不连带关闭
     }
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);

@@ -171,11 +171,15 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
             <ChipRow label="币种" items={curItems} active={cur} onPick={setCur} />
             <ChipRow label="指标" items={METRICS.map((m) => ({ k: m.k, label: m.label }))} active={metric} onPick={(k) => setMetric(k as Metric)} />
             <ChipRow label="范围" items={presets.map((p) => ({ k: p.k, label: p.label }))} active={activeRangeKey} onPick={(k) => setRange(presets.find((p) => p.k === k)?.r ?? null)} />
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className={activeRangeKey === "custom" ? "font-medium text-ink-800 dark:text-ink-100" : "text-ink-500"}>自定义</span>
-              <MonthPicker align="left" value={pickFrom} onChange={(v) => setRange({ from: v, to: v > pickTo ? v : pickTo })} />
-              <span className="text-ink-400">至</span>
-              <MonthPicker align="left" value={pickTo} onChange={(v) => setRange({ from: v < pickFrom ? v : pickFrom, to: v })} />
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className={activeRangeKey === "custom" ? "font-medium text-ink-800 dark:text-ink-100" : "text-ink-500"}>自定义</span>
+                <MonthPicker align="left" value={pickFrom} onChange={(v) => setRange({ from: v, to: v > pickTo ? v : pickTo })} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-ink-400">至</span>
+                <MonthPicker align="left" value={pickTo} onChange={(v) => setRange({ from: v < pickFrom ? v : pickFrom, to: v })} />
+              </div>
             </div>
           </div>
 

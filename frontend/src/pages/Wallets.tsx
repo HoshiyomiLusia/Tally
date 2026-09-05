@@ -452,7 +452,7 @@ function WalletCardItem({
 
   return (
     <div
-      className={`relative aspect-[856/540] w-[calc(50%-0.375rem)] overflow-hidden rounded-xl p-3 shadow-sm sm:w-[260px] ${faceText} ${wallet.archived ? "opacity-55 saturate-50" : ""}`}
+      className={`relative aspect-[856/540] w-full overflow-hidden rounded-xl p-3 shadow-sm sm:w-[260px] ${faceText} ${wallet.archived ? "opacity-55 saturate-50" : ""}`}
       style={{ background: `linear-gradient(135deg, ${color} 0%, ${shade(color, -30)} 100%)` }}
     >
       <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
@@ -460,12 +460,12 @@ function WalletCardItem({
 
       {/* 操作浮层: 右上角小图标 */}
       <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
-        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
-        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
-        <button onClick={onArchive} title={wallet.archived ? "取消归档" : "归档(不计入汇总, 可恢复)"} className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35">
+        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35"><Scale size={13} /></button>
+        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35"><Pencil size={13} /></button>
+        <button onClick={onArchive} title={wallet.archived ? "取消归档" : "归档(不计入汇总, 可恢复)"} className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35">
           {wallet.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
         </button>
-        <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-rose-500/60"><Trash2 size={13} /></button>
+        <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-rose-500/60"><Trash2 size={13} /></button>
       </div>
       {wallet.archived && (
         <span className="absolute left-2 top-2 z-10 rounded bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">已归档 · 不计入汇总</span>

@@ -158,7 +158,7 @@ export function BalanceModule() {
                 className={`rounded border px-1.5 py-0.5 text-xs ${investCutPct > 0 ? "border-sky-500 bg-sky-500/15 text-sky-600 dark:text-sky-300" : "border-ink-200 text-ink-500 dark:border-ink-700"}`}
               >{investCutPct > 0 ? `抹除投资 ${investCutPct}%` : "抹除投资"}</button>
               {investPopover && (
-                <div className="absolute left-0 top-full z-20 mt-1 w-60 rounded-lg border border-ink-200 bg-white p-2.5 shadow-lg dark:border-ink-700 dark:bg-ink-800">
+                <div className="absolute right-0 top-full z-20 mt-1 w-60 rounded-lg sm:left-0 sm:right-auto border border-ink-200 bg-white p-2.5 shadow-lg dark:border-ink-700 dark:bg-ink-800">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-xs text-ink-500">抹除投资比例</span>
                     <div className="flex items-center gap-1">

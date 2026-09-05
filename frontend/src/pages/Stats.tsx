@@ -443,6 +443,9 @@ export default function Stats({
           </div>
         </div>
         <div className={`${box} p-4`}>
+          {pace.activeCount === 0 && !pace.rows.some((r) => ((r.current as number | null) ?? 0) > 0) ? (
+            <div className="py-10 text-center text-sm text-ink-500">还没有支出数据，记几笔之后这里会画出本月节奏和历史同期对照</div>
+          ) : (
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={pace.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#ececef" />
@@ -471,6 +474,7 @@ export default function Stats({
               <Line type="monotone" dataKey="current" stroke="#e11d48" strokeWidth={3} dot={false} connectNulls={false} />
             </ComposedChart>
           </ResponsiveContainer>
+          )}
           {/* 图例: 色块 = 月份 */}
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
             <span className="flex items-center gap-1">

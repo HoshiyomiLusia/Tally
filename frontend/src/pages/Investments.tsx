@@ -91,7 +91,7 @@ export default function Investments() {
           return (
             <div key={p.id} className="card">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
+                <div className="w-full min-w-0 sm:w-auto sm:flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{p.name}</span>
                     <span className="rounded bg-ink-100 px-1.5 text-[10px] text-ink-500 dark:bg-ink-800">{p.currency_code}</span>

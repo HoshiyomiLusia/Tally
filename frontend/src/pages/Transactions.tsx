@@ -418,17 +418,17 @@ export default function Transactions() {
                       {t.split_group_id && t.kind === "expense" && t.position_id == null && t.contact_id == null && (
                         <button
                           onClick={() => { if (confirm("撤销分摊？相关贷款条目会被合并回单笔全额消费")) unsplit.mutate(t.split_group_id!); }}
-                          className="btn-ghost p-2 sm:p-1.5"
+                          className="btn-ghost p-2.5 sm:p-1.5"
                           title="撤销分摊"
                         ><Split size={14} /></button>
                       )}
                       {(t.kind === "expense" || t.kind === "income") && !t.split_group_id && (
-                        <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2 sm:p-1.5"><Pencil size={14} /></button>
+                        <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2.5 sm:p-1.5"><Pencil size={14} /></button>
                       )}
                       {(t.position_id != null || t.opening_for_position_id != null) && (
                         <button
                           onClick={() => setWalletFixFor(t)}
-                          className="btn-ghost p-2 sm:p-1.5"
+                          className="btn-ghost p-2.5 sm:p-1.5"
                           title="记错钱包了? 把这笔投资挪到别的钱包"
                         ><WalletIcon size={14} /></button>
                       )}
@@ -437,7 +437,7 @@ export default function Transactions() {
                           const msg = t.split_group_id ? "这是分摊订单，删除会一并清掉该组所有条目，确认？" : "删除这笔交易？";
                           if (confirm(msg)) del.mutate(t.id);
                         }}
-                        className="btn-danger p-2 sm:p-1.5"
+                        className="btn-danger p-2.5 sm:p-1.5"
                       ><Trash2 size={14} /></button>
                     </div>
                   </div>
@@ -449,7 +449,7 @@ export default function Transactions() {
         })}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pb-20 text-sm sm:pb-0">
         <div className="flex items-center gap-2">
           <span className="text-xs text-ink-500">每页</span>
           <select className="input w-20" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
@@ -486,7 +486,7 @@ export default function Transactions() {
         type="button"
         onClick={() => { setEditing(null); setOpen(true); }}
         aria-label="添加交易"
-        className={`fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 transition-all duration-300 md:bottom-8 dark:bg-emerald-600 dark:hover:bg-emerald-500 ${fabTucked ? "pointer-events-none translate-x-[150%] opacity-0" : "hover:bg-ink-700"}`}
+        className={`fixed bottom-24 right-5 z-40 flex sm:hidden h-14 w-14 items-center justify-center rounded-full bg-ink-800 text-white shadow-lg shadow-black/30 transition-all duration-300 md:bottom-8 dark:bg-emerald-600 dark:hover:bg-emerald-500 ${fabTucked ? "pointer-events-none translate-x-[150%] opacity-0" : "hover:bg-ink-700"}`}
       >
         <Plus size={22} />
       </button>

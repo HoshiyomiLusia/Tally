@@ -50,7 +50,7 @@ export default function DateField({ value, onChange, className = "" }: {
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };

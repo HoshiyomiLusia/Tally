@@ -27,6 +27,8 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
   virtual: "虚拟账户",
 };
 
+const SYSTEM_CATS = new Set(["对账调整", "坏账损失", "投资收益", "投资亏损"]);
+
 export interface TransactionPrefill {
   kind: "expense" | "income";
   wallet_id: number;
@@ -164,9 +166,11 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     }
   }, [open, wallets.data, walletId, editing, prefill]);
 
+  // 系统分类(对账调整 / 坏账损失 / 投资收益 / 投资亏损)由对账、核销、投资结算自动使用, 不给手选 ——
+  // 普通消费误点进去会混进投资盈亏 / 对账口径。正在编辑的那笔若本身就挂着系统分类, 仍显示它(不改分类也能保存)。
   const filteredCategories = useMemo(
-    () => (categories.data ?? []).filter((c) => c.kind === kind),
-    [categories.data, kind],
+    () => (categories.data ?? []).filter((c) => c.kind === kind && (!SYSTEM_CATS.has(c.name) || c.id === categoryId)),
+    [categories.data, kind, categoryId],
   );
   const topLevel = filteredCategories.filter((c) => c.parent_id === null);
   const childrenByParent = useMemo(() => {
@@ -457,6 +461,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                 placeholder="0"
                 value={amountText}
                 onChange={(e) => setAmountText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate(); } }}
               />
               <button
                 type="button"
@@ -511,6 +516,11 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
           <div className="-mx-5 border-t-4 border-ink-100 px-5 pt-3 dark:border-ink-800">
             <div className="mb-1.5 text-sm font-semibold text-ink-700 dark:text-ink-200">Wallet</div>
+            {walletsByCurrency.size === 0 && (
+              <div className="mb-2 rounded-md border border-dashed border-amber-400/60 bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                还没有任何钱包，记账前先去 <a href="/wallets" className="font-medium underline">Wallet 页</a> 建一个（现金 / 银行卡 / 电子钱包都行）。
+              </div>
+            )}
             <div className="space-y-2">
               {Array.from(walletsByCurrency.entries()).map(([code, list]) => {
                 const byType = new Map<WalletType, Wallet[]>();
@@ -628,7 +638,8 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
           <label className="block">
             <span className="text-xs text-ink-500">备注</span>
-            <input className="input mt-0.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+            <input className="input mt-0.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选"
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate(); } }} />
           </label>
 
           <div className="rounded-md bg-ink-50 p-2 text-sm">

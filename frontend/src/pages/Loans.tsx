@@ -165,7 +165,7 @@ export default function Loans() {
                 <div className="divide-y divide-ink-100 dark:divide-ink-700">
                   {accts.map((a) => (
                     <div key={`${a.contact_id}-${a.currency_code}`} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                      <div className="min-w-0 flex-1">
+                      <div className="w-full min-w-0 sm:w-auto sm:flex-1">
                         <div className="text-xs text-ink-500">
                           {a.currency_code} · 借出 {formatAmount(a.loan_out_total, a.currency_code, currencies.data)} · 已还 {formatAmount(a.loan_repayment_total, a.currency_code, currencies.data)}
                         </div>
