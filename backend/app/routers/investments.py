@@ -13,6 +13,8 @@ from ..schemas.investment import (
     InvestEventView,
     PositionUpdate,
     PositionView,
+    BuyEditRequest,
+    SellEditRequest,
     SellRequest,
     WalletChangeRequest,
 )
@@ -341,6 +343,129 @@ async def change_transaction_wallet(
     for leg in legs.values():
         await session.refresh(leg)
     return list(legs.values())
+
+
+@router.get("/sell/{group_id}", response_model=list[TransactionRead])
+async def get_sell_group(
+    group_id: str,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ).order_by(Transaction.id))).scalars().all()
+    if not rows or not any(r.kind == "invest_sell" for r in rows):
+        raise HTTPException(404, "sell group not found")
+    return rows
+
+
+@router.put("/sell/{group_id}", response_model=list[TransactionRead])
+async def update_sell(
+    group_id: str,
+    payload: SellEditRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """整组重写一次卖出(审计 #155): 卖出腿改成本/钱包/日期/备注, 盈亏腿按 到手−成本 重算 —— 变赚/变亏会换分类与方向,
+    差额归零会删掉盈亏腿, 原本没有的会补一条。持仓清仓状态随剩余成本重算。"""
+    rows = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ))).scalars().all()
+    sell = next((r for r in rows if r.kind == "invest_sell"), None)
+    if sell is None:
+        raise HTTPException(404, "sell group not found")
+    pos = await session.get(Position, sell.position_id)
+    if not pos or pos.user_id != user.id:
+        raise HTTPException(400, "position not found")
+    await _check_wallet(session, user, payload.wallet_id, pos.currency_code)
+    sellable = await _position_remaining(session, pos.id) + sell.amount  # 剔除本笔后可卖的成本
+    if payload.cost_amount > sellable:
+        raise HTTPException(400, f"成本 {payload.cost_amount} 超过该持仓可卖成本 {sellable}")
+    sell.amount = payload.cost_amount
+    sell.wallet_id = payload.wallet_id
+    sell.occurred_on = payload.occurred_on
+    sell.note = payload.note
+    pnl = payload.proceeds - payload.cost_amount
+    pnl_leg = next((r for r in rows if r.kind in ("income", "expense")), None)
+    if pnl == 0:
+        if pnl_leg is not None:
+            await session.delete(pnl_leg)
+    else:
+        kind, amt, cat_name = ("income", pnl, "投资收益") if pnl > 0 else ("expense", -pnl, "投资亏损")
+        cat = await _pnl_cat(session, user, cat_name)
+        if pnl_leg is None:
+            pnl_leg = Transaction(
+                user_id=user.id, wallet_id=payload.wallet_id, position_id=pos.id, category_id=cat,
+                amount=amt, currency_code=pos.currency_code, kind=kind, occurred_on=payload.occurred_on,
+                note=payload.note or f"投资结算 · {pos.name}", split_group_id=group_id,
+            )
+            session.add(pnl_leg)
+        else:
+            pnl_leg.kind = kind
+            pnl_leg.amount = amt
+            pnl_leg.category_id = cat
+            pnl_leg.wallet_id = payload.wallet_id
+            pnl_leg.occurred_on = payload.occurred_on
+            pnl_leg.note = payload.note or f"投资结算 · {pos.name}"
+    await session.flush()
+    pos.status = "open" if await _position_remaining(session, pos.id) > 0 else "closed"
+    await session.commit()
+    rows = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ).order_by(Transaction.id))).scalars().all()
+    return rows
+
+
+@router.patch("/buy/{tid}", response_model=list[TransactionRead])
+async def update_buy(
+    tid: int,
+    payload: BuyEditRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """改一笔买入(审计 #155): 金额 / 钱包 / 日期 / 备注。传的是期初对账收入腿时, 转到它配套的买入腿一起改;
+    期初对(同 split_group)的两腿钱包/金额/日期同步。金额改小不能让持仓剩余成本为负。"""
+    t = await session.get(Transaction, tid)
+    if not t or t.user_id != user.id:
+        raise HTTPException(404, "transaction not found")
+    pair: Transaction | None = None
+    if t.kind == "invest_buy":
+        buy = t
+        if t.split_group_id:
+            pair = (await session.execute(select(Transaction).where(
+                Transaction.user_id == user.id, Transaction.split_group_id == t.split_group_id,
+                Transaction.opening_for_position_id.is_not(None),
+            ).limit(1))).scalars().first()
+    elif t.opening_for_position_id is not None and t.split_group_id:
+        pair = t
+        buy = (await session.execute(select(Transaction).where(
+            Transaction.user_id == user.id, Transaction.split_group_id == t.split_group_id, Transaction.kind == "invest_buy",
+        ).limit(1))).scalars().first()
+        if buy is None:
+            raise HTTPException(400, "找不到这笔期初收入配套的买入")
+    else:
+        raise HTTPException(400, "这不是买入交易")
+    pos = await session.get(Position, buy.position_id)
+    if not pos or pos.user_id != user.id:
+        raise HTTPException(400, "position not found")
+    updates = payload.model_dump(exclude_unset=True)
+    if "wallet_id" in updates:
+        await _check_wallet(session, user, updates["wallet_id"], pos.currency_code)
+    if "amount" in updates:
+        rem = await _position_remaining(session, pos.id)
+        if rem - buy.amount + updates["amount"] < 0:
+            raise HTTPException(400, "改小会让持仓剩余成本为负(卖出已超过剩余买入); 请先改相关卖出")
+    for k, v in updates.items():
+        setattr(buy, k, v)
+        if pair is not None and k in ("wallet_id", "amount", "occurred_on"):
+            setattr(pair, k, v)
+    await session.flush()
+    pos.status = "open" if await _position_remaining(session, pos.id) > 0 else "closed"
+    await session.commit()
+    await session.refresh(buy)
+    if pair is not None:
+        await session.refresh(pair)
+    return [buy] + ([pair] if pair is not None else [])
 
 
 @router.delete("/positions/{position_id}", status_code=status.HTTP_204_NO_CONTENT)

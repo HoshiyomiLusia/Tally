@@ -50,6 +50,23 @@ class SellRequest(BaseModel):
     note: str = ""
 
 
+class SellEditRequest(BaseModel):
+    """整组重写一次卖出(审计 #155): 成本 / 到手 / 钱包 / 日期 / 备注, 盈亏腿按新差额重算(可能新增、改向或删除)。"""
+    wallet_id: int
+    cost_amount: int = Field(gt=0, le=1_000_000_000_000)
+    proceeds: int = Field(ge=0, le=1_000_000_000_000)
+    occurred_on: date
+    note: str = ""
+
+
+class BuyEditRequest(BaseModel):
+    """改一笔买入: 金额 / 钱包 / 日期 / 备注; 期初买入的配套对账收入同步改。"""
+    wallet_id: int | None = None
+    amount: int | None = Field(default=None, gt=0, le=1_000_000_000_000)
+    occurred_on: date | None = None
+    note: str | None = None
+
+
 class WalletChangeRequest(BaseModel):
     """把某笔投资交易(及其同事件的其它腿)整体挪到另一个同币种钱包 —— 记账时点错钱包的订正入口。"""
     wallet_id: int

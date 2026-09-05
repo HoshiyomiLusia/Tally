@@ -392,6 +392,7 @@ interface ForecastItem {
   status: "confirmed" | "due" | "predicted";
   overdue_periods: number;   // due 时累计漏确认期数
   rhythm: { typical_day: number | null; learned_gap: number | null; samples: number };  // 自学习到的节奏
+  split: { total: number; my_share: number; participants: { contact_id: number; share: number }[] } | null;  // 上期是分摊 → 模板
 }
 
 // 前后 7 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
@@ -504,6 +505,11 @@ export function RecurringForecast() {
                   <div className={`${it.status === "confirmed" ? "font-medium text-ink-700 dark:text-ink-200" : "text-rose-600"} ${dim ? "opacity-60" : ""}`}>
                     {it.status === "confirmed" ? "" : "~"}{formatAmount(t.amount, t.currency_code, currencies.data)}
                   </div>
+                  {it.split && (
+                    <div className="text-[10px] text-ink-400" title="上期是分摊记的: 确认扣款会按总额 + 各人份额预填">
+                      总 {formatAmount(it.split.total, t.currency_code, currencies.data)} · 分摊 {it.split.participants.length} 人
+                    </div>
+                  )}
                   {it.status === "due" && (
                     <button
                       onClick={() => setConfirm({
@@ -519,6 +525,7 @@ export function RecurringForecast() {
                           note: t.note,
                           is_recurring: true,
                           recurrence_period_days: t.recurrence_period_days,
+                          split: it.split,
                         },
                       })}
                       className="rounded-full border border-emerald-500 px-2 py-0.5 text-[11px] font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"

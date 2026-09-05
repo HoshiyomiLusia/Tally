@@ -482,10 +482,12 @@ function WalletCardItem({
               ? (debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies))
               : formatAmount(physical, currencyCode, currencies)}
           </div>
-          {isCredit && wallet.credit_limit != null && (
-            <div className={`truncate text-[10px] tabular-nums ${faceSub}`}>
-              可用 {formatAmount(wallet.credit_limit + physical, currencyCode, currencies)} / 额度 {formatAmount(wallet.credit_limit, currencyCode, currencies)}
-            </div>
+          {isCredit && (
+            <button type="button" onClick={onEdit} title="额度变了? 点这里改信用额度" className={`block truncate text-left text-[10px] tabular-nums underline decoration-dotted underline-offset-2 ${faceSub}`}>
+              {wallet.credit_limit != null
+                ? <>可用 {formatAmount(wallet.credit_limit + physical, currencyCode, currencies)} / 额度 {formatAmount(wallet.credit_limit, currencyCode, currencies)}</>
+                : "未设额度 · 点此设置"}
+            </button>
           )}
         </div>
         <div className="flex items-end justify-between">

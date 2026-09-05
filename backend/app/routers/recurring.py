@@ -120,12 +120,26 @@ class RecurringGroup(BaseModel):
     next_due: date | None
 
 
+class SplitParticipantInfo(BaseModel):
+    contact_id: int
+    share: int
+
+
+class SplitTemplate(BaseModel):
+    """最近一期是分摊记的(如房租我付全款、室友分摊一半): 确认下一期按同样的总额/我的份额/各人份额预填。
+    审计 #29: 此前预测只认支出腿(我的份额), 确认时得手动改回总额再重新勾分摊填份额。"""
+    total: int
+    my_share: int
+    participants: list[SplitParticipantInfo]
+
+
 class ForecastItem(BaseModel):
     transaction: TransactionRead
     due: date          # confirmed=本期实际扣款日, due/predicted=预测扣款日
     status: str        # "confirmed" 已确认 | "due" 过期待确认 | "predicted" 未来预测
     overdue_periods: int = 0          # due 时: 到今天为止累计漏了几期(>1 说明连续多期没确认)
     rhythm: LearnedRhythm = LearnedRhythm()
+    split: SplitTemplate | None = None  # 上一期若是分摊组的支出腿, 带上分摊模板
 
 
 @router.get("/upcoming", response_model=list[ForecastItem])
@@ -159,17 +173,36 @@ async def upcoming(
         key = (t.recurrence_group_id, t.id if t.recurrence_group_id is None else None)
         groups.setdefault(key, []).append(t)
 
-    items: list[ForecastItem] = []
     for txs in groups.values():
         txs.sort(key=lambda x: (x.occurred_on, x.id))
+    # 分摊模板: 最新一期若是分摊组的支出腿, 把同组的借出腿(各参与人份额)一次查出来
+    split_ids = {txs[-1].split_group_id for txs in groups.values() if txs[-1].split_group_id}
+    legs_by_group: dict[str, list[Transaction]] = {}
+    if split_ids:
+        for r in (await session.execute(select(Transaction).where(
+            Transaction.user_id == user.id,
+            Transaction.split_group_id.in_(split_ids),
+            Transaction.kind == "loan_out",
+        ))).scalars().all():
+            legs_by_group.setdefault(r.split_group_id, []).append(r)
+
+    items: list[ForecastItem] = []
+    for txs in groups.values():
         latest = txs[-1]
         if not latest.recurrence_period_days:
             continue  # 最新一笔周期被清空 = 已停用(历史仍保留"周期"标记供月度面板用)
         period = latest.recurrence_period_days
         rhythm = _learn([x.occurred_on for x in txs], period)
+        split: SplitTemplate | None = None
+        legs = legs_by_group.get(latest.split_group_id or "", [])
+        if latest.kind == "expense" and legs:
+            split = SplitTemplate(
+                total=latest.amount + sum(l.amount for l in legs), my_share=latest.amount,
+                participants=[SplitParticipantInfo(contact_id=l.contact_id, share=l.amount) for l in legs if l.contact_id is not None],
+            )
         # 本期已记录的真实扣款 (最新一笔落在回看窗内)
         if floor <= latest.occurred_on <= today:
-            items.append(ForecastItem(transaction=latest, due=latest.occurred_on, status="confirmed", rhythm=rhythm))
+            items.append(ForecastItem(transaction=latest, due=latest.occurred_on, status="confirmed", rhythm=rhythm, split=split))
         next_due = _next_after(latest.occurred_on, period, rhythm)
         if next_due <= today:
             # 已过期: 不管过期多久都要露出来(此前落到回看窗之前就静默消失, 33/56 组因此不见了),
@@ -180,9 +213,9 @@ async def upcoming(
                 if nxt > today:
                     break
                 overdue, probe = overdue + 1, nxt
-            items.append(ForecastItem(transaction=latest, due=next_due, status="due", overdue_periods=overdue, rhythm=rhythm))
+            items.append(ForecastItem(transaction=latest, due=next_due, status="due", overdue_periods=overdue, rhythm=rhythm, split=split))
         elif next_due <= horizon:
-            items.append(ForecastItem(transaction=latest, due=next_due, status="predicted", rhythm=rhythm))
+            items.append(ForecastItem(transaction=latest, due=next_due, status="predicted", rhythm=rhythm, split=split))
     items.sort(key=lambda x: x.due)
     return items
 

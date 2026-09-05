@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import CreditRepayForm from "../components/CreditRepayForm";
+import DateField from "../components/DateField";
 import Modal from "../components/Modal";
 import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
@@ -11,7 +12,7 @@ import TransferForm from "../components/TransferForm";
 import { api, type Category, type Contact, type Currency, type Merchant, type Position, type Transaction, type Wallet } from "../lib/api";
 import { invalidateMoney } from "../lib/invalidate";
 import { useAuth } from "../lib/auth";
-import { formatAmount, todayIso } from "../lib/format";
+import { formatAmount, todayIso, parseAmount } from "../lib/format";
 
 interface FrequentItem {
   wallet_id: number;
@@ -422,15 +423,17 @@ export default function Transactions() {
                           title="撤销分摊"
                         ><Split size={14} /></button>
                       )}
-                      {(t.kind === "expense" || t.kind === "income") && !t.split_group_id && (
-                        <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2.5 sm:p-1.5"><Pencil size={14} /></button>
+                      {/* 独立收支 → 普通编辑; AA 分摊的支出腿/借出腿 → 整组编辑(审计 #154); 投资腿 → 投资编辑弹窗(#155) */}
+                      {((t.kind === "expense" || t.kind === "income") && !t.split_group_id
+                        || t.split_group_id && t.position_id == null && t.opening_for_position_id == null && (t.kind === "expense" && t.contact_id == null || t.kind === "loan_out")) && (
+                        <button onClick={() => { setEditing(t); setOpen(true); }} className="btn-ghost p-2.5 sm:p-1.5" title={t.split_group_id ? "编辑整组分摊(总额 / 各人份额 / 参与人)" : "编辑"}><Pencil size={14} /></button>
                       )}
                       {(t.position_id != null || t.opening_for_position_id != null) && (
                         <button
                           onClick={() => setWalletFixFor(t)}
                           className="btn-ghost p-2.5 sm:p-1.5"
-                          title="记错钱包了? 把这笔投资挪到别的钱包"
-                        ><WalletIcon size={14} /></button>
+                          title="编辑这笔投资(金额 / 钱包 / 日期 / 备注)"
+                        ><Pencil size={14} /></button>
                       )}
                       <button
                         onClick={() => {
@@ -541,7 +544,12 @@ export default function Transactions() {
 }
 
 // 投资交易记错钱包的订正: 后端把这笔所属投资事件的全部腿(卖出+盈亏 / 期初买入+对账收入)一起挪到新钱包。
-// 只能换同币种钱包 —— 换币种会让交易币种与钱包币种脱钩(与通用编辑同口径)。
+// 投资交易编辑(审计 #155): 卖出组改 成本/到手/钱包/日期/备注(盈亏腿由后端按差额重算);
+// 买入腿改 金额/钱包/日期/备注(期初买入的配套对账收入同步)。此前只能换钱包, 记错金额只能删了重记。
+function formatAmountInput(amount: number, digits: number): string {
+  return (amount / Math.pow(10, digits)).toString();
+}
+
 function InvestWalletFixModal({ tx, wallets, currencies, onClose }: {
   tx: Transaction | null;
   wallets: Wallet[];
@@ -549,47 +557,108 @@ function InvestWalletFixModal({ tx, wallets, currencies, onClose }: {
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const isSell = !!tx && !!tx.split_group_id && tx.opening_for_position_id == null && (tx.kind === "invest_sell" || tx.position_id != null);
+  const group = useQuery({
+    queryKey: ["sell-group", tx?.split_group_id],
+    queryFn: async () => (await api.get<Transaction[]>(`/investments/sell/${tx!.split_group_id}`)).data,
+    enabled: isSell,
+  });
+  const digits = currencies.find((c) => c.code === tx?.currency_code)?.decimal_digits ?? 2;
   const [walletId, setWalletId] = useState<number | null>(null);
+  const [amountText, setAmountText] = useState("");     // 买入金额 / 卖出成本
+  const [proceedsText, setProceedsText] = useState(""); // 卖出到手
+  const [occurredOn, setOccurredOn] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => { setWalletId(tx?.wallet_id ?? null); setError(""); }, [tx]);
+  useEffect(() => {
+    if (!tx) return;
+    setError("");
+    setWalletId(tx.wallet_id);
+    setOccurredOn(tx.occurred_on);
+    if (isSell) {
+      const legs = group.data ?? [];
+      const sell = legs.find((l) => l.kind === "invest_sell");
+      const pnl = legs.find((l) => l.kind === "income" || l.kind === "expense");
+      if (!sell) return;
+      const proceeds = sell.amount + (pnl ? (pnl.kind === "income" ? pnl.amount : -pnl.amount) : 0);
+      setAmountText(formatAmountInput(sell.amount, digits));
+      setProceedsText(formatAmountInput(proceeds, digits));
+      setNote(sell.note ?? "");
+      setWalletId(sell.wallet_id);
+      setOccurredOn(sell.occurred_on);
+    } else {
+      setAmountText(formatAmountInput(tx.amount, digits));
+      setNote(tx.note ?? "");
+    }
+  }, [tx, group.data, isSell, digits]);
 
   const save = useMutation({
     mutationFn: async () => {
       if (!tx || !walletId) return;
-      await api.patch(`/investments/transactions/${tx.id}/wallet`, { wallet_id: walletId });
+      if (isSell) {
+        const cost = parseAmount(amountText || "0", digits), proceeds = parseAmount(proceedsText || "0", digits);
+        if (cost <= 0) throw new Error("成本需大于 0");
+        await api.put(`/investments/sell/${tx.split_group_id}`, { wallet_id: walletId, cost_amount: cost, proceeds, occurred_on: occurredOn, note });
+      } else {
+        const amount = parseAmount(amountText || "0", digits);
+        if (amount <= 0) throw new Error("金额需大于 0");
+        await api.patch(`/investments/buy/${tx.id}`, { wallet_id: walletId, amount, occurred_on: occurredOn, note });
+      }
     },
     onSuccess: () => { invalidateMoney(qc); onClose(); },
     onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "保存失败";
       const r = (e as { response?: { data?: { detail?: string } } }).response;
-      setError(r?.data?.detail ?? "保存失败");
+      setError(r?.data?.detail ?? msg);
     },
   });
 
   if (!tx) return null;
   const options = wallets.filter((w) => w.currency_code === tx.currency_code && (!w.archived || w.id === tx.wallet_id));
-  const cur = wallets.find((w) => w.id === tx.wallet_id);
+  const cost = parseAmount(amountText || "0", digits), proceeds = parseAmount(proceedsText || "0", digits);
+  const pnl = proceeds - cost;
   return (
-    <Modal onClose={onClose} title="换个钱包" maxW="max-w-sm">
+    <Modal onClose={onClose} title={isSell ? "编辑卖出" : (tx.opening_for_position_id != null ? "编辑期初买入" : "编辑买入")} maxW="max-w-sm">
       <div className="space-y-3">
-        <div className="rounded-md bg-ink-50 p-2 text-xs text-ink-500 dark:bg-ink-800/40">
-          这笔投资现在记在 <b className="text-ink-800 dark:text-ink-100">{cur?.name ?? "?"}</b> 上
-          （{formatAmount(tx.amount, tx.currency_code, currencies)}）。
-          换钱包会把同一笔投资的所有条目（卖出与对应的盈亏 / 期初买入与配套对账）一起挪过去，金额与日期不变。
-        </div>
+        {isSell && group.isLoading && <div className="text-xs text-ink-500">加载中…</div>}
         <label className="block">
-          <span className="text-xs text-ink-500">挪到（{tx.currency_code}）</span>
+          <span className="text-xs text-ink-500">{isSell ? "回款到" : "出账"}钱包（{tx.currency_code}）</span>
           <select className="input mt-1" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value) || null)}>
             {options.map((w) => <option key={w.id} value={w.id}>{w.name}{w.archived ? "（已归档）" : ""}</option>)}
           </select>
         </label>
+        <label className="block">
+          <span className="text-xs text-ink-500">{isSell ? "卖出对应的成本" : "买入金额"}</span>
+          <input className="input mt-1" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} autoFocus />
+        </label>
+        {isSell && (
+          <label className="block">
+            <span className="text-xs text-ink-500">到手金额</span>
+            <input className="input mt-1" inputMode="decimal" value={proceedsText} onChange={(e) => setProceedsText(e.target.value)} />
+            <div className={`mt-1 text-xs ${pnl > 0 ? "text-emerald-600" : pnl < 0 ? "text-rose-600" : "text-ink-400"}`}>
+              {pnl === 0 ? "盈亏 0（不生成盈亏记录）" : `${pnl > 0 ? "盈利" : "亏损"} ${formatAmount(Math.abs(pnl), tx.currency_code, currencies)}，保存后盈亏记录按此重算`}
+            </div>
+          </label>
+        )}
+        <div className="grid grid-cols-1 gap-2">
+          <div>
+            <span className="text-xs text-ink-500">日期</span>
+            <DateField value={occurredOn} onChange={setOccurredOn} className="mt-1" />
+          </div>
+          <label className="block">
+            <span className="text-xs text-ink-500">备注</span>
+            <input className="input mt-1" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
+          </label>
+        </div>
+        {tx.opening_for_position_id != null || (tx.kind === "invest_buy" && tx.split_group_id) ? (
+          <div className="text-[11px] text-ink-400">期初持仓的买入与配套的对账收入会一起改（钱包 / 金额 / 日期同步）。</div>
+        ) : null}
         {error && <div className="text-sm text-red-600">{error}</div>}
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="btn-ghost">取消</button>
-          <button
-            onClick={() => save.mutate()}
-            disabled={save.isPending || !walletId || walletId === tx.wallet_id}
-            className="btn-primary"
-          >{save.isPending ? "保存中…" : "确认换钱包"}</button>
+          <button onClick={() => save.mutate()} disabled={save.isPending || !walletId || (isSell && !group.data)} className="btn-primary">
+            {save.isPending ? "保存中…" : "保存"}
+          </button>
         </div>
       </div>
     </Modal>

@@ -40,6 +40,8 @@ export interface TransactionPrefill {
   note: string;
   is_recurring: boolean;
   recurrence_period_days: number | null;
+  // 审计 #29: 上一期是分摊记的 → 按总额 + 各人份额预填, 提交走分摊接口并入同一周期组
+  split?: { total: number; my_share: number; participants: { contact_id: number; share: number }[] } | null;
 }
 
 interface Props {
@@ -59,6 +61,14 @@ interface ParticipantState {
 export default function TransactionForm({ open, onClose, editing, prefill, recurrenceSourceId }: Props) {
   const qc = useQueryClient();
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data, enabled: open });
+  // 审计 #154: 编辑 AA 分摊组(点的是支出腿或借出腿都行) —— 拉整组腿, 按总额/我的份额/各人份额预填, 保存整组重写
+  const isSplitEdit = !!editing && !!editing.split_group_id && editing.position_id == null && editing.opening_for_position_id == null
+    && (editing.kind === "expense" && editing.contact_id == null || editing.kind === "loan_out");
+  const splitGroup = useQuery({
+    queryKey: ["split-group", editing?.split_group_id],
+    queryFn: async () => (await api.get<Transaction[]>(`/loans/split/${editing!.split_group_id}`)).data,
+    enabled: open && isSplitEdit,
+  });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data, enabled: open });
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data, enabled: open });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data, enabled: open });
@@ -92,25 +102,37 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     const key = editing ? `edit:${editing.id}` : prefill ? `prefill:${recurrenceSourceId ?? "x"}:${prefill.occurred_on}` : "new";
     // editing / prefill 需要 currencies / merchants 才能算对金额单位和回填商家名
     if ((editing || prefill) && (!currencies.data || !merchants.data)) return;
+    if (isSplitEdit && !splitGroup.data) return;
     if (initKey.current === key) return;
     initKey.current = key;
     if (editing) {
-      setKind(editing.kind === "income" ? "income" : "expense");
-      setWalletId(editing.wallet_id);
-      setCategoryId(editing.category_id);
-      setMerchantId(editing.merchant_id);
-      const initName = merchants.data?.find((m) => m.id === editing.merchant_id)?.name ?? "";
+      // 编辑分摊组时以支出腿为主(没有支出腿的纯代付组用第一条借出腿), 分类/商家/钱包/日期/备注取它
+      const legs = isSplitEdit ? (splitGroup.data ?? []) : [];
+      const base = isSplitEdit ? (legs.find((l) => l.kind === "expense") ?? legs[0] ?? editing) : editing;
+      setKind(base.kind === "income" ? "income" : "expense");
+      setWalletId(base.wallet_id);
+      setCategoryId(base.category_id);
+      setMerchantId(base.merchant_id);
+      const initName = merchants.data?.find((m) => m.id === base.merchant_id)?.name ?? "";
       setMerchantInput(initName);
       if (merchantInputRef.current) merchantInputRef.current.value = initName;
-      setOccurredOn(editing.occurred_on);
-      setNote(editing.note);
-      setIsRecurring(editing.is_recurring);
-      setRecurrenceText(editing.recurrence_period_days?.toString() ?? "");
+      setOccurredOn(base.occurred_on);
+      setNote(base.note);
+      setIsRecurring(base.is_recurring);
+      setRecurrenceText(base.recurrence_period_days?.toString() ?? "");
       const cur = currencies.data?.find((c) => c.code === editing.currency_code);
       const digits = cur?.decimal_digits ?? 2;
-      setAmountText((editing.amount / Math.pow(10, digits)).toString());
-      setSplitOn(false);
-      setParticipants([]);
+      if (isSplitEdit) {
+        const loans = legs.filter((l) => l.kind === "loan_out" && l.contact_id != null);
+        const total = legs.reduce((s, l) => s + (l.kind === "expense" || l.kind === "loan_out" ? l.amount : 0), 0);
+        setAmountText(formatAmountInput(total, digits));
+        setSplitOn(true);
+        setParticipants(loans.map((l) => ({ contact_id: l.contact_id as number, share_text: formatAmountInput(l.amount, digits) })));
+      } else {
+        setAmountText((editing.amount / Math.pow(10, digits)).toString());
+        setSplitOn(false);
+        setParticipants([]);
+      }
     } else if (prefill) {
       setKind(prefill.kind);
       setWalletId(prefill.wallet_id);
@@ -125,9 +147,16 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       setRecurrenceText(prefill.recurrence_period_days?.toString() ?? "");
       const cur = currencies.data?.find((c) => c.code === prefill.currency_code);
       const digits = cur?.decimal_digits ?? 2;
-      setAmountText((prefill.amount / Math.pow(10, digits)).toString());
-      setSplitOn(false);
-      setParticipants([]);
+      if (prefill.split && prefill.split.participants.length > 0) {
+        // 上一期是分摊(如房租我付全款、室友分摊): 金额填总额, 勾上分摊, 参与人与份额照上期预填
+        setAmountText(formatAmountInput(prefill.split.total, digits));
+        setSplitOn(true);
+        setParticipants(prefill.split.participants.map((sp) => ({ contact_id: sp.contact_id, share_text: formatAmountInput(sp.share, digits) })));
+      } else {
+        setAmountText((prefill.amount / Math.pow(10, digits)).toString());
+        setSplitOn(false);
+        setParticipants([]);
+      }
     } else {
       setKind("expense");
       setWalletId(null);  // 审计 #112: 新建时清空, 让默认钱包 effect 重选第一个未归档钱包(不继承上次编辑的钱包/币种)
@@ -146,13 +175,26 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     setStagedFiles([]);
     setError("");
     setPadOpen(false);
-    setMyShareText("");  // 重开表单要清"我的分摊额", 否则陈旧值会抑制自动均摊(审计: 唯一漏重置的字段)
+    // 重开表单要清"我的分摊额", 否则陈旧值会抑制自动均摊(审计: 唯一漏重置的字段); 分摊模板预填时按上期我的份额
+    setMyShareText((() => {
+      if (prefill?.split && prefill.split.participants.length > 0)
+        return formatAmountInput(prefill.split.my_share, currencies.data?.find((c) => c.code === prefill.currency_code)?.decimal_digits ?? 2);
+      if (isSplitEdit && editing) {
+        const exp = (splitGroup.data ?? []).find((l) => l.kind === "expense");
+        return formatAmountInput(exp?.amount ?? 0, currencies.data?.find((c) => c.code === editing.currency_code)?.decimal_digits ?? 2);
+      }
+      return "";
+    })());
     setTimeout(() => amountRef.current?.focus(), 50);
-  }, [open, editing, prefill, recurrenceSourceId, merchants.data, currencies.data]);
+  }, [open, editing, prefill, recurrenceSourceId, merchants.data, currencies.data, splitGroup.data, isSplitEdit]);
 
   const wallet = wallets.data?.find((w) => w.id === walletId) ?? null;
   const digits = currencies.data?.find((c) => c.code === wallet?.currency_code)?.decimal_digits ?? 2;
-  const totalAmount = parseAmount(amountText || "0", digits);
+  // 同商家/分类短时间多笔不同金额(如三笔游戏充值 30/30/128): 金额框用空格或 / 隔开一次填完, 各记一笔, 其余字段共用。
+  // 只在新建 + 非分摊时生效; 此前 "30 30 128" 会被 parseFloat 静默截成 30 记一笔。
+  const amountParts = amountText.split(/[\s\/]+/).map((x) => x.trim()).filter(Boolean);
+  const multiAmounts = !editing && !splitOn && amountParts.length > 1 ? amountParts.map((x) => parseAmount(x, digits)).filter((v) => v > 0) : null;
+  const totalAmount = multiAmounts ? multiAmounts.reduce((a, b) => a + b, 0) : parseAmount(amountText || "0", digits);
   const activeContacts = (contacts.data ?? []).filter((c) => !c.archived);
 
   useEffect(() => {
@@ -320,7 +362,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
   }
 
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (_opts: { again?: boolean }) => {
       if (!wallet) throw new Error("请选择 Wallet");
       // 币种小数位没加载出来时, digits 会兜底成 2, 对 JPY/KRW(0 位)会把金额放大 100 倍落库。
       // 宁可拦下也不能记错: currencies 未就绪就不许保存(审计发现的 100 倍落库根因)。
@@ -351,7 +393,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
       }
 
       let attachTo: number | null = null;
-      if (splitOn && !editing) {
+      if (splitOn && (!editing || isSplitEdit)) {
         if (participants.length === 0) throw new Error("请至少选择 1 个分摊参与人");
         // 挡住"份额=0 的参与人": 后端会 continue 跳过他, 但 shareDiff 仍为 0 显示✓,
         // 用户以为把人加进了 AA、对方却一分不欠(均摊后又加人常触发)。让用户先分配或移除。
@@ -372,8 +414,12 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
           my_share: myShare,
           participants: participants.map((p) => ({ contact_id: p.contact_id, share: parseAmount(p.share_text || "0", digits) })),
         };
-        const r = await api.post<Transaction[]>("/loans/split", payload);
-        attachTo = r.data[0]?.id ?? null;
+        if (isSplitEdit && editing) {
+          await api.put(`/loans/split/${editing.split_group_id}`, payload);  // 审计 #154: 整组重写
+        } else {
+          const r = await api.post<Transaction[]>("/loans/split", payload);
+          attachTo = r.data[0]?.id ?? null;
+        }
       } else {
         const payload = {
           wallet_id: wallet.id,
@@ -390,6 +436,17 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
         };
         if (editing) {
           await api.patch(`/transactions/${editing.id}`, payload);
+        } else if (multiAmounts && multiAmounts.length > 1) {
+          // 多笔: 逐笔落库(附件挂第一笔; 周期设定只挂第一笔, 后面几笔不重复挂周期)
+          for (let i = 0; i < multiAmounts.length; i++) {
+            const r = await api.post<Transaction>("/transactions", {
+              ...payload, amount: multiAmounts[i],
+              is_recurring: i === 0 ? payload.is_recurring : false,
+              recurrence_period_days: i === 0 ? payload.recurrence_period_days : null,
+              recurrence_source_id: i === 0 ? payload.recurrence_source_id : null,
+            });
+            if (i === 0) attachTo = r.data.id;
+          }
         } else {
           const r = await api.post<Transaction>("/transactions", payload);
           attachTo = r.data.id;
@@ -406,10 +463,19 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
         }
       }
     },
-    onSuccess: () => {
+    onSuccess: (_d, opts) => {
       invalidateMoney(qc);
       qc.invalidateQueries({ queryKey: ["merchants"] });
-      onClose();
+      if (opts?.again) {
+        // 「保存并再记一笔」: 钱包 / 分类 / 商家 / 日期保留, 只清金额、备注、附件, 光标回到金额
+        setAmountText("");
+        setNote("");
+        setStagedFiles([]);
+        setError("");
+        setTimeout(() => amountRef.current?.focus(), 50);
+      } else {
+        onClose();
+      }
     },
     onError: (e: unknown) => {
       let msg = e instanceof Error ? e.message : "保存失败";
@@ -447,7 +513,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
             >支出</button>
             <button
               type="button"
-              onClick={() => { if (kind !== "income") setCategoryId(null); setKind("income"); setSplitOn(false); }}
+              onClick={() => { if (isSplitEdit) return; if (kind !== "income") setCategoryId(null); setKind("income"); setSplitOn(false); }}
               className={`flex-1 rounded-md py-2 text-sm font-medium ${kind === "income" ? "bg-emerald-600 text-white" : "bg-ink-100 text-ink-600 dark:bg-ink-700/40 dark:text-ink-300"}`}
             >收入</button>
           </div>
@@ -461,7 +527,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                 placeholder="0"
                 value={amountText}
                 onChange={(e) => setAmountText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate({}); } }}
               />
               <button
                 type="button"
@@ -488,6 +554,14 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                   </button>
                 ))}
               </div>
+            )}
+            {multiAmounts && multiAmounts.length > 1 && (
+              <div className="mt-1 text-xs text-emerald-600">
+                将记 {multiAmounts.length} 笔：{multiAmounts.map((v) => formatAmount(v, wallet?.currency_code ?? "", currencies.data)).join(" / ")} · 合计 {formatAmount(totalAmount, wallet?.currency_code ?? "", currencies.data)}
+              </div>
+            )}
+            {!editing && !splitOn && !multiAmounts && (
+              <div className="mt-1 text-[10px] text-ink-400">多笔不同金额可用空格隔开一次记完，如「30 30 128」</div>
             )}
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {[
@@ -639,7 +713,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
           <label className="block">
             <span className="text-xs text-ink-500">备注</span>
             <input className="input mt-0.5" value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate(); } }} />
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !save.isPending) { e.preventDefault(); save.mutate({}); } }} />
           </label>
 
           <div className="rounded-md bg-ink-50 p-2 text-sm">
@@ -688,10 +762,11 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
             )}
           </div>
 
-          {kind === "expense" && !editing && (
+          {kind === "expense" && (!editing || isSplitEdit) && (
             <div className="rounded-md bg-ink-50 p-2">
               <label className="flex items-center gap-1.5 text-sm">
-                <input type="checkbox" checked={splitOn} onChange={(e) => setSplitOn(e.target.checked)} /> 分摊订单（AA）
+                <input type="checkbox" checked={splitOn} disabled={isSplitEdit} onChange={(e) => setSplitOn(e.target.checked)} /> 分摊订单（AA）
+                {isSplitEdit && <span className="text-[11px] text-ink-400">· 正在整组编辑; 要变回普通支出请用账单里的「撤销分摊」</span>}
               </label>
               {splitOn && (
                 <div className="mt-2 space-y-2">
@@ -781,8 +856,13 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end sm:pt-1">
             <button onClick={onClose} className="btn-ghost min-h-[44px] sm:min-h-0">取消</button>
-            <button onClick={() => save.mutate()} disabled={save.isPending} className="btn-primary min-h-[44px] sm:min-h-0">
-              {save.isPending ? "保存中…" : "保存"}
+            {!editing && (
+              <button onClick={() => save.mutate({ again: true })} disabled={save.isPending} className="btn-ghost min-h-[44px] border border-ink-200 sm:min-h-0 dark:border-ink-700" title="保存这笔后表单不关, 钱包/分类/商家/日期保留, 只清金额和备注">
+                保存并再记一笔
+              </button>
+            )}
+            <button onClick={() => save.mutate({})} disabled={save.isPending} className="btn-primary min-h-[44px] sm:min-h-0">
+              {save.isPending ? "保存中…" : multiAmounts && multiAmounts.length > 1 ? `保存 ${multiAmounts.length} 笔` : "保存"}
             </button>
           </div>
         </div>

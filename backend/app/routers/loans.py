@@ -155,6 +155,107 @@ async def create_split(
     return created
 
 
+@router.get("/split/{group_id}", response_model=list[TransactionRead])
+async def get_split(
+    group_id: str,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ).order_by(Transaction.id))).scalars().all()
+    if not rows:
+        raise HTTPException(404, "split group not found")
+    return rows
+
+
+@router.put("/split/{group_id}", response_model=list[TransactionRead])
+async def update_split(
+    group_id: str,
+    payload: SplitCreateRequest,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """整组重写 AA 分摊(审计 #154): 总额 / 我的份额 / 各人份额 / 加减参与人 / 钱包 / 日期 / 分类 / 商家 / 备注 / 周期。
+    分摊各腿有"总额 = 我的份额 + Σ各人份额"的组内约束, 通用编辑锁死单腿; 这是整组订正口。
+    支出腿保留 id(附件、周期组不丢); 借出腿按联系人对齐: 还在的更新、去掉的删除、新加的创建。"""
+    rows = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ))).scalars().all()
+    if not rows:
+        raise HTTPException(404, "split group not found")
+    if any(r.position_id is not None or r.kind in ("invest_buy", "invest_sell", "loan_repayment") for r in rows):
+        raise HTTPException(400, "该分组不是 AA 分摊(投资结算 / 坏账核销请在对应功能里改)")
+    wallet = await _check_wallet(session, user, payload.wallet_id, payload.currency_code)
+    contact_ids = [p.contact_id for p in payload.participants]
+    if len(set(contact_ids)) != len(contact_ids):
+        raise HTTPException(400, "duplicate participants")
+    for p in payload.participants:
+        await _check_contact(session, user, p.contact_id)
+    if payload.my_share + sum(p.share for p in payload.participants) != payload.amount:
+        raise HTTPException(400, f"shares sum {payload.my_share + sum(p.share for p in payload.participants)} != total {payload.amount}")
+    if payload.category_id is not None:
+        c = await session.get(Category, payload.category_id)
+        if not c or c.user_id != user.id:
+            raise HTTPException(400, "invalid category_id")
+
+    exp = next((r for r in rows if r.kind == "expense"), None)
+    loans = {r.contact_id: r for r in rows if r.kind == "loan_out"}
+
+    def apply_common(t: Transaction) -> None:
+        if t.wallet_id != wallet.id:
+            t.attributed_wallet_id = None  # 换出账钱包 → 旧名义归属作废(#107 同口径)
+        t.wallet_id = wallet.id
+        t.currency_code = payload.currency_code
+        t.category_id = payload.category_id
+        t.merchant_id = payload.merchant_id
+        t.occurred_on = payload.occurred_on
+        t.note = payload.note
+
+    if payload.my_share > 0:
+        if exp is None:
+            exp = Transaction(user_id=user.id, wallet_id=wallet.id, amount=payload.my_share, currency_code=payload.currency_code,
+                              kind="expense", occurred_on=payload.occurred_on, split_group_id=group_id)
+            session.add(exp)
+        apply_common(exp)
+        exp.amount = payload.my_share
+        exp.is_recurring = payload.is_recurring
+        exp.recurrence_period_days = payload.recurrence_period_days if payload.is_recurring else None
+        if payload.is_recurring and not exp.recurrence_group_id:
+            exp.recurrence_group_id = str(uuid.uuid4())
+    elif exp is not None:
+        # 我的份额改成 0 = 纯代付: 支出腿删掉(附件随之级联; 与创建口径一致, 纯代付不挂周期)
+        await session.delete(exp)
+        exp = None
+
+    kept: set[int] = set()
+    for p in payload.participants:
+        if p.share <= 0:
+            continue
+        kept.add(p.contact_id)
+        leg = loans.get(p.contact_id)
+        if leg is None:
+            leg = Transaction(user_id=user.id, wallet_id=wallet.id, contact_id=p.contact_id, amount=p.share,
+                              currency_code=payload.currency_code, kind="loan_out", occurred_on=payload.occurred_on, split_group_id=group_id)
+            session.add(leg)
+        apply_common(leg)
+        leg.amount = p.share
+    for cid, leg in loans.items():
+        if cid not in kept:
+            await session.delete(leg)
+    await session.flush()
+    # #133: 只剩一条借出腿且没有支出腿 = 单人全额代付, 去掉组标记让它成为可独立编辑的借出
+    remaining = (await session.execute(select(Transaction).where(
+        Transaction.user_id == user.id, Transaction.split_group_id == group_id,
+    ))).scalars().all()
+    if len(remaining) == 1 and remaining[0].kind == "loan_out":
+        remaining[0].split_group_id = None
+    await session.commit()
+    for r in remaining:
+        await session.refresh(r)
+    return remaining
+
+
 @router.post("/repayment", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)
 async def receive_repayment(
     payload: RepaymentRequest,
