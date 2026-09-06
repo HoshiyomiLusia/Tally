@@ -72,6 +72,8 @@ async def _apply_filters(stmt, f: TransactionFilter, user: User, session: AsyncS
         ).scalars().all()
         cat_ids = [f.category_id, *child_ids]
         stmt = stmt.where(Transaction.category_id.in_(cat_ids))
+    if f.merchant_id:
+        stmt = stmt.where(Transaction.merchant_id == f.merchant_id)
     if f.currency_code:
         stmt = stmt.where(Transaction.currency_code == f.currency_code)
     if f.kind:

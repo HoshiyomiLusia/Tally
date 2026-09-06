@@ -89,6 +89,7 @@ class TransactionFilter(BaseModel):
     end: date | None = None
     wallet_id: int | None = None
     category_id: int | None = None
+    merchant_id: int | None = None   # 仪表盘 Top 商家下钻用
     currency_code: str | None = None
     kind: TransactionKind | None = None
     contact_id: int | None = None

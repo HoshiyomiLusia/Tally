@@ -3,8 +3,9 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import Modal from "../components/Modal";
 import MonthPicker from "../components/MonthPicker";
-import { api, type Category, type Currency } from "../lib/api";
+import { api, type Category, type Currency, type Merchant, type Transaction } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
 
@@ -292,6 +293,31 @@ export default function Stats({
   }, [topMerch.data, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // 嵌入首页矩形内时, 子块用浅色 tile 而非整张 .card (避免卡片套卡片)
+  // 分类 / 商家下钻: 点一行弹窗列出这个月该分类(含子类)或该商家的每一笔
+  const [drill, setDrill] = useState<{ kind: "category" | "merchant"; id: number; name: string; emoji: string } | null>(null);
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return { start: `${month}-01`, end: `${month}-${String(last).padStart(2, "0")}` };
+  }, [month]);
+  const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data, enabled: drill !== null });
+  const drillRows = useQuery({
+    queryKey: ["stats-drill", drill?.kind, drill?.id, month, activeCurrency],
+    enabled: drill !== null,
+    queryFn: async () => {
+      const p = new URLSearchParams({ start: monthRange.start, end: monthRange.end, kind: "expense", limit: "500" });
+      p.set(drill!.kind === "category" ? "category_id" : "merchant_id", String(drill!.id));
+      if (activeCurrency) p.set("currency_code", activeCurrency);
+      return (await api.get<Transaction[]>(`/transactions?${p}`)).data;
+    },
+  });
+  const drillSorted = useMemo(() => (drillRows.data ?? []).slice().sort((a, b) => b.amount - a.amount), [drillRows.data]);
+  const drillTotals = useMemo(() => {
+    const per = new Map<string, number>();
+    for (const t of drillSorted) per.set(t.currency_code, (per.get(t.currency_code) ?? 0) + t.amount);
+    return Array.from(per.entries());
+  }, [drillSorted]);
+
   const box = embedded ? "rounded-xl bg-ink-50 dark:bg-ink-800/40" : "card";
 
   return (
@@ -364,13 +390,20 @@ export default function Stats({
           <div className={`${box} divide-y divide-ink-100 p-0`}>
             {topMerchForCurrency.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
             {topMerchForCurrency.map((m, i) => (
-              <div key={m.merchant_id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <button
+                key={m.merchant_id}
+                type="button"
+                disabled={m.merchant_id == null}
+                onClick={() => m.merchant_id != null && setDrill({ kind: "merchant", id: m.merchant_id, name: m.merchant_name, emoji: "" })}
+                className="flex w-full items-center justify-between px-4 py-2 text-left text-sm enabled:hover:bg-ink-50 enabled:dark:hover:bg-ink-800/60"
+                title={m.merchant_id != null ? "点开看这个月在这家的每一笔" : undefined}
+              >
                 <div>
                   <div className="font-medium">#{i + 1} {m.merchant_name}</div>
                   <div className="text-xs text-ink-500">{m.count} 笔</div>
                 </div>
                 <div className="text-rose-600">{formatAmount(m.total, m.currency_code, currencies.data)}</div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -385,7 +418,14 @@ export default function Stats({
             {categoryGroups.length === 0 && <div className="py-6 text-center text-sm text-ink-500">没有数据</div>}
             {categoryGroups.map((g) => (
               <div key={g.id ?? `null-${g.name}`} className="px-4 py-2">
-                <div className="flex items-center justify-between text-sm">
+                <div
+                  role={g.id != null ? "button" : undefined}
+                  tabIndex={g.id != null ? 0 : undefined}
+                  onClick={() => g.id != null && setDrill({ kind: "category", id: g.id, name: g.name, emoji: g.emoji })}
+                  onKeyDown={(e) => { if (g.id != null && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setDrill({ kind: "category", id: g.id, name: g.name, emoji: g.emoji }); } }}
+                  className={`flex items-center justify-between rounded text-sm ${g.id != null ? "cursor-pointer hover:bg-ink-100 dark:hover:bg-ink-700/50" : ""}`}
+                  title={g.id != null ? "点开看这个月这个大类(含子类)的每一笔" : undefined}
+                >
                   <div className="flex items-center gap-1.5 truncate">
                     <span>{g.emoji}</span>
                     <span className="font-medium">{g.name}</span>
@@ -398,7 +438,15 @@ export default function Stats({
                 {g.children.length > 0 && (
                   <div className="mt-1 space-y-0.5 pl-5">
                     {g.children.map((c) => (
-                      <div key={c.id ?? `null-${c.name}`} className="flex items-center justify-between text-xs text-ink-500">
+                      <div
+                        key={c.id ?? `null-${c.name}`}
+                        role={c.id != null ? "button" : undefined}
+                        tabIndex={c.id != null ? 0 : undefined}
+                        onClick={() => c.id != null && setDrill({ kind: "category", id: c.id, name: c.name, emoji: c.emoji })}
+                        onKeyDown={(e) => { if (c.id != null && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setDrill({ kind: "category", id: c.id, name: c.name, emoji: c.emoji }); } }}
+                        className={`flex items-center justify-between rounded text-xs text-ink-500 ${c.id != null ? "cursor-pointer hover:bg-ink-100 dark:hover:bg-ink-700/50" : ""}`}
+                        title={c.id != null ? "点开看这个月这个小类的每一笔" : undefined}
+                      >
                         <span className="truncate">{c.emoji} {c.name}</span>
                         <span className="flex shrink-0 items-center gap-1">
                           <DeltaTag current={c.amount} previous={c.prev} small />
@@ -500,6 +548,50 @@ export default function Stats({
         </div>
       </section>
 
+      {drill && (
+        <Modal onClose={() => setDrill(null)} maxW="max-w-2xl" title={
+          <span className="flex flex-wrap items-baseline gap-1.5">
+            <span>{drill.emoji} {drill.name}</span>
+            <span className="text-xs font-normal text-ink-500">
+              {month} · {drill.kind === "category" ? "该分类(含子类)" : "该商家"}的支出
+              {activeCurrency ? ` · 仅 ${activeCurrency}` : ""}
+            </span>
+          </span>
+        }>
+          {drillRows.isPending && <div className="py-8 text-center text-sm text-ink-500">加载中…</div>}
+          {!drillRows.isPending && drillSorted.length === 0 && (
+            <div className="py-8 text-center text-sm text-ink-500">这个月没有记录</div>
+          )}
+          {drillSorted.length > 0 && (
+            <>
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                <span className="text-ink-500">{drillSorted.length} 笔 · 按金额从大到小</span>
+                <span className="flex flex-wrap gap-2 font-semibold text-rose-600">
+                  {drillTotals.map(([code, amt]) => <span key={code}>{formatAmount(amt, code, currencies.data)}</span>)}
+                </span>
+              </div>
+              <div className="max-h-[60vh] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-100 dark:divide-ink-800 dark:border-ink-800">
+                {drillSorted.map((t) => {
+                  const mName = t.merchant_id != null ? merchants.data?.find((x) => x.id === t.merchant_id)?.name : "";
+                  const cName = t.category_id != null ? categories.data?.find((x) => x.id === t.category_id)?.name : "未分类";
+                  const side = drill.kind === "category" ? (mName || "") : (cName || "");
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{side || t.note || "(无商家)"}</div>
+                        <div className="truncate text-xs text-ink-500">
+                          {t.occurred_on}{side && t.note ? ` · ${t.note}` : ""}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-rose-600">{formatAmount(t.amount, t.currency_code, currencies.data)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

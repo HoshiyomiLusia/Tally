@@ -438,16 +438,28 @@ export function RecurringForecast() {
   // 一键停用只碰逾期半年以上的(刚漏一两期的多半还活着, 误停会让它从预测里消失); confirm 里列出名单可核对
   const DEAD = 6;
   const deadItems = useMemo(() => staleItems.filter((it) => it.overdue_periods >= DEAD), [staleItems]);
+  // 未来预测默认只摊开 3 天内的(用户要求): 一个月的预测有二十来条, 全列出来首页要滚很久
+  const FAR = 3;
+  const [showFar, setShowFar] = useState(false);
+  const farCutoff = useMemo(() => {
+    const d = new Date(`${todayIso}T12:00:00`);  // 正午避开时区把日期推前一天
+    d.setDate(d.getDate() + FAR);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [todayIso]);
+  const isFar = (it: ForecastItem) => it.status === "predicted" && it.due > farCutoff;
+  const farItems = useMemo(() => (upcoming.data ?? []).filter(isFar), [upcoming.data, farCutoff]);
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
       .filter((it) => showStale || !(it.status === "due" && it.overdue_periods >= STALE))
+      .filter((it) => showFar || !isFar(it))
       .slice()
       .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [upcoming.data, showStale]);
+  }, [upcoming.data, showStale, showFar, farCutoff]);
+  const hasVisibleFuture = recurItems.some((it) => it.due > todayIso);
 
   return (
     <div>
-      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 {ahead} 天</h3>
+      <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 {showFar ? ahead : FAR} 天</h3>
       <div className="card divide-y divide-ink-100 p-0">
         <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
           <button onClick={() => setBack((b) => b + 7)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↑ 再往前 7 天</button>
@@ -472,7 +484,9 @@ export function RecurringForecast() {
         )}
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">
-            {staleItems.length > 0 ? `这段时间没有待处理的周期账单（${staleItems.length} 个逾期账单已折叠，点「展开」查看）` : "这段时间没有周期账单"}
+            {staleItems.length + farItems.length > 0
+              ? `最近 3 天没有要处理的周期账单（${[staleItems.length ? `${staleItems.length} 个逾期` : "", farItems.length ? `${farItems.length} 个更远的预测` : ""].filter(Boolean).join("、")}已折叠）`
+              : "这段时间没有周期账单"}
           </div>
         )}
         {recurItems.map((it, i) => {
@@ -557,10 +571,24 @@ export function RecurringForecast() {
             </div>
           );
         })}
+        {farItems.length > 0 && !hasVisibleFuture && !showFar && (
+          <div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            今天 {todayIso}
+          </div>
+        )}
+        {farItems.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
+            <span className="text-ink-500">还有 {farItems.length} 个预测在 3 天以后</span>
+            <button onClick={() => setShowFar((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showFar ? "收起" : "展开"}</button>
+          </div>
+        )}
+        {showFar && (
         <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
           <button onClick={() => setAhead((a) => a + 31)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↓ 再往后 31 天</button>
           {ahead > 31 && <button onClick={() => setAhead(31)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
+        )}
         {recurItems.some((it) => it.status === "due") && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
             「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。扣款日由该账单的历史实际扣款日自动学习（通常几号 / 约每几天），不再机械按固定天数推。已取消的订阅点「停用」。
