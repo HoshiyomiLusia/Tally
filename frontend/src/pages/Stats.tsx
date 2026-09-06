@@ -34,6 +34,18 @@ function thisMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// base 之前的 n 个月, 近→远, 形如 ["2026-08", "2026-07", ...]
+function monthsBefore(base: string, n: number): string[] {
+  const [y, m] = base.split("-").map(Number);
+  const out: string[] = [];
+  for (let i = 1; i <= n; i++) {
+    let mm = m - i, yy = y;
+    while (mm <= 0) { mm += 12; yy -= 1; }
+    out.push(`${yy}-${String(mm).padStart(2, "0")}`);
+  }
+  return out;
+}
+
 // 支出节奏对比月配色 (最多 12 个月各一色)
 const PACE_COLORS = [
   "#3b82f6", "#f59e0b", "#10b981", "#a855f7", "#0ea5e9", "#ec4899",
@@ -67,6 +79,7 @@ export default function Stats({
 }) {
   const [monthState, setMonthState] = useState(thisMonth());
   const month = monthProp ?? monthState;
+  useEffect(() => { setPaceSel(monthsBefore(month, 6)); setPaceHidden([]); }, [month]);
   const setMonth = onMonthChange ?? setMonthState;
   const { user } = useAuth();
   // 审计 #98: 与 Overview.BalanceModule 同一守卫 —— 只在本地没保存过折算币种时才用主币种初始化,
@@ -84,12 +97,17 @@ export default function Stats({
   const compare = useQuery({ queryKey: ["stats-compare", month], queryFn: async () => (await api.get<CatCompare[]>(`/stats/category-compare?month=${month}`)).data });
   const categories = useQuery({ queryKey: ["categories"], queryFn: async () => (await api.get<Category[]>("/categories")).data });
   // 支出节奏: 本月线对照过去 N 个月的历史群线, 看本月花得比平时快/慢
-  const [paceMonths, setPaceMonths] = useState<6 | 12>(6);
+  // 对比月份可自选: paceSel = 参与对照的历史月(近→远), paceHidden = 图例点掉的(仍在图例里, 可点回来)
+  const [paceSel, setPaceSel] = useState<string[]>(() => monthsBefore(thisMonth(), 6));
+  const [paceHidden, setPaceHidden] = useState<string[]>([]);
+  const [pacePick, setPacePick] = useState(false);
   const [paceHl, setPaceHl] = useState<string | null>(null);  // 图例 hover 高亮某个历史月
   // 审计 #108: 按所选月份 + 对比月数拉"整月"数据(此前固定今天往前 400 天, 最老的历史月只拉到半截却仍计入均值/区间带)
-  const daily = useQuery({ queryKey: ["stats-daily", month, paceMonths], queryFn: async () => {
+  const paceFrom = useMemo(() => [...paceSel, month].sort()[0], [paceSel, month]);
+  const daily = useQuery({ queryKey: ["stats-daily", month, paceFrom], queryFn: async () => {
     const [yr, mn] = month.split("-").map(Number);
-    const start = new Date(yr, mn - 1 - paceMonths, 1);
+    const [fy, fm] = paceFrom.split("-").map(Number);
+    const start = new Date(fy, fm - 1, 1);
     const end = new Date(yr, mn, 0);  // 所选月最后一天
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return (await api.get<DailyPoint[]>(`/stats/daily?kind=expense&start=${iso(start)}&end=${iso(end)}`)).data;
@@ -214,17 +232,16 @@ export default function Stats({
       .sort((a, b) => b.total - a.total);
   }, [compareForCurrency, categories.data]);
 
-  // 支出节奏: 本月每日累计支出 (粗红线) 对照过去 paceMonths 个月同期累计 (各月不同颜色).
+  // 支出节奏: 本月每日累计支出 (粗红线) 对照选中的历史月同期累计 (各月不同颜色).
   // x = 月内第几天 (1..31), y = 截至该天累计. 历史月 dataKey = "h0".."hN", 下方图例标色=月.
   const pace = useMemo(() => {
     const src = daily.data ?? [];
     const [yr, mn] = month.split("-").map(Number);
-    const shifted = (offset: number) => {
-      let m = mn - offset, y = yr;
-      while (m <= 0) { m += 12; y -= 1; }
-      return { y, m, label: `${y}-${String(m).padStart(2, "0")}` };
-    };
-    const hist = Array.from({ length: paceMonths }, (_, i) => ({ key: `h${i}`, color: PACE_COLORS[i % PACE_COLORS.length], ...shifted(i + 1) }));
+    const histAll = paceSel.map((label, i) => {
+      const [y, m] = label.split("-").map(Number);
+      return { key: `h${i}`, color: PACE_COLORS[i % PACE_COLORS.length], y, m, label };
+    });
+    const hist = histAll.filter((h) => !paceHidden.includes(h.label));  // 图例点掉的既不画线也不进均值/区间
     const cur: number[] = new Array(31).fill(0);
     const buckets: Record<string, number[]> = {};
     for (const h of hist) buckets[h.key] = new Array(31).fill(0);
@@ -276,8 +293,8 @@ export default function Stats({
         projected: isCurMonth && avgRef > 0 ? Math.round(curRef + (avgEnd - avgRef)) : null,
       };
     }
-    return { rows, hist, activeCount: active.length, summary };
-  }, [daily.data, month, paceMonths, activeCurrency, isAll, baseCurrency, fxTo]);
+    return { rows, hist, histAll, activeCount: active.length, summary };
+  }, [daily.data, month, paceSel, paceHidden, activeCurrency, isAll, baseCurrency, fxTo]);
 
   // Top 商家
   const topMerchForCurrency = useMemo(() => {
@@ -469,7 +486,7 @@ export default function Stats({
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-medium text-ink-600">本月支出节奏</h2>
-            <p className="text-[11px] text-ink-400">本月（粗红）对照过去 {paceMonths} 个月同期（有数据 {pace.activeCount} 个月）；灰虚线=历史均值，灰带=历史最低~最高</p>
+            <p className="text-[11px] text-ink-400">本月（粗红）对照选中的 {pace.hist.length} 个月同期（有数据 {pace.activeCount} 个月）；灰虚线=历史均值，灰带=历史最低~最高</p>
             {pace.summary && (
               <p className="mt-0.5 text-[11px] text-ink-500">
                 截至 {pace.summary.refDay} 号：本月 <b className="text-ink-800 dark:text-ink-100">{formatAmount(pace.summary.cur, displayCode, currencies.data)}</b>
@@ -483,14 +500,45 @@ export default function Stats({
               </p>
             )}
           </div>
-          <div className="flex gap-1 text-xs">
-            {([6, 12] as const).map((n) => (
+          <div className="flex items-center gap-1 text-xs">
+            {([3, 6, 12] as const).map((n) => {
+              const on = paceSel.length === n && paceSel.every((x, i) => x === monthsBefore(month, n)[i]);
+              return (
+                <button
+                  key={n}
+                  onClick={() => { setPaceSel(monthsBefore(month, n)); setPaceHidden([]); }}
+                  className={`rounded-full border px-2.5 py-0.5 ${on ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
+                >近 {n} 个月</button>
+              );
+            })}
+            <div className="relative">
               <button
-                key={n}
-                onClick={() => setPaceMonths(n)}
-                className={`rounded-full border px-2.5 py-0.5 ${paceMonths === n ? "border-ink-800 bg-ink-800 text-white dark:border-emerald-500 dark:bg-emerald-600" : "border-ink-200 text-ink-600 dark:border-ink-700 dark:text-ink-300"}`}
-              >近 {n} 个月</button>
-            ))}
+                onClick={() => setPacePick((v) => !v)}
+                className="rounded-full border border-ink-200 px-2.5 py-0.5 text-ink-600 hover:border-ink-400 dark:border-ink-700 dark:text-ink-300"
+              >选月份 ({paceSel.length})</button>
+              {pacePick && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPacePick(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-ink-200 bg-white p-2 shadow-lg dark:border-ink-700 dark:bg-ink-800">
+                    <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-500">
+                      <span>勾选要对照的月份</span>
+                      <button onClick={() => { setPaceSel([]); setPaceHidden([]); }} className="hover:text-rose-600">清空</button>
+                    </div>
+                    <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                      {monthsBefore(month, 24).map((lab) => {
+                        const on = paceSel.includes(lab);
+                        return (
+                          <label key={lab} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-ink-50 dark:hover:bg-ink-700/50">
+                            <input type="checkbox" checked={on} onChange={() => setPaceSel((prev) => (on ? prev.filter((x) => x !== lab) : [...prev, lab].sort().reverse()))} />
+                            {lab}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className={`${box} p-4`}>
@@ -540,13 +588,23 @@ export default function Stats({
               <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: "rgba(148,163,184,0.3)" }} />
               历史区间
             </span>
-            {pace.hist.map((h) => (
-              <span key={h.key} onMouseEnter={() => setPaceHl(h.key)} onMouseLeave={() => setPaceHl(null)}
-                className={`flex cursor-default items-center gap-1 ${paceHl === h.key ? "text-ink-800 dark:text-ink-100" : "text-ink-500"}`}>
-                <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: h.color, opacity: paceHl && paceHl !== h.key ? 0.3 : 1 }} />
-                {h.label}
-              </span>
-            ))}
+            {pace.histAll.map((h) => {
+              const off = paceHidden.includes(h.label);
+              return (
+                <button
+                  key={h.key}
+                  type="button"
+                  onMouseEnter={() => setPaceHl(h.key)}
+                  onMouseLeave={() => setPaceHl(null)}
+                  onClick={() => setPaceHidden((prev) => (off ? prev.filter((x) => x !== h.label) : [...prev, h.label]))}
+                  title={off ? "点一下加回对照" : "点一下从对照里去掉(均值/区间同步重算)"}
+                  className={`flex items-center gap-1 rounded px-0.5 hover:bg-ink-100 dark:hover:bg-ink-700/50 ${off ? "text-ink-400 line-through" : paceHl === h.key ? "text-ink-800 dark:text-ink-100" : "text-ink-500"}`}
+                >
+                  <span className="inline-block h-2.5 w-3.5 rounded-sm" style={{ background: h.color, opacity: off ? 0.25 : paceHl && paceHl !== h.key ? 0.3 : 1 }} />
+                  {h.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>
