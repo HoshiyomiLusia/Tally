@@ -57,8 +57,10 @@ export default function Stats({
   hideHeader = false,
   month: monthProp,
   onMonthChange,
+  collapsed = false,
 }: {
   embedded?: boolean;
+  collapsed?: boolean;        // 首页折叠态: 只留币种切换 + KPI 卡
   hideHeader?: boolean;       // 隐藏自己的标题+月份选择器 (由外层提供)
   month?: string;             // 受控月份 (外层共享时传入)
   onMonthChange?: (m: string) => void;
@@ -384,6 +386,7 @@ export default function Stats({
         </section>
       )}
 
+      {!collapsed && (<>
       <section className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-medium text-ink-600">本月 Top 商家</h2>
@@ -547,6 +550,8 @@ export default function Stats({
           </div>
         </div>
       </section>
+
+      </>)}
 
       {drill && (
         <Modal onClose={() => setDrill(null)} maxW="max-w-2xl" title={

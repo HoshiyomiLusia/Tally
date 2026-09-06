@@ -107,7 +107,7 @@ function renderRow(it: Item, prevAmount: number | undefined, fold: Fold, base: s
   );
 }
 
-export default function RecurringPanel({ month }: { month: string }) {
+export default function RecurringPanel({ month, summaryOnly = false }: { month: string; summaryOnly?: boolean }) {
   const [sort, setSort] = useState<SortKey>("date_asc");
   const data = useQuery({
     queryKey: ["recurring-by-month", month],
@@ -202,6 +202,31 @@ export default function RecurringPanel({ month }: { month: string }) {
             renderRow(it, prevAmtMap ? prevAmtMap.get(itemKey(it)) : undefined, foldToBase, base, currencies.data, !prevAmtMap, cmpLabel),
           )}
         </div>
+      </div>
+    );
+  }
+
+  // 折叠态: 只给「本月 vs 上月 / 本年 vs 去年」的合计对比, 明细留给展开
+  if (summaryOnly) {
+    const sum = (totals?: Record<string, number>) => Object.entries(totals ?? {}).reduce((acc, [code, t]) => acc + foldToBase(t, code), 0);
+    const row = (label: string, aLab: string, aT?: Record<string, number>, aN?: number, bLab?: string, bT?: Record<string, number>, bN?: number) => (
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-md bg-ink-50 px-3 py-2 dark:bg-ink-800/40">
+        <span className="text-xs font-medium text-ink-600 dark:text-ink-300">{label}</span>
+        <span className="flex flex-wrap items-baseline gap-x-2 text-xs">
+          <span className="text-ink-500">{aLab}</span>
+          <b className="text-sm text-ink-900 dark:text-ink-50">{formatAmount(sum(aT), base, currencies.data)}</b>
+          <span className="text-ink-400">{aN ?? 0} 笔</span>
+          <span className="text-ink-300 dark:text-ink-600">|</span>
+          <span className="text-ink-500">{bLab}</span>
+          <span className="text-ink-600 dark:text-ink-300">{formatAmount(sum(bT), base, currencies.data)}</span>
+          <span className="text-ink-400">{bN ?? 0} 笔</span>
+        </span>
+      </div>
+    );
+    return (
+      <div className="space-y-2">
+        {row("月度账单", `本月 ${curLabel}`, m?.monthly_totals, m?.monthly_items?.length, `上月 ${prevLabel}`, p?.monthly_totals, p?.monthly_items?.length)}
+        {row("年度账单", `本年 ${curYearLabel}`, m?.yearly_totals, m?.yearly_items?.length, `去年 ${lastYearLabel}`, ly?.yearly_totals, ly?.yearly_items?.length)}
       </div>
     );
   }

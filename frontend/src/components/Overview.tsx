@@ -33,7 +33,7 @@ function thisMonthStr(): string {
 
 // ───────────────────────── 板块 1: 余额 ─────────────────────────
 // 资产总览 (真实余额为主) + Wallet 余额 (按账户类型分组)
-export function BalanceModule() {
+export function BalanceModule({ expanded = true }: { expanded?: boolean } = {}) {
   const { user } = useAuth();
   const hadSavedBase = useRef(localStorage.getItem("tally.baseCurrency") != null);
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
@@ -266,6 +266,7 @@ export function BalanceModule() {
         )}
       </div>
 
+      {expanded && (<>
       {/* 预定支出便签: 未来大额支出(如学费), 一键从余额扣除看真实可用额度 */}
       <div className="mt-3 rounded-lg border border-dashed border-ink-300/60 p-2.5 dark:border-ink-700/70">
         <div className="flex items-center justify-between gap-2">
@@ -381,6 +382,7 @@ export function BalanceModule() {
         );
       })}
       {groupedWallets.length === 0 && <div className="mt-4 border-t border-ink-100 pt-3 text-sm text-ink-500 dark:border-ink-800">还没有 Wallet</div>}
+      </>)}
     </>
   );
 }
@@ -397,7 +399,7 @@ interface ForecastItem {
 }
 
 // 前 7 天 / 后 31 天: 已确认(绿)/过期待确认(琥珀)/未来预测. 标出今天位置. 无外框, 由调用方包矩形.
-export function RecurringForecast() {
+export function RecurringForecast({ compact = false }: { compact?: boolean } = {}) {
   const [confirm, setConfirm] = useState<{ prefill: TransactionPrefill; sourceId: number } | null>(null);
   const [back, setBack] = useState(7);  // 回看天数, 可点按钮往前扩
   // 前瞻天数: 默认一个完整月(31 天), 让每个月度账单都能看到下一期; 之前只看 7 天, 月中扣款的账单有大半个月看不到(用户反馈"8-19 的周期订单没有显示")
@@ -446,25 +448,31 @@ export function RecurringForecast() {
     d.setDate(d.getDate() + FAR);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, [todayIso]);
+  // 已确认的是过去、已经记过账的, 默认也折起来(用户要求), 只留待确认与近几天的预测
+  const [showDone, setShowDone] = useState(false);
+  const doneItems = useMemo(() => (upcoming.data ?? []).filter((it) => it.status === "confirmed"), [upcoming.data]);
   const isFar = (it: ForecastItem) => it.status === "predicted" && it.due > farCutoff;
   const farItems = useMemo(() => (upcoming.data ?? []).filter(isFar), [upcoming.data, farCutoff]);
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
       .filter((it) => showStale || !(it.status === "due" && it.overdue_periods >= STALE))
       .filter((it) => showFar || !isFar(it))
+      .filter((it) => showDone || it.status !== "confirmed")
       .slice()
       .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [upcoming.data, showStale, showFar, farCutoff]);
+  }, [upcoming.data, showStale, showFar, showDone, farCutoff]);
   const hasVisibleFuture = recurItems.some((it) => it.due > todayIso);
 
   return (
     <div>
       <h3 className="mb-2 flex items-center gap-1 text-sm font-medium text-ink-600"><CalendarClock size={14} /> 预测 · 前 {back} 天 · 后 {showFar ? ahead : FAR} 天</h3>
       <div className="card divide-y divide-ink-100 p-0">
+        {!compact && (
         <div className="flex items-center justify-center gap-3 px-4 py-2 text-xs">
           <button onClick={() => setBack((b) => b + 7)} className="font-medium text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">↑ 再往前 7 天</button>
           {back > 7 && <button onClick={() => setBack(7)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
+        )}
         {staleItems.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
             <span className="text-ink-500">有 {staleItems.length} 个周期账单逾期 2 期以上（多半已取消，或换了记法没接上）</span>
@@ -482,10 +490,16 @@ export function RecurringForecast() {
             </div>
           </div>
         )}
+        {doneItems.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
+            <span className="text-ink-500">这段时间有 {doneItems.length} 笔已确认扣款</span>
+            <button onClick={() => setShowDone((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showDone ? "收起" : "展开"}</button>
+          </div>
+        )}
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">
-            {staleItems.length + farItems.length > 0
-              ? `最近 3 天没有要处理的周期账单（${[staleItems.length ? `${staleItems.length} 个逾期` : "", farItems.length ? `${farItems.length} 个更远的预测` : ""].filter(Boolean).join("、")}已折叠）`
+            {staleItems.length + farItems.length + doneItems.length > 0
+              ? `最近 3 天没有要处理的周期账单（${[staleItems.length ? `${staleItems.length} 个逾期` : "", doneItems.length ? `${doneItems.length} 笔已确认` : "", farItems.length ? `${farItems.length} 个更远的预测` : ""].filter(Boolean).join("、")}已折叠）`
               : "这段时间没有周期账单"}
           </div>
         )}
@@ -589,7 +603,7 @@ export function RecurringForecast() {
           {ahead > 31 && <button onClick={() => setAhead(31)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
         )}
-        {recurItems.some((it) => it.status === "due") && (
+        {!compact && recurItems.some((it) => it.status === "due") && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
             「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。扣款日由该账单的历史实际扣款日自动学习（通常几号 / 约每几天），不再机械按固定天数推。已取消的订阅点「停用」。
           </div>
