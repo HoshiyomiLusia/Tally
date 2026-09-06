@@ -441,10 +441,11 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
   const walletName = (id: number) => dash.data?.wallet_balances.find((w) => w.wallet_id === id)?.wallet_name ?? "?";
 
   const todayIso = todayIsoStr();
-  const [showStale, setShowStale] = useState(false);
+  const [showDue, setShowDue] = useState(false);
   // 逾期 2 期以上的(用户要求折叠): 多半是取消了的订阅, 或换了记法没接上; 默认折叠, 给一键停用, 别把时间轴淹了
   const STALE = 2;
-  const staleItems = useMemo(() => (upcoming.data ?? []).filter((it) => it.status === "due" && it.overdue_periods >= STALE), [upcoming.data]);
+  const dueItems = useMemo(() => (upcoming.data ?? []).filter((it) => it.status === "due"), [upcoming.data]);
+  const staleItems = useMemo(() => dueItems.filter((it) => it.overdue_periods >= STALE), [dueItems]);
   // 一键停用只碰逾期半年以上的(刚漏一两期的多半还活着, 误停会让它从预测里消失); confirm 里列出名单可核对
   const DEAD = 6;
   const deadItems = useMemo(() => staleItems.filter((it) => it.overdue_periods >= DEAD), [staleItems]);
@@ -463,12 +464,12 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
   const farItems = useMemo(() => (upcoming.data ?? []).filter(isFar), [upcoming.data, farCutoff]);
   const recurItems = useMemo(() => {
     return (upcoming.data ?? [])
-      .filter((it) => showStale || !(it.status === "due" && it.overdue_periods >= STALE))
+      .filter((it) => showDue || it.status !== "due")
       .filter((it) => showFar || !isFar(it))
       .filter((it) => showDone || it.status !== "confirmed")
       .slice()
       .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [upcoming.data, showStale, showFar, showDone, farCutoff]);
+  }, [upcoming.data, showDue, showFar, showDone, farCutoff]);
   const hasVisibleFuture = recurItems.some((it) => it.due > todayIso);
 
   return (
@@ -481,11 +482,14 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
           {back > 7 && <button onClick={() => setBack(7)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
         )}
-        {staleItems.length > 0 && (
+        {dueItems.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 bg-ink-50 px-4 py-2 text-xs dark:bg-ink-800/40">
-            <span className="text-ink-500">有 {staleItems.length} 个周期账单逾期 2 期以上（多半已取消，或换了记法没接上）</span>
+            <span className="text-ink-500">
+              有 {dueItems.length} 笔待确认扣款
+              {staleItems.length > 0 && `，其中 ${staleItems.length} 个逾期 2 期以上（多半已取消，或换了记法没接上）`}
+            </span>
             <div className="flex gap-2">
-              <button onClick={() => setShowStale((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showStale ? "收起" : "展开"}</button>
+              <button onClick={() => setShowDue((v) => !v)} className="text-ink-500 hover:text-ink-700 dark:hover:text-ink-300">{showDue ? "收起" : "展开"}</button>
               {deadItems.length > 0 && (
                 <button
                   onClick={() => {
@@ -506,8 +510,8 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
         )}
         {recurItems.length === 0 && (
           <div className="px-4 py-6 text-center text-sm text-ink-500">
-            {staleItems.length + farItems.length + doneItems.length > 0
-              ? `最近 3 天没有要处理的周期账单（${[staleItems.length ? `${staleItems.length} 个逾期` : "", doneItems.length ? `${doneItems.length} 笔已确认` : "", farItems.length ? `${farItems.length} 个更远的预测` : ""].filter(Boolean).join("、")}已折叠）`
+            {dueItems.length + farItems.length + doneItems.length > 0
+              ? `最近 3 天没有要处理的周期账单（${[dueItems.length ? `${dueItems.length} 笔待确认` : "", doneItems.length ? `${doneItems.length} 笔已确认` : "", farItems.length ? `${farItems.length} 个更远的预测` : ""].filter(Boolean).join("、")}已折叠）`
               : "这段时间没有周期账单"}
           </div>
         )}
@@ -611,7 +615,7 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
           {ahead > 31 && <button onClick={() => setAhead(31)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">收起</button>}
         </div>
         )}
-        {!compact && recurItems.some((it) => it.status === "due") && (
+        {!compact && dueItems.length > 0 && (
           <div className="px-4 py-2 text-[11px] text-ink-400">
             「待确认」= 按上次金额推算的过去扣款，实际可能不同。点「确认扣款」记一笔后会变成绿色「已确认」（金额 / 账户 / 日期可改）。扣款日由该账单的历史实际扣款日自动学习（通常几号 / 约每几天），不再机械按固定天数推。已取消的订阅点「停用」。
           </div>
