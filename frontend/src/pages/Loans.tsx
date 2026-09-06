@@ -45,24 +45,31 @@ export default function Loans() {
     return Array.from(m.entries()).filter(([, v]) => v !== 0);
   }, [accounts.data]);
 
-  // 合计: 各币种净额折算到 baseCurrency 求和(负=应收总额, 正=应付总额); 缺汇率的币种单列提示不静默吞
-  const grand = useMemo(() => {
+  // 折算到 baseCurrency 的通用换算(总览与每个联系人的汇总共用)
+  const foldToBase = useMemo(() => {
     const digits = new Map((currencies.data ?? []).map((c) => [c.code, c.decimal_digits]));
     const rateMap = new Map<string, number>();
     for (const r of rates.data ?? []) if (!rateMap.has(`${r.base}->${r.quote}`)) rateMap.set(`${r.base}->${r.quote}`, r.rate);
-    const missing: string[] = [];
-    const fold = (amt: number, from: string): number => {
-      if (from === baseCurrency) return amt;
+    return (amt: number, from: string): { v: number; ok: boolean } => {
+      if (from === baseCurrency) return { v: amt, ok: true };
       const fd = digits.get(from) ?? 2, td = digits.get(baseCurrency) ?? 2;
       let rate = rateMap.get(`${from}->${baseCurrency}`);
       if (rate == null) { const rev = rateMap.get(`${baseCurrency}->${from}`); rate = rev ? 1 / rev : 0; }
-      if (rate === 0 && amt !== 0 && !missing.includes(from)) missing.push(from);
-      return Math.round(amt * rate * Math.pow(10, td - fd));
+      return { v: Math.round(amt * rate * Math.pow(10, td - fd)), ok: rate !== 0 };
     };
+  }, [rates.data, currencies.data, baseCurrency]);
+
+  // 合计: 各币种净额折算到 baseCurrency 求和(负=应收总额, 正=应付总额); 缺汇率的币种单列提示不静默吞
+  const grand = useMemo(() => {
+    const missing: string[] = [];
     let sum = 0;
-    for (const [code, total] of totals) sum += fold(total, code);
+    for (const [code, total] of totals) {
+      const { v, ok } = foldToBase(total, code);
+      if (!ok && total !== 0 && !missing.includes(code)) missing.push(code);
+      sum += v;
+    }
     return { sum, missing };
-  }, [totals, rates.data, currencies.data, baseCurrency]);
+  }, [totals, foldToBase]);
 
   // Group loan accounts by contact_id
   const acctsByContact = useMemo(() => {
@@ -163,6 +170,31 @@ export default function Loans() {
                 <div className="text-xs text-ink-400">暂无借贷往来</div>
               ) : (
                 <div className="divide-y divide-ink-100 dark:divide-ink-700">
+                  {accts.length > 1 && (() => {
+                    // 这个联系人跨币种的汇总: 借出/已还/净额都折算到 baseCurrency
+                    let out = 0, back = 0, net = 0;
+                    const miss: string[] = [];
+                    for (const a of accts) {
+                      const n = foldToBase(a.balance, a.currency_code);
+                      if (!n.ok && a.balance !== 0 && !miss.includes(a.currency_code)) miss.push(a.currency_code);
+                      net += n.v;
+                      out += foldToBase(a.loan_out_total, a.currency_code).v;
+                      back += foldToBase(a.loan_repayment_total, a.currency_code).v;
+                    }
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-ink-50 px-2 py-2 text-sm dark:bg-ink-800/50">
+                        <div className="min-w-0">
+                          <div className="text-xs text-ink-500">
+                            合计 · 折算到 {baseCurrency} · 借出 {formatAmount(out, baseCurrency, currencies.data)} · 已还 {formatAmount(back, baseCurrency, currencies.data)}
+                            {miss.length > 0 && <span className="ml-1 text-amber-600">（缺 {miss.join("/")} 汇率）</span>}
+                          </div>
+                        </div>
+                        <div className={`shrink-0 text-base font-semibold ${net < 0 ? "text-emerald-600" : net > 0 ? "text-rose-600" : "text-ink-500"}`}>
+                          {formatAmount(net, baseCurrency, currencies.data)}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {accts.map((a) => (
                     <div key={`${a.contact_id}-${a.currency_code}`} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                       <div className="w-full min-w-0 sm:w-auto sm:flex-1">

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ChevronDown, HandCoins, TrendingUp } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, HandCoins, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type PlannedExpense, type Transaction, type WalletType } from "../lib/api";
@@ -33,7 +33,7 @@ function thisMonthStr(): string {
 
 // ───────────────────────── 板块 1: 余额 ─────────────────────────
 // 资产总览 (真实余额为主) + Wallet 余额 (按账户类型分组)
-export function BalanceModule({ expanded = true }: { expanded?: boolean } = {}) {
+export function BalanceModule({ expanded = true, onToggle }: { expanded?: boolean; onToggle?: () => void } = {}) {
   const { user } = useAuth();
   const hadSavedBase = useRef(localStorage.getItem("tally.baseCurrency") != null);
   const [baseCurrency, setBaseCurrency] = useState<string>(() => localStorage.getItem("tally.baseCurrency") || "JPY");
@@ -140,7 +140,15 @@ export function BalanceModule({ expanded = true }: { expanded?: boolean } = {}) 
       {/* 资产总览: 左=标题+真实余额主数字, 右(桌面)=次要指标; 移动端次要指标折进"详情" */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
+          {onToggle ? (
+            <button type="button" onClick={onToggle} aria-expanded={expanded}
+              className="mb-1 flex items-center gap-1 text-base font-semibold tracking-tight text-ink-900 hover:text-ink-600 dark:text-ink-50 dark:hover:text-ink-300">
+              {expanded ? <ChevronDown size={16} className="text-ink-400" /> : <ChevronRight size={16} className="text-ink-400" />}
+              余额
+            </button>
+          ) : (
+            <h2 className="mb-1 text-base font-semibold tracking-tight">余额</h2>
+          )}
           <div className="mb-1 flex items-center gap-1.5">
             <span className="text-xs uppercase tracking-wider text-ink-500">{investCutPct > 0 ? `不含投资${investCutPct < 100 ? ` ${investCutPct}%` : ""} · 折算到` : "真实余额 · 折算到"}</span>
             <select

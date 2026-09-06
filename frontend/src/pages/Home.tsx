@@ -21,16 +21,17 @@ function useFold(key: string) {
   return [open, setOpen] as const;
 }
 
-function FoldButton({ open, onClick }: { open: boolean; onClick: () => void }) {
+// 三个板块统一: 折叠箭头贴在标题左边, 点标题即展开/收起
+function FoldTitle({ open, onClick, children }: { open: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-expanded={open}
-      className="flex items-center gap-0.5 rounded-lg border border-ink-200 px-2 py-1 text-xs text-ink-500 hover:border-ink-400 hover:text-ink-700 dark:border-ink-700 dark:hover:border-ink-500 dark:hover:text-ink-200"
+      className="flex items-center gap-1 text-base font-semibold tracking-tight text-ink-900 hover:text-ink-600 dark:text-ink-50 dark:hover:text-ink-300"
     >
-      {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-      {open ? "收起" : "展开"}
+      {open ? <ChevronDown size={16} className="text-ink-400" /> : <ChevronRight size={16} className="text-ink-400" />}
+      {children}
     </button>
   );
 }
@@ -50,16 +51,13 @@ export default function Home() {
     <div className="space-y-5 px-4 py-5 md:px-6">
       {/* 板块 1: 余额 (标题在 BalanceModule 内部, 与右侧指标同行) */}
       <section className="card">
-        <BalanceModule expanded={balOpen} />
-        <div className="mt-3 flex justify-center border-t border-ink-100 pt-2 dark:border-ink-800">
-          <FoldButton open={balOpen} onClick={() => setBalOpen(!balOpen)} />
-        </div>
+        <BalanceModule expanded={balOpen} onToggle={() => setBalOpen(!balOpen)} />
       </section>
 
       {/* 板块 2: 仪表盘 */}
       <section className="card">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold tracking-tight">仪表盘</h2>
+          <FoldTitle open={statsOpen} onClick={() => setStatsOpen(!statsOpen)}>仪表盘</FoldTitle>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -69,7 +67,6 @@ export default function Home() {
               <BarChart3 size={14} className="text-ink-500" /> 总分析
             </button>
             <MonthPicker value={month} onChange={setMonth} />
-            <FoldButton open={statsOpen} onClick={() => setStatsOpen(!statsOpen)} />
           </div>
         </div>
         <Stats embedded hideHeader collapsed={!statsOpen} month={month} onMonthChange={setMonth} />
@@ -77,9 +74,8 @@ export default function Home() {
 
       {/* 板块 3: 周期账单 */}
       <section className="card">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold tracking-tight">周期账单</h2>
-          <FoldButton open={recurOpen} onClick={() => setRecurOpen(!recurOpen)} />
+        <div className="mb-3">
+          <FoldTitle open={recurOpen} onClick={() => setRecurOpen(!recurOpen)}>周期账单</FoldTitle>
         </div>
         {recurOpen && <p className="mb-3 text-xs text-ink-500">把房租 / 订阅 / 水电 这类有规律的支出标记为月度或年度，这里集中看</p>}
         <div className="space-y-4">

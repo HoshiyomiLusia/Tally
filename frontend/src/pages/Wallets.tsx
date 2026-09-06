@@ -160,8 +160,8 @@ export default function Wallets() {
                       <div className="mb-1 flex items-center gap-1 px-1 text-[11px] uppercase tracking-wider text-ink-500">
                         <Icon size={11} /> {TYPE_SECTION_LABEL[t]}
                       </div>
-                      {/* 一律左对齐, 跟上面的类型标题(px-1)对齐; 单张卡也靠左不居中 */}
-                      <div className="flex flex-wrap gap-3 px-1">
+                      {/* 手机一排两张(卡太大会把一屏占满), 桌面维持定宽左对齐 */}
+                      <div className="grid grid-cols-2 gap-2 px-1 sm:flex sm:flex-wrap sm:gap-3">
                         {wallets.map((w) => (
                           <WalletCardItem
                             key={w.id}
@@ -460,9 +460,9 @@ function WalletCardItem({
 
       {/* 操作浮层: 右上角小图标 */}
       <div className="absolute right-1.5 top-1.5 z-10 flex gap-0.5">
-        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35"><Scale size={13} /></button>
-        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35"><Pencil size={13} /></button>
-        <button onClick={onArchive} title={wallet.archived ? "取消归档" : "归档(不计入汇总, 可恢复)"} className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-black/35">
+        <button onClick={onReconcile} title="对账" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Scale size={13} /></button>
+        <button onClick={onEdit} title="编辑" className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35"><Pencil size={13} /></button>
+        <button onClick={onArchive} title={wallet.archived ? "取消归档" : "归档(不计入汇总, 可恢复)"} className="rounded-md bg-black/15 p-1 backdrop-blur-sm hover:bg-black/35">
           {wallet.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
         </button>
         <button onClick={onDelete} title="删除" className="rounded-md bg-black/15 p-1.5 backdrop-blur-sm sm:p-1 hover:bg-rose-500/60"><Trash2 size={13} /></button>
@@ -473,11 +473,11 @@ function WalletCardItem({
 
       <div className="relative flex h-full flex-col justify-between">
         <div className="min-w-0 pr-20">
-          <div className="truncate text-sm font-semibold leading-tight drop-shadow-sm">{wallet.name}</div>
+          <div className="truncate text-xs font-semibold leading-tight drop-shadow-sm sm:text-sm" title={wallet.name}>{wallet.name}</div>
           <div className={`text-[10px] ${faceSub}`}>{TYPE_LABELS[wallet.type]}</div>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-lg font-semibold tabular-nums tracking-tight drop-shadow-sm">
+          <div className="truncate text-sm font-semibold tabular-nums tracking-tight drop-shadow-sm sm:text-lg">
             {isCredit
               ? (debt > 0 ? `待还 ${formatAmount(debt, currencyCode, currencies)}` : formatAmount(0, currencyCode, currencies))
               : formatAmount(physical, currencyCode, currencies)}
