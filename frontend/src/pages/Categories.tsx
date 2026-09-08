@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import CategoryIcon from "../components/CategoryIcon";
 import Modal from "../components/Modal";
 import { api, type Category, type CategoryKind } from "../lib/api";
 
@@ -41,7 +42,7 @@ export default function Categories() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">分类</h1>
-          <p className="text-sm text-ink-500">两级结构，emoji 可改</p>
+          <p className="text-sm text-ink-500">两级结构。图标按分类名自动匹配，改名后没匹配上就回退显示下面填的 emoji</p>
         </div>
         <div className="flex gap-2">
           <div className="flex rounded-md bg-ink-100 p-0.5">
@@ -59,7 +60,7 @@ export default function Categories() {
           <div key={p.id} className="card">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2 text-base font-medium">
-                <span className="text-xl">{p.emoji}</span>
+                <CategoryIcon name={p.name} emoji={p.emoji} size={18} />
                 <span>{p.name}</span>
               </div>
               <div className="flex gap-0.5">
@@ -72,7 +73,7 @@ export default function Categories() {
               <div className="flex flex-wrap gap-1">
                 {p.children.map((c) => (
                   <div key={c.id} className="group flex items-center gap-1 rounded-full bg-ink-50 py-1 pl-2.5 pr-1 text-sm">
-                    <span>{c.emoji}</span> <span>{c.name}</span>
+                    <CategoryIcon name={c.name} emoji={c.emoji} size={14} /> <span>{c.name}</span>
                     <button onClick={() => { setEditing(c); setNewParent(null); setOpen(true); }} className="text-ink-400 hover:text-ink-700"><Pencil size={11} /></button>
                     <button onClick={() => { if (confirm(`删除"${c.name}"？`)) del.mutate(c.id); }} className="text-ink-400 hover:text-rose-600"><Trash2 size={11} /></button>
                   </div>
@@ -155,7 +156,7 @@ function CategoryForm({
             <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
           <label className="block">
-            <span className="text-xs text-ink-500">Emoji</span>
+            <span className="text-xs text-ink-500">备用 Emoji <span className="text-ink-400">(自动匹配不到图标时才显示)</span></span>
             <input className="input mt-1" value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🍱" maxLength={4} />
           </label>
           {error && <div className="text-sm text-red-600">{error}</div>}

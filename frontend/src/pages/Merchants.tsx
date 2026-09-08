@@ -155,7 +155,7 @@ function MerchantForm({
             <select className="input mt-1" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               <option value="">无</option>
               {categories.filter((c) => c.parent_id !== null).map((c) => (
-                <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </label>

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import CategoryIcon from "./CategoryIcon";
 import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
@@ -82,7 +83,7 @@ function renderRow(it: Item, prevAmount: number | undefined, fold: Fold, base: s
     <div key={it.transaction_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span>{it.category_emoji}</span>
+          <CategoryIcon name={it.category_name} emoji={it.category_emoji} size={14} />
           <span className="truncate font-medium">{primary}</span>
           {showCategorySub && <span className="truncate text-xs text-ink-500">· {it.category_name}</span>}
         </div>

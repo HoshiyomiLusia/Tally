@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import CategoryIcon from "../components/CategoryIcon";
 import Modal from "../components/Modal";
 import MonthPicker from "../components/MonthPicker";
 import { api, type Category, type Currency, type Merchant, type Transaction } from "../lib/api";
@@ -447,7 +448,7 @@ export default function Stats({
                   title={g.id != null ? "点开看这个月这个大类(含子类)的每一笔" : undefined}
                 >
                   <div className="flex items-center gap-1.5 truncate">
-                    <span>{g.emoji}</span>
+                    <CategoryIcon name={g.name} emoji={g.emoji} size={15} />
                     <span className="font-medium">{g.name}</span>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -467,7 +468,7 @@ export default function Stats({
                         className={`flex items-center justify-between rounded text-xs text-ink-500 ${c.id != null ? "cursor-pointer hover:bg-ink-100 dark:hover:bg-ink-700/50" : ""}`}
                         title={c.id != null ? "点开看这个月这个小类的每一笔" : undefined}
                       >
-                        <span className="truncate">{c.emoji} {c.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5"><CategoryIcon name={c.name} emoji={c.emoji} size={13} /><span className="truncate">{c.name}</span></span>
                         <span className="flex shrink-0 items-center gap-1">
                           <DeltaTag current={c.amount} previous={c.prev} small />
                           <span>{formatAmount(c.amount, displayCode, currencies.data)}</span>
@@ -614,7 +615,7 @@ export default function Stats({
       {drill && (
         <Modal onClose={() => setDrill(null)} maxW="max-w-2xl" title={
           <span className="flex flex-wrap items-baseline gap-1.5">
-            <span>{drill.emoji} {drill.name}</span>
+            <span className="flex items-center gap-1.5"><CategoryIcon name={drill.kind === "category" ? drill.name : undefined} emoji={drill.emoji} size={16} />{drill.name}</span>
             <span className="text-xs font-normal text-ink-500">
               {month} · {drill.kind === "category" ? "该分类(含子类)" : "该商家"}的支出
               {activeCurrency ? ` · 仅 ${activeCurrency}` : ""}

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, ChevronDown, ChevronRight, HandCoins, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import CategoryIcon from "./CategoryIcon";
 import { api, type Category, type Currency, type DashboardData, type LoanAccount, type Merchant, type PlannedExpense, type Transaction, type WalletType } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount, parseAmount, todayIso as todayIsoStr } from "../lib/format";
@@ -536,7 +537,7 @@ export function RecurringForecast({ compact = false }: { compact?: boolean } = {
               <div className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
                 <div className={`min-w-0 flex-1 ${dim ? "opacity-60" : ""}`}>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span>{catEmoji(t.category_id)}</span>
+                    <CategoryIcon name={cname} emoji={catEmoji(t.category_id)} size={14} />
                     <span className="truncate font-medium">{primary}</span>
                     {showCat && <span className="truncate text-xs text-ink-500">· {cname}</span>}
                     {it.status === "confirmed" && (

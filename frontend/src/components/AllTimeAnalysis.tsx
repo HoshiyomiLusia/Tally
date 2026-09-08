@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, Cell, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import CategoryIcon from "./CategoryIcon";
 import { api, type Currency } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatAmount } from "../lib/format";
@@ -221,7 +222,7 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
                     <div className="relative overflow-hidden rounded-md bg-ink-50 px-2 py-1.5 dark:bg-ink-800/40">
                       <div className="absolute inset-y-0 left-0 bg-rose-500/15" style={{ width: `${(g.total / view.catTotal) * 100}%` }} />
                       <div className="relative flex items-center justify-between gap-2 text-xs font-medium">
-                        <span className="truncate">{g.emoji} {g.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5"><CategoryIcon name={g.name} emoji={g.emoji} size={14} /><span className="truncate">{g.name}</span></span>
                         <span className="shrink-0 tabular-nums">{fmt(g.total)} <span className="text-ink-400">{((g.total / view.catTotal) * 100).toFixed(0)}%</span></span>
                       </div>
                     </div>
@@ -229,7 +230,7 @@ export default function AllTimeAnalysis({ onClose }: { onClose: () => void }) {
                       <div className="mt-0.5 space-y-0.5 pl-3">
                         {g.children.map((ch) => (
                           <div key={ch.name} className="flex items-center justify-between gap-2 text-[11px] text-ink-500">
-                            <span className="truncate">{ch.emoji} {ch.name}</span>
+                            <span className="flex min-w-0 items-center gap-1.5"><CategoryIcon name={ch.name} emoji={ch.emoji} size={13} /><span className="truncate">{ch.name}</span></span>
                             <span className="shrink-0 tabular-nums">{fmt(ch.amt)}</span>
                           </div>
                         ))}

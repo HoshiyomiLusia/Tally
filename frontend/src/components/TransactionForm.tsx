@@ -12,6 +12,7 @@ import {
   type Transaction,
   type Wallet,
 } from "../lib/api";
+import CategoryIcon from "./CategoryIcon";
 import type { WalletType } from "../lib/api";
 import { formatAmount, parseAmount, todayIso } from "../lib/format";
 import DateField from "./DateField";
@@ -677,7 +678,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                           : "chip chip-idle"
                     }
                   >
-                    {p.emoji} {p.name}
+                    <CategoryIcon name={p.name} emoji={p.emoji} size={14} className="mr-1" />{p.name}
                   </button>
                 );
               })}
@@ -690,7 +691,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                     {Array.from(childrenByParent.entries()).map(([pid, kids]) => (
                       <div key={pid} className="flex flex-wrap gap-1.5">
                         {kids.map((c) => (
-                          <span key={c.id} className="chip chip-sub-idle">{c.emoji} {c.name}</span>
+                          <span key={c.id} className="chip chip-sub-idle"><CategoryIcon name={c.name} emoji={c.emoji} size={13} className="mr-1" />{c.name}</span>
                         ))}
                       </div>
                     ))}
@@ -707,7 +708,7 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
                             onClick={() => setCategoryId(c.id)}
                             className={on ? "chip chip-selected" : "chip chip-sub-idle"}
                           >
-                            {c.emoji} {c.name}
+                            <CategoryIcon name={c.name} emoji={c.emoji} size={13} className="mr-1" />{c.name}
                           </button>
                         );
                       })}

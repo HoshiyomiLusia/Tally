@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import CategoryIcon from "./CategoryIcon";
 import DateField from "./DateField";
 import Modal from "./Modal";
 
@@ -156,7 +157,7 @@ export default function ReimburseForm({ open, onClose }: Props) {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span>{catEmoji(t.category_id)}</span>
+                      <CategoryIcon name={catName(t.category_id)} emoji={catEmoji(t.category_id)} size={14} />
                       <span className="truncate font-medium">{catName(t.category_id)}</span>
                       {merchantName(t.merchant_id) && (
                         <span className="truncate text-xs text-ink-500">· {merchantName(t.merchant_id)}</span>
@@ -186,7 +187,7 @@ export default function ReimburseForm({ open, onClose }: Props) {
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span>{catEmoji(picked.category_id)}</span>
+                    <CategoryIcon name={catName(picked.category_id)} emoji={catEmoji(picked.category_id)} size={14} />
                     <span className="truncate font-medium">{catName(picked.category_id)}</span>
                     {merchantName(picked.merchant_id) && (
                       <span className="truncate text-xs text-ink-500">· {merchantName(picked.merchant_id)}</span>

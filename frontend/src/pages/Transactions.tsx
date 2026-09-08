@@ -3,6 +3,7 @@ import { ArrowLeftRight, ChevronLeft, ChevronRight, CreditCard, FileText, Filter
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import CategoryIcon from "../components/CategoryIcon";
 import CreditRepayForm from "../components/CreditRepayForm";
 import DateField from "../components/DateField";
 import Modal from "../components/Modal";
@@ -251,14 +252,14 @@ export default function Transactions() {
         {(kind === "" || kind === "expense") && (
           <optgroup label="支出">
             {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "expense").map((c) => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </optgroup>
         )}
         {(kind === "" || kind === "income") && (
           <optgroup label="收入">
             {(categories.data ?? []).filter((c) => c.parent_id === null && c.kind === "income").map((c) => (
-              <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </optgroup>
         )}
@@ -266,7 +267,7 @@ export default function Transactions() {
       <select className="input" value={childCatId} onChange={(e) => setChildCatId(e.target.value)} disabled={!parentCatId}>
         <option value="">{parentCatId ? "全部子分类" : "先选大类"}</option>
         {(categories.data ?? []).filter((c) => parentCatId && c.parent_id === Number(parentCatId)).map((c) => (
-          <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>
+          <option key={c.id} value={c.id}>{c.name}</option>
         ))}
       </select>
       <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} placeholder="开始" />
@@ -399,7 +400,7 @@ export default function Transactions() {
                   <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span>{titleEmoji}</span>
+                        <CategoryIcon name={titleName} emoji={titleEmoji} size={14} />
                         <span className="font-medium">{titleName}</span>
                         {m && <span className="text-xs text-ink-500">· {m}</span>}
                         {pn && <span className="text-xs text-ink-500">· {pn}</span>}
@@ -522,7 +523,7 @@ export default function Transactions() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
-                          <span>{f.category_emoji}</span>
+                          <CategoryIcon name={f.category_name} emoji={f.category_emoji} size={14} />
                           <span className="truncate font-medium">{title}</span>
                           <span className="shrink-0 rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
                         </div>
