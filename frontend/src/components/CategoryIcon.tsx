@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgePercent, Beer, Bike, Bitcoin, Briefcase, Bus, CalendarClock, Car, CarTaxiFront, ChartCandlestick, ChartNoAxesCombined, ChartPie, CircleHelp, Clapperboard, Coins, ConciergeBell, CupSoda, Film, Folder, Fuel, Gamepad2, Gift, GraduationCap, HandCoins, HandHeart, HeartPulse, House, IdCard, Joystick, Laptop, Lightbulb, Luggage, MicVocal, Package, PartyPopper, Pencil, Pill, Plane, Plug, Printer, ReceiptText, Repeat, RotateCcw, Scale, School, Scissors, ScrollText, Shield, Shirt, ShoppingBag, ShoppingCart, Sofa, Sparkles, SprayCan, SquareParking, Stethoscope, Store, TrainFront, TramFront, TrendingDown, TrendingUp, UsersRound, Utensils, UtensilsCrossed, WashingMachine, Wrench } from "lucide-react";
+import { ArrowLeftRight, BadgePercent, Beer, Bike, Bitcoin, Briefcase, Bus, CalendarClock, Car, CarTaxiFront, ChartCandlestick, ChartNoAxesCombined, ChartPie, CircleHelp, Clapperboard, Coins, ConciergeBell, CupSoda, Film, Folder, Fuel, Gamepad2, Gift, GraduationCap, HandCoins, HandHeart, HeartPulse, House, IdCard, Joystick, Laptop, Lightbulb, Luggage, MicVocal, Package, PartyPopper, Pencil, Pill, Plane, Plug, Printer, ReceiptText, Repeat, RotateCcw, Scale, School, Scissors, ScrollText, Shield, Shirt, ShoppingBag, ShoppingCart, Sofa, Sparkles, SprayCan, SquareParking, Stethoscope, Store, Tag, TrainFront, TramFront, TrendingDown, TrendingUp, UsersRound, Utensils, UtensilsCrossed, WashingMachine, Wrench } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // 分类图标: 用 lucide 线描图标替代 emoji(与侧边栏/按钮同一套图形语言, 不受系统 emoji 字体影响).
@@ -123,10 +123,13 @@ export default function CategoryIcon({
   const hit = name ? BY_NAME.get(name) : undefined;
   const box = tint ? Math.round(size * 1.45) : size;
   if (!hit) {
-    // 回退: 保持和图标一样的占位宽度, 列表不会因为个别分类没图标而错位
+    // 回退顺序: 自己填的 emoji > 中性标签图标. 都没有时也保持同样的占位宽度, 列表不会错位
     return (
-      <span className={`inline-flex shrink-0 items-center justify-center ${className}`} style={{ width: box, height: box, fontSize: size }}>
-        {emoji || ""}
+      <span
+        className={`inline-flex shrink-0 items-center justify-center ${emoji ? "" : tint ? `rounded-md ${TINT.slate}` : PLAIN.slate} ${className}`}
+        style={{ width: box, height: box, fontSize: size }}
+      >
+        {emoji || <Tag size={size} strokeWidth={2} />}
       </span>
     );
   }
