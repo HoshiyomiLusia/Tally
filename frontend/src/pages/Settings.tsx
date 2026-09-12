@@ -7,7 +7,7 @@ import Modal from "../components/Modal";
 import { api, type Currency } from "../lib/api";
 import { invalidateMoney } from "../lib/invalidate";
 import { useAuth } from "../lib/auth";
-import { todayIso } from "../lib/format";
+import { formatAmount, parseAmount, todayIso } from "../lib/format";
 import { useInstallPrompt } from "../lib/useInstallPrompt";
 
 interface Rate {
@@ -36,6 +36,21 @@ export default function Settings() {
 
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<Rate[]>("/exchange-rates")).data });
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
+
+  // 总预算: 一条, 本位币, 所有币种支出折算后合计; 留空/0 = 不启用
+  const budget = useQuery({ queryKey: ["budget-total"], queryFn: async () => (await api.get<{ amount: number; currency_code: string }>("/budgets/total")).data });
+  const [budgetText, setBudgetText] = useState("");
+  const [budgetTouched, setBudgetTouched] = useState(false);
+  const budgetDigits = (currencies.data ?? []).find((c) => c.code === budget.data?.currency_code)?.decimal_digits ?? 0;
+  useEffect(() => {
+    if (!budgetTouched && budget.data) setBudgetText(budget.data.amount > 0 ? (budget.data.amount / Math.pow(10, budgetDigits)).toString() : "");
+  }, [budget.data, budgetDigits, budgetTouched]);
+  const saveBudget = useMutation({
+    mutationFn: async () => api.put("/budgets/total", { amount: budgetText.trim() ? parseAmount(budgetText, budgetDigits) : 0 }),
+    onSuccess: () => { setBudgetTouched(false); qc.invalidateQueries({ queryKey: ["budget-total"] }); },
+    onError: (e: unknown) => alert((e as { response?: { data?: { detail?: string } } }).response?.data?.detail ?? "保存失败"),
+  });
+
 
   const [d, setD] = useState(todayIso());
   const [base, setBase] = useState("JPY");
@@ -148,6 +163,31 @@ export default function Settings() {
         </select>
       </div>
 
+      <div className="card mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-medium">本月总预算</div>
+          <div className="text-xs text-ink-500">
+            仪表盘会显示一条进度条。所有币种的本月支出会折算到 {budget.data?.currency_code ?? "本位币"} 后合并计算（对账调整不计）。留空 = 不启用
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ink-500">{budget.data?.currency_code ?? ""}</span>
+          <input
+            className="input w-32 text-right"
+            inputMode="decimal"
+            value={budgetText}
+            onChange={(e) => { setBudgetTouched(true); setBudgetText(e.target.value); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) saveBudget.mutate(); }}
+            placeholder="不启用"
+          />
+          <button
+            onClick={() => saveBudget.mutate()}
+            disabled={saveBudget.isPending || !budgetTouched}
+            className="btn-primary disabled:opacity-40"
+          >{saveBudget.isPending ? "保存中…" : "保存"}</button>
+        </div>
+      </div>
+
       {!install.isStandalone && (
         <div className="card mb-3">
           <div className="mb-2 flex items-center gap-2">
@@ -190,7 +230,7 @@ export default function Settings() {
       <div className="card mb-3 p-0">
         <div className="px-4 pt-3 pb-2 text-xs font-medium uppercase tracking-wider text-ink-500">管理</div>
         {[
-          { to: "/categories", label: "分类", desc: "二级分类树 + emoji", icon: Tags },
+          { to: "/categories", label: "分类", desc: "二级分类树 · 图标自动匹配", icon: Tags },
           { to: "/merchants",  label: "商家", desc: "常用商家 + 默认分类", icon: Store },
         ].map((m) => (
           <Link key={m.to} to={m.to} className="flex items-center justify-between gap-2 border-t border-ink-100 px-4 py-3 hover:bg-ink-50">

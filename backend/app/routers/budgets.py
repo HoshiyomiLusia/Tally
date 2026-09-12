@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.auth import current_user
 from ..core.db import get_session
 from ..models import Budget, Category, Currency, Transaction, User
-from ..schemas.budget import BudgetCreate, BudgetProgress, BudgetRead, BudgetUpdate
+from ..schemas.budget import BudgetCreate, BudgetProgress, BudgetRead, BudgetUpdate, TotalBudgetSet, TotalBudgetView
+from ..services.fx import base_converter, resolve_base_currency
 from ..services.internal_cats import internal_cat_ids, not_internal
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
@@ -21,6 +22,84 @@ def _month_bounds(d: date) -> tuple[date, date]:
 
 def _year_bounds(d: date) -> tuple[date, date]:
     return date(d.year, 1, 1), date(d.year + 1, 1, 1)
+
+
+# ── 总预算 ────────────────────────────────────────────────────────────────
+# 只有一条: 本位币金额 + 本月所有币种支出折算后的进度。用户要的是"一条总预算一条进度条",
+# 不做分币种、不做分类预算(旧的 CRUD 接口保留, 界面上不再暴露)。
+async def _find_total(session: AsyncSession, user: User, base: str) -> Budget | None:
+    rows = (await session.execute(
+        select(Budget).where(Budget.user_id == user.id, Budget.category_id.is_(None)).order_by(Budget.id)
+    )).scalars().all()
+    for b in rows:                       # 优先本位币那条
+        if b.currency_code == base and b.active:
+            return b
+    return rows[0] if rows else None
+
+
+@router.get("/total", response_model=TotalBudgetView)
+async def get_total_budget(
+    on_date: date | None = None,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    base = await resolve_base_currency(session, user)
+    anchor = on_date or date.today()
+    start, end = _month_bounds(anchor)
+    b = await _find_total(session, user, base)
+    amount = b.amount if (b and b.active) else 0
+
+    conv, missing = await base_converter(session, base)
+    skip_cats = await internal_cat_ids(session, user.id)
+    rows = (await session.execute(
+        select(Transaction.currency_code, func.sum(Transaction.amount)).where(and_(
+            Transaction.user_id == user.id,
+            Transaction.kind == "expense",
+            Transaction.occurred_on >= start,
+            Transaction.occurred_on < end,
+            not_internal(skip_cats),
+        )).group_by(Transaction.currency_code)
+    )).all()
+    spent = sum(conv(int(amt or 0), code) for code, amt in rows)
+
+    days_in_month = (end - start).days
+    days_elapsed = min(max((anchor - start).days + 1, 1), days_in_month)
+    projected = int(round(spent / days_elapsed * days_in_month)) if days_elapsed else spent
+    return TotalBudgetView(
+        amount=amount, currency_code=base, spent=spent,
+        remaining=amount - spent, percent=(spent / amount) if amount else 0.0,
+        days_in_month=days_in_month, days_elapsed=days_elapsed, projected=projected,
+        missing_rate_currencies=sorted(missing),
+    )
+
+
+@router.put("/total", response_model=TotalBudgetView)
+async def set_total_budget(
+    payload: TotalBudgetSet,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """写总预算。amount=0 表示不启用。会把该用户旧的多条预算收敛成这一条(用户已确认只要一条总预算)。"""
+    base = await resolve_base_currency(session, user)
+    olds = (await session.execute(
+        select(Budget).where(Budget.user_id == user.id, Budget.category_id.is_(None))
+    )).scalars().all()
+    keep = None
+    for b in olds:
+        if keep is None and b.currency_code == base:
+            keep = b
+        else:
+            await session.delete(b)
+    if payload.amount <= 0:
+        if keep is not None:
+            await session.delete(keep)
+    elif keep is not None:
+        keep.amount, keep.active, keep.period, keep.note = payload.amount, True, "monthly", "总预算"
+    else:
+        session.add(Budget(user_id=user.id, category_id=None, currency_code=base,
+                           period="monthly", amount=payload.amount, active=True, note="总预算"))
+    await session.commit()
+    return await get_total_budget(None, user, session)
 
 
 @router.get("", response_model=list[BudgetRead])

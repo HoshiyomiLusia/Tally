@@ -8,7 +8,7 @@ import Modal from "../components/Modal";
 import MonthPicker from "../components/MonthPicker";
 import { api, type Category, type Currency, type Merchant, type Transaction } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { formatAmount } from "../lib/format";
+import { formatAmount, todayIso } from "../lib/format";
 
 interface CurrencySummary {
   currency_code: string;
@@ -27,6 +27,10 @@ interface DailyPoint { on_date: string; currency_code: string; amount: number; }
 interface CatCompare {
   category_id: number | null; category_name: string; emoji: string;
   currency_code: string; current: number; previous: number; delta: number;
+}
+interface TotalBudget {
+  amount: number; currency_code: string; spent: number; remaining: number; percent: number;
+  days_in_month: number; days_elapsed: number; projected: number; missing_rate_currencies: string[];
 }
 interface TopMerchant { merchant_id: number | null; merchant_name: string; currency_code: string; total: number; count: number; }
 
@@ -320,6 +324,15 @@ export default function Stats({
     const last = new Date(y, m, 0).getDate();
     return { start: `${month}-01`, end: `${month}-${String(last).padStart(2, "0")}` };
   }, [month]);
+  // 总预算(一条, 本位币, 所有币种支出折算后合计) —— 折叠态也显示, 所以放在 KPI 区
+  const budget = useQuery({
+    queryKey: ["budget-total", month],
+    queryFn: async () => {
+      const anchor = month === thisMonth() ? todayIso() : monthRange.end;
+      return (await api.get<TotalBudget>(`/budgets/total?on_date=${anchor}`)).data;
+    },
+  });
+
   const merchants = useQuery({ queryKey: ["merchants"], queryFn: async () => (await api.get<Merchant[]>("/merchants")).data, enabled: drill !== null });
   const drillRows = useQuery({
     queryKey: ["stats-drill", drill?.kind, drill?.id, month, activeCurrency],
@@ -403,6 +416,45 @@ export default function Stats({
           </div>
         </section>
       )}
+
+      {budget.data && budget.data.amount > 0 && (() => {
+        const b = budget.data;
+        const pct = Math.round(b.percent * 100);
+        const over = b.spent > b.amount;
+        const timePct = Math.round((b.days_elapsed / b.days_in_month) * 100);
+        const fmt = (v: number) => formatAmount(v, b.currency_code, currencies.data);
+        return (
+          <section className="mb-5">
+            <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2">
+              <span className="text-xs text-ink-500">本月预算</span>
+              <span className="text-xs text-ink-500">
+                <b className="text-sm font-semibold text-ink-900 dark:text-ink-50">{fmt(b.spent)}</b>
+                <span className="text-ink-400"> / {fmt(b.amount)}</span>
+                <span className={`ml-2 font-semibold ${over ? "text-rose-600" : "text-emerald-600"}`}>{pct}%</span>
+              </span>
+            </div>
+            <div className="relative h-2 rounded-full bg-ink-200 dark:bg-ink-700">
+              <div
+                className={`absolute left-0 top-0 h-full rounded-full ${over ? "bg-rose-500" : "bg-emerald-500"}`}
+                style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
+              />
+              {/* 细竖线 = 按天数走到今天应有的位置, 用来判断花得比时间快还是慢 */}
+              <span
+                className="absolute -top-1 h-4 w-0.5 rounded bg-ink-400 dark:bg-ink-500"
+                style={{ left: `${Math.min(timePct, 100)}%` }}
+                title={`月内已过 ${b.days_elapsed}/${b.days_in_month} 天`}
+              />
+            </div>
+            <div className={`mt-1.5 text-[11px] ${over ? "text-rose-600" : "text-ink-400"}`}>
+              {over && <>已超 {fmt(b.spent - b.amount)} · </>}
+              按当前节奏，月末约 {fmt(b.projected)}
+              {b.missing_rate_currencies.length > 0 && (
+                <span className="ml-1 text-amber-600">（缺 {b.missing_rate_currencies.join("/")} 汇率，未计入）</span>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       {!collapsed && (<>
       <section className="mb-5 grid grid-cols-1 gap-3 lg:grid-cols-2">

@@ -43,3 +43,22 @@ class BudgetProgress(BaseModel):
     spent: int
     remaining: int
     percent: float
+
+
+class TotalBudgetSet(BaseModel):
+    """设定总预算: 本位币最小单位; 0 = 不启用(清掉)。"""
+    amount: int = Field(ge=0, le=1_000_000_000_000)
+
+
+class TotalBudgetView(BaseModel):
+    """一条总预算 + 本月进度。amount=0 表示没设。
+    spent 是本月所有币种的支出折算到本位币后的合计(排除对账调整等内部分类)。"""
+    amount: int
+    currency_code: str
+    spent: int
+    remaining: int
+    percent: float
+    days_in_month: int
+    days_elapsed: int
+    projected: int                       # 按当前日均推算的月末总额
+    missing_rate_currencies: list[str]   # 缺汇率、没能计入 spent 的币种
