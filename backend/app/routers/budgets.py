@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, func, select
@@ -12,6 +12,14 @@ from ..services.fx import base_converter, resolve_base_currency
 from ..services.internal_cats import internal_cat_ids, not_internal
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
+
+HISTORY_MONTHS = 6   # 参照线/月末推算回看的月数, 与支出节奏图默认一致
+
+
+def _add_months(d: date, months: int) -> date:
+    m = d.month - 1 + months
+    y = d.year + m // 12
+    return date(y, m % 12 + 1, 1)
 
 
 def _month_bounds(d: date) -> tuple[date, date]:
@@ -64,11 +72,46 @@ async def get_total_budget(
 
     days_in_month = (end - start).days
     days_elapsed = min(max((anchor - start).days + 1, 1), days_in_month)
-    projected = int(round(spent / days_elapsed * days_in_month)) if days_elapsed else spent
+
+    # 历史同期形状: 过去 HISTORY_MONTHS 个月, 各取"到月内第 days_elapsed 天的累计"与"整月总额",
+    # 只统计有数据的月份。均值用来放参照线和推月末, 比按天数线性靠谱得多。
+    same_day: list[int] = []
+    whole: list[int] = []
+    for k in range(1, HISTORY_MONTHS + 1):
+        m0 = _add_months(start, -k)
+        m1 = _add_months(m0, 1)
+        cut = min(m0.day + days_elapsed - 1, (m1 - m0).days)   # 该月没那么多天就取到月末
+        cut_date = m0 + timedelta(days=cut)
+        rows_h = (await session.execute(
+            select(Transaction.currency_code, Transaction.occurred_on, Transaction.amount).where(and_(
+                Transaction.user_id == user.id,
+                Transaction.kind == "expense",
+                Transaction.occurred_on >= m0,
+                Transaction.occurred_on < m1,
+                not_internal(skip_cats),
+            ))
+        )).all()
+        tot = sum(conv(int(a or 0), code) for code, _d, a in rows_h)
+        if tot <= 0:
+            continue                                            # 没记账的月份不参与, 否则把均值拉平
+        upto = sum(conv(int(a or 0), code) for code, d, a in rows_h if d < cut_date)
+        same_day.append(upto)
+        whole.append(tot)
+
+    if whole:
+        typical_spent = int(round(sum(same_day) / len(same_day)))
+        typical_total = int(round(sum(whole) / len(whole)))
+        # 加法外推, 与支出节奏图的"按平均节奏月末约"同一套算法, 免得同屏两个数打架
+        projected = spent + max(0, typical_total - typical_spent)
+    else:
+        typical_spent = int(round(amount * days_elapsed / days_in_month)) if amount else 0
+        projected = int(round(spent / days_elapsed * days_in_month)) if days_elapsed else spent
+
     return TotalBudgetView(
         amount=amount, currency_code=base, spent=spent,
         remaining=amount - spent, percent=(spent / amount) if amount else 0.0,
-        days_in_month=days_in_month, days_elapsed=days_elapsed, projected=projected,
+        days_in_month=days_in_month, days_elapsed=days_elapsed,
+        typical_spent=typical_spent, projected=projected, history_months=len(whole),
         missing_rate_currencies=sorted(missing),
     )
 

@@ -60,5 +60,9 @@ class TotalBudgetView(BaseModel):
     percent: float
     days_in_month: int
     days_elapsed: int
-    projected: int                       # 按当前日均推算的月末总额
+    # 参照与推算都用"你自己过去几个月的同期形状", 不做线性假设 ——
+    # 支出天然压在月末(房租/订阅), 按天数线性推会严重低估。
+    typical_spent: int                   # 过去 N 个月里, 到"月内同一天"通常已花掉多少
+    projected: int                       # 月末推算 = 本月已花 + (历史整月均值 - 历史同期均值)
+    history_months: int                  # 参与计算的历史月数; 0 = 没历史, 此时退回按天数线性
     missing_rate_currencies: list[str]   # 缺汇率、没能计入 spent 的币种

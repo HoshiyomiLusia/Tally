@@ -30,7 +30,8 @@ interface CatCompare {
 }
 interface TotalBudget {
   amount: number; currency_code: string; spent: number; remaining: number; percent: number;
-  days_in_month: number; days_elapsed: number; projected: number; missing_rate_currencies: string[];
+  days_in_month: number; days_elapsed: number; typical_spent: number; projected: number;
+  history_months: number; missing_rate_currencies: string[];
 }
 interface TopMerchant { merchant_id: number | null; merchant_name: string; currency_code: string; total: number; count: number; }
 
@@ -421,7 +422,9 @@ export default function Stats({
         const b = budget.data;
         const pct = Math.round(b.percent * 100);
         const over = b.spent > b.amount;
-        const timePct = Math.round((b.days_elapsed / b.days_in_month) * 100);
+        // 参照线 = 按你过去几个月的同期, 今天通常已经花到哪 (支出压在月末, 按天数线性会误导)
+        const refPct = Math.min(Math.round((b.typical_spent / b.amount) * 100), 100);
+        const aheadOfUsual = b.history_months > 0 && b.spent > b.typical_spent;
         const fmt = (v: number) => formatAmount(v, b.currency_code, currencies.data);
         return (
           <section className="mb-5">
@@ -441,13 +444,17 @@ export default function Stats({
               {/* 细竖线 = 按天数走到今天应有的位置, 用来判断花得比时间快还是慢 */}
               <span
                 className="absolute -top-1 h-4 w-0.5 rounded bg-ink-400 dark:bg-ink-500"
-                style={{ left: `${Math.min(timePct, 100)}%` }}
-                title={`月内已过 ${b.days_elapsed}/${b.days_in_month} 天`}
+                style={{ left: `${refPct}%` }}
+                title={b.history_months > 0
+                  ? `按你过去 ${b.history_months} 个月的同期，到今天通常已花 ${fmt(b.typical_spent)}`
+                  : `月内已过 ${b.days_elapsed}/${b.days_in_month} 天（还没有历史可参照）`}
               />
             </div>
             <div className={`mt-1.5 text-[11px] ${over ? "text-rose-600" : "text-ink-400"}`}>
               {over && <>已超 {fmt(b.spent - b.amount)} · </>}
-              按当前节奏，月末约 {fmt(b.projected)}
+              {b.history_months > 0
+                ? <>比往常同期{aheadOfUsual ? "多" : "少"} {fmt(Math.abs(b.spent - b.typical_spent))}，按历史节奏月末约 {fmt(b.projected)}</>
+                : <>按当前节奏，月末约 {fmt(b.projected)}</>}
               {b.missing_rate_currencies.length > 0 && (
                 <span className="ml-1 text-amber-600">（缺 {b.missing_rate_currencies.join("/")} 汇率，未计入）</span>
               )}
