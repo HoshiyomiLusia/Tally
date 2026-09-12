@@ -51,6 +51,9 @@ interface Props {
   editing?: Transaction | null;
   // 周期账单"确认扣款": 用模板预填一笔新账单 (整张表单都能改, 含分摊/附件等)
   prefill?: TransactionPrefill | null;
+  // 新建时的默认钱包: 账单页按钱包筛选后点"添加", 直接选中那个钱包(仍可改)。
+  // 只影响新建, 编辑/确认扣款自带钱包不受影响。
+  defaultWalletId?: number | null;
   recurrenceSourceId?: number | null;
 }
 
@@ -59,7 +62,9 @@ interface ParticipantState {
   share_text: string;
 }
 
-export default function TransactionForm({ open, onClose, editing, prefill, recurrenceSourceId }: Props) {
+export default function TransactionForm({ open, onClose, editing, prefill, recurrenceSourceId,
+  defaultWalletId = null,
+}: Props) {
   const qc = useQueryClient();
   const wallets = useQuery({ queryKey: ["wallets"], queryFn: async () => (await api.get<Wallet[]>("/wallets")).data, enabled: open });
   // 审计 #154: 编辑 AA 分摊组(点的是支出腿或借出腿都行) —— 拉整组腿, 按总额/我的份额/各人份额预填, 保存整组重写
@@ -207,10 +212,12 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
     // 竞态、后定义的本 effect 读到旧的 null 闭包再写默认钱包, 把农行的确认单错设成三菱UFJ(会记错币种/钱包)。
     if (editing || prefill) return;
     if (walletId == null && wallets.data?.length) {
-      const active = wallets.data.find((w) => !w.archived) ?? wallets.data[0];
+      // 优先用外部指定的默认钱包(账单页筛选中的那个), 它被归档/删掉了再退回第一个可用钱包
+      const preset = defaultWalletId != null ? wallets.data.find((w) => w.id === defaultWalletId) : undefined;
+      const active = preset ?? wallets.data.find((w) => !w.archived) ?? wallets.data[0];
       setWalletId(active.id);
     }
-  }, [open, wallets.data, walletId, editing, prefill]);
+  }, [open, wallets.data, walletId, editing, prefill, defaultWalletId]);
 
   // 系统分类(对账调整 / 坏账损失 / 投资收益 / 投资亏损)由对账、核销、投资结算自动使用, 不给手选 ——
   // 普通消费误点进去会混进投资盈亏 / 对账口径。正在编辑的那笔若本身就挂着系统分类, 仍显示它(不改分类也能保存)。

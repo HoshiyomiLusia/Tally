@@ -590,7 +590,12 @@ export default function Transactions() {
         </div>
       </div>
 
-      <TransactionForm open={open} onClose={() => { setOpen(false); setEditing(null); }} editing={editing} />
+      <TransactionForm
+        open={open}
+        onClose={() => { setOpen(false); setEditing(null); }}
+        editing={editing}
+        defaultWalletId={walletId ? Number(walletId) : null}
+      />
       <InvestWalletFixModal tx={walletFixFor} wallets={wallets.data ?? []} currencies={currencies.data ?? []} onClose={() => setWalletFixFor(null)} />
       <TransferForm open={transferOpen} onClose={() => setTransferOpen(false)} />
       <CreditRepayForm open={creditRepayOpen} onClose={() => setCreditRepayOpen(false)} />
