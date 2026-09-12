@@ -273,7 +273,7 @@ function WalletPicker({
                           onClick={() => onPick(w.id)}
                           className={on ? "chip chip-selected" : disabled ? "chip chip-idle opacity-30" : "chip chip-idle"}
                         >
-                          {on && <span className="mr-0.5">✓</span>}
+                          
                           {w.name}
                         </button>
                       );

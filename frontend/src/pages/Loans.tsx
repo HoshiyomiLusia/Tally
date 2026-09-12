@@ -312,7 +312,7 @@ function LendModal({ open, initialContact, contacts, wallets, currencies, onClos
           <select className="input mt-1" value={contactSel} onChange={(e) => setContactSel(e.target.value)}>
             <option value="">选择联系人…</option>
             {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            <option value="new">➕ 新建联系人…</option>
+            <option value="new">＋ 新建联系人…</option>
           </select>
         </label>
         {contactSel === "new" && (
@@ -362,7 +362,7 @@ function LendModal({ open, initialContact, contacts, wallets, currencies, onClos
                         <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
                         {(byType.get(t) ?? []).map((w) => {
                           const on = walletId === w.id;
-                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{on && <span className="mr-0.5">✓</span>}{w.name}</button>;
+                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{w.name}</button>;
                         })}
                       </div>
                     ))}
@@ -778,7 +778,7 @@ function HistoryModal({ acct, accounts, wallets, contacts, currencies, onClose }
                   <div key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span>{t.kind === "loan_out" ? "🟥 借出" : "🟩 还款"} · {t.occurred_on}</span>
+                        <span className="flex items-center gap-1"><span className={`inline-block h-2 w-2 rounded-full ${t.kind === "loan_out" ? "bg-rose-500" : "bg-emerald-500"}`} />{t.kind === "loan_out" ? "借出" : "还款"} · {t.occurred_on}</span>
                         {t.split_group_id && <span className="rounded bg-ink-100 px-1 text-[10px] text-ink-500 dark:bg-ink-800" title="分摊腿, 请在账单里改整笔分摊">分摊</span>}
                       </div>
                       <div className="truncate text-xs text-ink-500">{walletName(t.wallet_id)}{t.note ? ` · ${t.note}` : ""}</div>

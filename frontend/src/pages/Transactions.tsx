@@ -243,8 +243,12 @@ export default function Transactions() {
         <option value="">所有类型</option>
         <option value="expense">支出</option>
         <option value="income">收入</option>
+        <option value="transfer_out">转账转出</option>
+        <option value="transfer_in">转账转入</option>
         <option value="loan_out">借出</option>
         <option value="loan_repayment">还款</option>
+        <option value="invest_buy">投资买入</option>
+        <option value="invest_sell">投资卖出</option>
       </select>
       <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="备注 / 商家" />
       <select className="input" value={parentCatId} onChange={(e) => setParentCatId(e.target.value)}>
@@ -496,49 +500,44 @@ export default function Transactions() {
       </button>
 
       {quickOpen && (
-        <div className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={() => setQuickOpen(false)}>
-          <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <div className="text-lg font-semibold">快速添加</div>
-                <div className="text-xs text-ink-500">常用账单 · 点一下用今天的日期再记一笔</div>
-              </div>
-              <button onClick={() => setQuickOpen(false)} className="text-ink-400 hover:text-ink-700">关闭</button>
-            </div>
+        <Modal
+          onClose={() => setQuickOpen(false)}
+          maxW="max-w-md"
+          title={<>快速添加<span className="block text-xs font-normal text-ink-500">常用账单 · 点一下用今天的日期再记一笔</span></>}
+        >
             {(frequent.data ?? []).length === 0 ? (
-              <div className="rounded-md bg-ink-50 p-4 text-center text-sm text-ink-500 dark:bg-ink-800/40">
-                还没有常用账单。完全一样的账单（钱包 / 分类 / 商家 / 金额）重复 3 次以上才会进来——点一下就直接落库, 不用再改.
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {(frequent.data ?? []).map((f) => {
-                  const title = f.merchant_name || f.category_name;
-                  const sub = f.merchant_name ? `${f.wallet_name} · ${f.category_name}` : f.wallet_name;
-                  return (
-                    <button
-                      key={`${f.merchant_id ?? "none"}-${f.currency_code}-${f.wallet_id}-${f.category_id ?? 0}`}
-                      onClick={() => { quickAdd.mutate(f); setQuickOpen(false); }}
-                      disabled={quickAdd.isPending}
-                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3 text-left text-sm hover:border-emerald-500 hover:shadow-sm dark:border-ink-700 dark:bg-ink-800/60 dark:hover:border-emerald-400"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <CategoryIcon name={f.category_name} emoji={f.category_emoji} size={14} />
-                          <span className="truncate font-medium">{title}</span>
-                          <span className="shrink-0 rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
-                        </div>
-                        <div className="mt-0.5 truncate text-xs text-ink-500">{sub}</div>
+            <div className="rounded-md bg-ink-50 p-4 text-center text-sm text-ink-500 dark:bg-ink-800/40">
+              还没有常用账单。完全一样的账单（钱包 / 分类 / 商家 / 金额）重复 3 次以上才会进来——点一下就直接落库, 不用再改.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {(frequent.data ?? []).map((f) => {
+                const title = f.merchant_name || f.category_name;
+                const sub = f.merchant_name ? `${f.wallet_name} · ${f.category_name}` : f.wallet_name;
+                return (
+                  <button
+                    key={`${f.merchant_id ?? "none"}-${f.currency_code}-${f.wallet_id}-${f.category_id ?? 0}`}
+                    onClick={() => { quickAdd.mutate(f); setQuickOpen(false); }}
+                    disabled={quickAdd.isPending}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3 text-left text-sm hover:border-emerald-500 hover:shadow-sm dark:border-ink-700 dark:bg-ink-800/60 dark:hover:border-emerald-400"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <CategoryIcon name={f.category_name} emoji={f.category_emoji} size={14} />
+                        <span className="truncate font-medium">{title}</span>
+                        <span className="shrink-0 rounded bg-ink-100 px-1 text-[10px] text-ink-600 dark:bg-ink-700">×{f.count}</span>
                       </div>
-                      <div className="shrink-0 font-semibold text-rose-600">
-                        {formatAmount(f.amount, f.currency_code, currencies.data)}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                      <div className="mt-0.5 truncate text-xs text-ink-500">{sub}</div>
+                    </div>
+                    <div className="shrink-0 font-semibold text-rose-600">
+                      {formatAmount(f.amount, f.currency_code, currencies.data)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );

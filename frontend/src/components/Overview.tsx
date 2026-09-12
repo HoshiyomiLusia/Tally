@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ChevronDown, ChevronRight, HandCoins, TrendingUp } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, HandCoins, Pin, TrendingUp, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import CategoryIcon from "./CategoryIcon";
@@ -230,7 +230,7 @@ export function BalanceModule({ expanded = true, onToggle }: { expanded?: boolea
         const missingAll = [...new Set([...(cross.data?.missing_rate_currencies ?? []), ...loanNet.missing])];
         return missingAll.length > 0 ? (
           <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
-            ⚠ 缺 {missingAll.join(" / ")} → {baseCurrency} 的汇率,这些货币的余额/借贷<b>未计入</b>上方总额。去「设置」录入汇率。
+            <TriangleAlert size={12} className="mr-1 inline align-[-2px]" />缺 {missingAll.join(" / ")} → {baseCurrency} 的汇率,这些货币的余额/借贷<b>未计入</b>上方总额。去「设置」录入汇率。
           </div>
         ) : null;
       })()}
@@ -280,7 +280,7 @@ export function BalanceModule({ expanded = true, onToggle }: { expanded?: boolea
       <div className="mt-3 rounded-lg border border-dashed border-ink-300/60 p-2.5 dark:border-ink-700/70">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-xs font-medium text-ink-600 dark:text-ink-300">📌 预定支出</span>
+            <span className="flex items-center gap-1 text-xs font-medium text-ink-600 dark:text-ink-300"><Pin size={12} className="text-ink-400" />预定支出</span>
             {plannedInfo.count > 0 && <span className="text-xs text-ink-400">合计 ≈{fmtBase(plannedTotal)}</span>}
             {plannedInfo.missing.length > 0 && <span className="text-xs text-amber-600">缺 {plannedInfo.missing.join("/")} 汇率, 未计入</span>}
           </div>

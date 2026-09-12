@@ -225,7 +225,7 @@ export default function ReimburseForm({ open, onClose }: Props) {
                                 }}
                                 className={on ? "chip chip-selected" : "chip chip-idle"}
                               >
-                                {on && <span className="mr-0.5">✓</span>}{w.name}
+                                {w.name}
                               </button>
                             );
                           })}

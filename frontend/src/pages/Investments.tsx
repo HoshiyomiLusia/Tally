@@ -252,7 +252,7 @@ function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose
               setWalletId((cur) => (pool.some((w) => w.id === cur) ? cur : (pool[0]?.id ?? null)));
             }}
           >
-            <option value="">➕ 新建持仓（按类型，如 基金 / 股票 / 加密货币）</option>
+            <option value="">＋ 新建持仓（按类型，如 基金 / 股票 / 加密货币）</option>
             {openPositions.map((p) => (
               <option key={p.id} value={p.id}>追加到 {p.name}（{p.currency_code}）· 持有 {formatAmount(p.cost_remaining, p.currency_code, currencies)}</option>
             ))}
@@ -309,7 +309,7 @@ function BuyModal({ open, initialTarget, positions, wallets, currencies, onClose
                         <span className="mr-0.5 w-14 shrink-0 text-[10px] text-ink-400">{WALLET_TYPE_LABEL[t]}</span>
                         {(byType.get(t) ?? []).map((w) => {
                           const on = walletId === w.id;
-                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{on && <span className="mr-0.5">✓</span>}{w.name}</button>;
+                          return <button key={w.id} type="button" onClick={() => setWalletId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>{w.name}</button>;
                         })}
                       </div>
                     ))}
@@ -551,7 +551,7 @@ function HistoryModal({ open, currencies, onClose }: {
           <div key={e.key} className="flex items-center justify-between gap-2 py-2 text-sm">
             <div className="min-w-0">
               <div className="truncate">
-                {e.type === "buy" ? "🟦 买入" : "🟩 卖出"} · {e.position_name}
+                <span className={`mr-1 inline-block h-2 w-2 rounded-full align-[1px] ${e.type === "buy" ? "bg-sky-500" : "bg-emerald-500"}`} />{e.type === "buy" ? "买入" : "卖出"} · {e.position_name}
                 <span className="ml-1 text-[10px] text-ink-400">{e.currency_code}</span>
               </div>
               <div className="text-xs text-ink-500">

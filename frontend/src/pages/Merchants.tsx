@@ -9,7 +9,7 @@ const REGIONS = [
   { value: "", label: "全部" },
   { value: "JP", label: "🇯🇵 日本" },
   { value: "CN", label: "🇨🇳 中国" },
-  { value: "GLOBAL", label: "🌐 全球" },
+  { value: "GLOBAL", label: "全球" },
   { value: "OTHER", label: "其他" },
 ];
 
@@ -146,7 +146,7 @@ function MerchantForm({
               <option value="">未设置</option>
               <option value="JP">🇯🇵 日本</option>
               <option value="CN">🇨🇳 中国</option>
-              <option value="GLOBAL">🌐 全球</option>
+              <option value="GLOBAL">全球</option>
               <option value="OTHER">其他</option>
             </select>
           </label>

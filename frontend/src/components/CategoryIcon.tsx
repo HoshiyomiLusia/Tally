@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgePercent, Beer, Bike, Briefcase, Bus, CalendarClock, Car, CarTaxiFront, CircleHelp, Clapperboard, ConciergeBell, CupSoda, Film, Folder, Fuel, Gamepad2, Gift, GraduationCap, HandCoins, HandHeart, HeartPulse, House, IdCard, Joystick, Laptop, Lightbulb, Luggage, MicVocal, Package, PartyPopper, Pencil, Pill, Plane, Plug, Printer, ReceiptText, Repeat, RotateCcw, Scale, School, Scissors, Shield, Shirt, ShoppingBag, ShoppingCart, Sofa, Sparkles, SprayCan, SquareParking, Stethoscope, Store, TrainFront, TramFront, TrendingDown, TrendingUp, UsersRound, Utensils, UtensilsCrossed, WashingMachine, Wrench } from "lucide-react";
+import { ArrowLeftRight, BadgePercent, Beer, Bike, Bitcoin, Briefcase, Bus, CalendarClock, Car, CarTaxiFront, ChartCandlestick, ChartNoAxesCombined, ChartPie, CircleHelp, Clapperboard, Coins, ConciergeBell, CupSoda, Film, Folder, Fuel, Gamepad2, Gift, GraduationCap, HandCoins, HandHeart, HeartPulse, House, IdCard, Joystick, Laptop, Lightbulb, Luggage, MicVocal, Package, PartyPopper, Pencil, Pill, Plane, Plug, Printer, ReceiptText, Repeat, RotateCcw, Scale, School, Scissors, ScrollText, Shield, Shirt, ShoppingBag, ShoppingCart, Sofa, Sparkles, SprayCan, SquareParking, Stethoscope, Store, TrainFront, TramFront, TrendingDown, TrendingUp, UsersRound, Utensils, UtensilsCrossed, WashingMachine, Wrench } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 // 分类图标: 用 lucide 线描图标替代 emoji(与侧边栏/按钮同一套图形语言, 不受系统 emoji 字体影响).
@@ -72,6 +72,13 @@ const MAP: [string, LucideIcon, string][] = [
   ["红包收入", HandCoins, "emerald"],
   ["退款", RotateCcw, "emerald"],
   ["其他收入", Sparkles, "emerald"],
+  // 投资分类树(部分账号有)
+  ["投资", ChartNoAxesCombined, "sky"],
+  ["股票", ChartCandlestick, "sky"],
+  ["基金", ChartPie, "sky"],
+  ["加密货币", Bitcoin, "sky"],
+  ["债券", ScrollText, "sky"],
+  ["其他投资", Coins, "sky"],
   // 账单页对这些交易种类用固定标题, 一并给图标
   ["转账转入", Repeat, "sky"],
   ["转账转出", Repeat, "sky"],

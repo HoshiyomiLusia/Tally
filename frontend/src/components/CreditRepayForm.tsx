@@ -113,7 +113,7 @@ export default function CreditRepayForm({ open, onClose }: Props) {
                     onClick={() => setCardId(c.id)}
                     className={on ? "chip chip-selected" : "chip chip-idle"}
                   >
-                    {on && <span className="mr-0.5">✓</span>}
+                    
                     {c.name}
                     {d > 0 && <span className="ml-1 opacity-70">待还 {formatAmount(d, c.currency_code, currencies.data)}</span>}
                   </button>
@@ -165,7 +165,7 @@ export default function CreditRepayForm({ open, onClose }: Props) {
                         const on = payId === w.id;
                         return (
                           <button key={w.id} type="button" onClick={() => setPayId(w.id)} className={on ? "chip chip-selected" : "chip chip-idle"}>
-                            {on && <span className="mr-0.5">✓</span>}{w.name}
+                            {w.name}
                           </button>
                         );
                       })}
