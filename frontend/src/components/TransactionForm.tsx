@@ -823,7 +823,16 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
               </label>
               {splitOn && (
                 <div className="mt-2 space-y-2">
-                  <div className="text-xs text-ink-500">参与人（除了你自己）</div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <div className="text-xs text-ink-500">参与人（除了你自己）</div>
+                    {participants.length > 0 && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                        <button type="button" onClick={advanceAll} className="text-xs text-ink-600 underline decoration-dotted underline-offset-2 hover:text-ink-900 dark:text-ink-300 dark:hover:text-ink-100" title="我不摊, 出全款代付, 全额均摊给其他人 -> 全额都是别人欠我的">纯代付</button>
+                        <button type="button" onClick={splitRemainder} className="text-xs text-ink-600 underline decoration-dotted underline-offset-2 hover:text-ink-900 dark:text-ink-300 dark:hover:text-ink-100" title="保留我填的金额, 把剩下的均摊给其他人">我付完余下AA</button>
+                        <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline decoration-dotted underline-offset-2 hover:text-ink-900 dark:text-ink-300 dark:hover:text-ink-100">全部均摊</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {activeContacts.map((c) => {
                       const on = participants.some((p) => p.contact_id === c.id);
@@ -846,11 +855,6 @@ export default function TransactionForm({ open, onClose, editing, prefill, recur
 
                   {participants.length > 0 && (
                     <>
-                      <div className="flex justify-end gap-3">
-                        <button type="button" onClick={advanceAll} className="text-xs text-ink-600 underline" title="我不摊, 出全款代付, 全额均摊给其他人 -> 别人全欠我">纯代付</button>
-                        <button type="button" onClick={splitRemainder} className="text-xs text-ink-600 underline" title="保留我填的金额, 把剩下的均摊给其他人">我付完余下AA</button>
-                        <button type="button" onClick={equalSplit} className="text-xs text-ink-600 underline">全部均摊</button>
-                      </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-sm">
                           <div className="w-20 shrink-0 text-ink-500">我</div>
