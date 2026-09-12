@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import CategoryIcon from "../components/CategoryIcon";
 import CreditRepayForm from "../components/CreditRepayForm";
 import DateField from "../components/DateField";
+import { walletPhysical } from "../lib/wallet";
 import Modal from "../components/Modal";
 import ReimburseForm from "../components/ReimburseForm";
 import TransactionForm from "../components/TransactionForm";
@@ -41,18 +42,50 @@ const SPECIAL_TITLE: Record<string, { emoji: string; name: string }> = {
 
 const PAGE_SIZES = [25, 50, 100, 200];
 
+// 账单页筛选的持久化: 换页签回来仍保留, 「恢复默认」清回这组初值
+const FILTER_KEY = "tally.tx.filters";
+type TxFilters = {
+  walletId: string; parentCatId: string; childCatId: string; currency: string;
+  kind: string; q: string; start: string; end: string; pageSize: number;
+};
+const DEFAULT_FILTERS: TxFilters = {
+  walletId: "", parentCatId: "", childCatId: "", currency: "",
+  kind: "", q: "", start: "", end: "", pageSize: 25,
+};
+function loadFilters(): TxFilters {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    if (!raw) return DEFAULT_FILTERS;
+    const v = JSON.parse(raw) as Partial<TxFilters>;
+    // 逐字段兜底: 存过的结构变了也不会把页面搞崩
+    return {
+      walletId: typeof v.walletId === "string" ? v.walletId : "",
+      parentCatId: typeof v.parentCatId === "string" ? v.parentCatId : "",
+      childCatId: typeof v.childCatId === "string" ? v.childCatId : "",
+      currency: typeof v.currency === "string" ? v.currency : "",
+      kind: typeof v.kind === "string" ? v.kind : "",
+      q: typeof v.q === "string" ? v.q : "",
+      start: typeof v.start === "string" ? v.start : "",
+      end: typeof v.end === "string" ? v.end : "",
+      pageSize: PAGE_SIZES.includes(Number(v.pageSize)) ? Number(v.pageSize) : 25,
+    };
+  } catch { return DEFAULT_FILTERS; }
+}
+
 export default function Transactions() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [walletId, setWalletId] = useState<string>("");
-  const [parentCatId, setParentCatId] = useState<string>("");
-  const [childCatId, setChildCatId] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("");
-  const [kind, setKind] = useState<string>("");
-  const [q, setQ] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [pageSize, setPageSize] = useState(25);
+  // 筛选条件记在浏览器里: 切到别的页再回来不用重选(用户要求), 「恢复默认」一键清回
+  const saved = loadFilters();
+  const [walletId, setWalletId] = useState<string>(saved.walletId);
+  const [parentCatId, setParentCatId] = useState<string>(saved.parentCatId);
+  const [childCatId, setChildCatId] = useState<string>(saved.childCatId);
+  const [currency, setCurrency] = useState<string>(saved.currency);
+  const [kind, setKind] = useState<string>(saved.kind);
+  const [q, setQ] = useState(saved.q);
+  const [start, setStart] = useState(saved.start);
+  const [end, setEnd] = useState(saved.end);
+  const [pageSize, setPageSize] = useState(saved.pageSize);
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -121,6 +154,12 @@ export default function Transactions() {
   const currencies = useQuery({ queryKey: ["currencies"], queryFn: async () => (await api.get<Currency[]>("/currencies")).data });
   const positions = useQuery({ queryKey: ["positions"], queryFn: async () => (await api.get<Position[]>("/investments/positions")).data });
   const rates = useQuery({ queryKey: ["exchange-rates"], queryFn: async () => (await api.get<{ base: string; quote: string; rate: number }[]>("/exchange-rates")).data });
+  // 选了钱包就看那张卡的余额/额度, 没选就看折算后的总额(用户要求)
+  const crossTotal = useQuery({
+    queryKey: ["cross-total"],
+    queryFn: async () => (await api.get<{ base_currency: string; total_real: number; total_spendable: number; total_credit_debt: number; missing_rate_currencies: string[] }>("/stats/cross-currency-total")).data,
+  });
+
   const frequent = useQuery({ queryKey: ["frequent"], queryFn: async () => (await api.get<FrequentItem[]>("/transactions/frequent?min_count=3&limit=12")).data });
 
   const { user } = useAuth();
@@ -227,7 +266,19 @@ export default function Transactions() {
   });
 
   const activeFilters = [walletId, currency, kind, q, parentCatId, childCatId, start, end].filter(Boolean).length;
-  const clearFilters = () => { setWalletId(""); setCurrency(""); setKind(""); setQ(""); setParentCatId(""); setChildCatId(""); setStart(""); setEnd(""); };
+  const clearFilters = () => {
+    const d = DEFAULT_FILTERS;
+    setWalletId(d.walletId); setCurrency(d.currency); setKind(d.kind); setQ(d.q);
+    setParentCatId(d.parentCatId); setChildCatId(d.childCatId); setStart(d.start); setEnd(d.end);
+    setPageSize(d.pageSize); setPage(0);
+    try { localStorage.removeItem(FILTER_KEY); } catch { /* 隐私模式忽略 */ }
+  };
+  // 任一筛选变化就落盘
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTER_KEY, JSON.stringify({ walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize }));
+    } catch { /* 隐私模式忽略 */ }
+  }, [walletId, parentCatId, childCatId, currency, kind, q, start, end, pageSize]);
   // 同一组筛选控件: 桌面平铺、移动端塞进弹窗, 两处共用
   const renderFilters = () => (
     <>
@@ -274,8 +325,8 @@ export default function Transactions() {
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
       </select>
-      <input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} placeholder="开始" />
-      <input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} placeholder="结束" />
+      <DateField value={start} onChange={setStart} placeholder="开始日期 · 不限" clearable />
+      <DateField value={end} onChange={setEnd} placeholder="结束日期 · 不限" clearable />
     </>
   );
 
@@ -313,6 +364,61 @@ export default function Transactions() {
         {renderFilters()}
       </div>
 
+      {/* 选中钱包的余额 / 额度; 没选就给折算后的总额 */}
+      {(() => {
+        const dirty = activeFilters > 0 || pageSize !== DEFAULT_FILTERS.pageSize;
+        const resetBtn = dirty ? (
+          <button
+            onClick={clearFilters}
+            className="ml-auto shrink-0 rounded-lg border border-ink-200 px-2 py-0.5 text-xs text-ink-500 hover:border-ink-400 hover:text-ink-700 dark:border-ink-700 dark:hover:border-ink-500 dark:hover:text-ink-200"
+            title="清掉所有筛选并恢复默认每页条数"
+          >恢复默认（{activeFilters}）</button>
+        ) : null;
+        const w = walletId ? (wallets.data ?? []).find((x) => x.id === Number(walletId)) : null;
+        if (w) {
+          const phys = walletPhysical(w);
+          const cur = w.currency_code;
+          const f = (v: number) => formatAmount(v, cur, currencies.data);
+          const lent = w.loan_out_on_wallet - w.loan_repayment_on_wallet;
+          const inv = w.invest_out_on_wallet - w.invest_in_on_wallet;
+          return (
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-xl bg-ink-50 px-4 py-2.5 text-sm dark:bg-ink-800/40">
+              <span className="font-medium">{w.name}</span>
+              {w.type === "credit_card" ? (
+                <>
+                  <span className="text-ink-500">待还 <b className={phys < 0 ? "text-rose-600" : "text-emerald-600"}>{f(Math.max(0, -phys))}</b></span>
+                  {w.credit_limit != null
+                    ? <span className="text-ink-500">可用 <b className="text-ink-800 dark:text-ink-100">{f(w.credit_limit + phys)}</b> / 额度 {f(w.credit_limit)}</span>
+                    : <span className="text-ink-400">未设额度</span>}
+                </>
+              ) : (
+                <span className="text-ink-500">余额 <b className={`text-base ${phys < 0 ? "text-rose-600" : "text-ink-900 dark:text-ink-50"}`}>{f(phys)}</b></span>
+              )}
+              {lent !== 0 && <span className="text-emerald-600">借出未还 {f(lent)}</span>}
+              {inv !== 0 && <span className="text-sky-600">投资中 {f(inv)}</span>}
+              {w.archived && <span className="text-ink-400">已归档</span>}
+              {resetBtn}
+            </div>
+          );
+        }
+        const t = crossTotal.data;
+        if (!t) return null;
+        const f = (v: number) => formatAmount(v, t.base_currency, currencies.data);
+        return (
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-xl bg-ink-50 px-4 py-2.5 text-sm dark:bg-ink-800/40">
+            <span className="font-medium">全部 Wallet</span>
+            <span className="text-ink-500">真实余额 <b className="text-base text-ink-900 dark:text-ink-50">{f(t.total_real)}</b></span>
+            <span className="text-ink-400">物理 {f(t.total_spendable)}</span>
+            {t.total_credit_debt > 0 && <span className="text-rose-500">信用卡待还 {f(t.total_credit_debt)}</span>}
+            <span className="text-[11px] text-ink-400">折算到 {t.base_currency}</span>
+            {t.missing_rate_currencies.length > 0 && (
+              <span className="text-[11px] text-amber-600">缺 {t.missing_rate_currencies.join("/")} 汇率，未计入</span>
+            )}
+            {resetBtn}
+          </div>
+        );
+      })()}
+
       {/* 移动端: 收成一个"筛选"按钮, 点开弹出 */}
       <button
         onClick={() => setFilterOpen(true)}
@@ -334,7 +440,7 @@ export default function Transactions() {
           </div>
           <div className="mt-4 flex gap-2">
             <button onClick={clearFilters} disabled={activeFilters === 0} className="btn-ghost flex-1 disabled:opacity-40">
-              清除{activeFilters > 0 ? `（${activeFilters}）` : ""}
+              恢复默认{activeFilters > 0 ? `（${activeFilters}）` : ""}
             </button>
             <button onClick={() => setFilterOpen(false)} className="btn-primary flex-1">查看结果</button>
           </div>

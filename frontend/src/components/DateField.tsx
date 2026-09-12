@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
@@ -16,8 +16,8 @@ function parse(s: string): { y: number; m: number; d: number } {
 }
 function daysInMonth(y: number, m: number): number { return new Date(y, m, 0).getDate(); }
 function firstWeekday(y: number, m: number): number { return new Date(y, m - 1, 1).getDay(); }
-function display(s: string): string {
-  if (!ISO_RE.test(s)) return "选择日期";
+function display(s: string, empty = "选择日期"): string {
+  if (!ISO_RE.test(s)) return empty;
   const { y, m, d } = parse(s);
   return `${y} 年 ${m} 月 ${d} 日 · 周${WEEK[new Date(y, m - 1, d).getDay()]}`;
 }
@@ -30,10 +30,12 @@ function shiftDay(s: string, delta: number): string {
 
 const ARROW = "flex shrink-0 items-center rounded-lg border border-ink-200 px-2.5 text-ink-500 hover:border-ink-400 hover:text-ink-700 dark:border-ink-700 dark:hover:border-ink-500 dark:hover:text-ink-200";
 
-export default function DateField({ value, onChange, className = "" }: {
+export default function DateField({ value, onChange, className = "", placeholder, clearable = false }: {
   value: string;
   onChange: (v: string) => void;
   className?: string;
+  placeholder?: string;    // 没选日期时显示的字(筛选场景用"开始/结束")
+  clearable?: boolean;     // 筛选场景: 选了之后给一个 × 清回"不限"
 }) {
   const [open, setOpen] = useState(false);
   const base = ISO_RE.test(value) ? parse(value) : parse(todayIso());
@@ -70,16 +72,23 @@ export default function DateField({ value, onChange, className = "" }: {
   return (
     <div ref={ref} className={`relative ${className}`}>
       <div className="flex items-stretch gap-1.5">
-        <button type="button" onClick={() => onChange(shiftDay(value, -1))} title="前一天" className={ARROW}><ChevronLeft size={16} /></button>
+        {ISO_RE.test(value) && (
+          <button type="button" onClick={() => onChange(shiftDay(value, -1))} title="前一天" className={ARROW}><ChevronLeft size={16} /></button>
+        )}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="input flex flex-1 cursor-pointer items-center justify-between gap-2 text-left"
+          className="input flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 text-left"
         >
-          <span className={ISO_RE.test(value) ? "" : "text-ink-400"}>{display(value)}</span>
+          <span className={`truncate ${ISO_RE.test(value) ? "" : "text-ink-400"}`}>{display(value, placeholder ?? "选择日期")}</span>
           <CalendarDays size={16} className="shrink-0 text-ink-400" />
         </button>
-        <button type="button" onClick={() => onChange(shiftDay(value, 1))} title="后一天" className={ARROW}><ChevronRight size={16} /></button>
+        {ISO_RE.test(value) && clearable && (
+          <button type="button" onClick={() => onChange("")} title="不限" className={ARROW}><X size={16} /></button>
+        )}
+        {ISO_RE.test(value) && (
+          <button type="button" onClick={() => onChange(shiftDay(value, 1))} title="后一天" className={ARROW}><ChevronRight size={16} /></button>
+        )}
       </div>
 
       {open && (
